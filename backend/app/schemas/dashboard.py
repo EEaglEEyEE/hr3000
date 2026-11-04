@@ -67,3 +67,5 @@ class DashboardResponse(BaseModel):
     # Mandanten-Schalter, die die Startseite auch ohne verknüpften Mitarbeiter braucht
     portal_punching_enabled: bool = False
     absence_requests_enabled: bool = True
+    # "Mein Bereich": Reiter Schichtplanung nur, wenn die Firma Schichtplanung nutzt
+    shift_planning_enabled: bool = False

@@ -34,15 +34,18 @@ Stand: 04.11.2026.
   - „Saldenübersicht“
   - „Abwesenheiten“: Mit „Neue Abwesenheit“ beantragst du z. B. Urlaub, auch halbtags. Das
     geht nur, wenn die Firma Anträge erlaubt; sonst meldest du Urlaub direkt bei HR.
-  - „Schichtplanung“: dein Schichtplan
+  - „Schichtplanung“: dein Schichtplan (nur, wenn deine Firma Schichtplanung nutzt)
   - „Monatsabschluss“: Monatsbericht ansehen („PDF ansehen“), dann „Bestätigen“ oder
     „Widersprechen“ mit Begründung.
   - „Dokumente“: für dich freigegebene Dokumente
-- Oben findest du „Monatsbericht“, die Benachrichtigungen (Glocke) und „Abmelden“.
+- Oben findest du „Monatsbericht“, die Benachrichtigungen (Glocke), „Passwort ändern“ und „Abmelden“.
 
 ## 3. Passwort und PIN
 
-- **Passwort vergessen:** bitte an die Personalabteilung wenden. Sie erzeugt ein neues
-  Einmalpasswort.
+- **Passwort ändern:** in „Mein Bereich“ oben auf „Passwort ändern“ (mindestens 10 Zeichen).
+  Auf anderen Geräten musst du dich danach neu anmelden.
+- **Passwort vergessen:** auf der Anmeldeseite „Passwort vergessen?“. Du bekommst einen Link per
+  E-Mail (1 Stunde gültig). Steht dort stattdessen „Bitte wende dich an deine
+  Personalabteilung“, erzeugt die Personalabteilung ein neues Einmalpasswort.
 - **PIN vergessen:** Die Personalabteilung setzt sie zurück, beim nächsten Stempeln legst du
   eine neue fest.

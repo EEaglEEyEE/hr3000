@@ -46,3 +46,38 @@ describe('Mandantenliste', () => {
     expect(screen.getAllByText(/Selbst registriert/)).toHaveLength(1)
   })
 })
+
+describe('Mandantenliste: Kündigen und Löschen', () => {
+  it('kündigt, zeigt den Löschtermin und löscht nur mit eingetippter Subdomain', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event')
+    const { waitFor } = await import('@testing-library/react')
+    loginAs({ kind: 'hr', role: 'SUPER_ADMIN' })
+    const calls = mockApi({
+      'GET /tenants': [
+        tenant({ id: 3, subdomain: 'spam', name: 'Spam GmbH', plan: 'FREE', active_employees: 0 }),
+        tenant({ id: 4, subdomain: 'weg', name: 'Weg GmbH', plan: 'FREE', active_employees: 0, deletion_due_on: '2026-12-30' }),
+      ],
+      'POST /tenants/{tenant_id}/cancel': tenant({ id: 3 }),
+      'POST /tenants/{tenant_id}/cancel/revoke': tenant({ id: 4 }),
+      'POST /tenants/{tenant_id}/purge': { subdomain: 'spam', deleted_rows: 12 },
+    })
+    renderWithProviders(<TenantsPage />)
+    expect(await screen.findByText('Gekündigt – Löschung am 30.12.2026')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Kündigen' }))
+    await waitFor(() => expect(calls.some((c) => c.path === '/tenants/{tenant_id}/cancel')).toBe(true))
+    await userEvent.click(screen.getByRole('button', { name: 'Kündigung zurücknehmen' }))
+    await waitFor(() => expect(calls.some((c) => c.path === '/tenants/{tenant_id}/cancel/revoke')).toBe(true))
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Endgültig löschen…' })[0])
+    const purge = screen.getByRole('button', { name: 'Endgültig löschen' })
+    expect(purge).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/Subdomain eingeben/), 'spam')
+    await userEvent.click(purge)
+    await waitFor(() => {
+      const call = calls.find((c) => c.path === '/tenants/{tenant_id}/purge')
+      expect(call?.init.body).toEqual({ confirm_subdomain: 'spam' })
+      expect(call?.init.params?.path).toEqual({ tenant_id: 3 })
+    })
+  })
+})

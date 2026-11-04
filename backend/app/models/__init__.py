@@ -1,5 +1,6 @@
 from app.models.absence import Absence, AbsenceApprovalStatus, AbsenceType
 from app.models.absence_type_definition import AbsenceTypeDefinition
+from app.models.account_token import AccountToken, AccountTokenPurpose
 from app.models.app_settings import AppSettings
 from app.models.audit_log_entry import AuditAction, AuditLogEntry
 from app.models.balance_adjustment import AdjustmentKind, BalanceAdjustment
@@ -38,6 +39,8 @@ from app.models.team import Team
 from app.models.tenant import Tenant, TenantPlan, TenantStatus
 
 __all__ = [
+    "AccountToken",
+    "AccountTokenPurpose",
     "Absence",
     "AbsenceApprovalStatus",
     "AbsenceType",

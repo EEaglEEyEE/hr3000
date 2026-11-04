@@ -144,6 +144,11 @@
           document.getElementById('done-url').href = url
           document.getElementById('done-login').href = url
           document.getElementById('done-kiosk').textContent = 'kiosk.' + result.body.subdomain + '.' + BASE
+          if (result.body.verification_required) {
+            // Mit Mailversand: erst den Link in der E-Mail bestätigen, dann anmelden.
+            document.getElementById('done-verify').hidden = false
+            document.getElementById('done-login').hidden = true
+          }
           document.getElementById('signup-form-view').hidden = true
           document.getElementById('signup-done-view').hidden = false
           window.scrollTo(0, 0)

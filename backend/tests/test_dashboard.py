@@ -118,3 +118,13 @@ async def test_hr_sees_presence_absences_and_birthdays(client: AsyncClient, db_s
     body = (await client.get("/dashboard", headers=hr)).json()
     assert not any(e["kind"] == "BIRTHDAY" for e in body["events"])
     assert (await client.get("/dashboard", headers={"Authorization": f"Bearer {device}"})).status_code == 403
+
+
+async def test_employee_learns_whether_shift_planning_is_used(client: AsyncClient, db_session: AsyncSession) -> None:
+    # "Mein Bereich" zeigt den Reiter Schichtplanung nur, wenn die Firma Schichtplanung nutzt.
+    _, _, _, mine = await _setup(db_session, client)
+    settings_row = await get_or_create_settings(db_session, tenant_id=1)
+    for enabled in (False, True):
+        settings_row.shift_planning_enabled = enabled
+        await db_session.commit()
+        assert (await client.get("/dashboard", headers=mine)).json()["shift_planning_enabled"] is enabled

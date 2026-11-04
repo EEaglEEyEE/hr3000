@@ -9,6 +9,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import AuditAction
 from app.services.audit_service import log_action
+from app.services.email_service import resolve_smtp_config
 from app.services.settings_service import get_or_create_settings
 
 router = APIRouter(tags=["branding"])
@@ -20,6 +21,8 @@ class BrandingResponse(BaseModel):
     tenant_name: str | None
     # data:-URL des Firmenlogos oder None (dann nur das HR3000-Logo).
     logo_data_url: str | None
+    # "Passwort vergessen" anbieten? Nur mit Mailversand (SMTP der Firma oder der Plattform).
+    password_reset_available: bool = False
 
 
 def _sniff_image(data: bytes) -> str | None:
@@ -46,7 +49,11 @@ async def get_branding(request: Request, db: AsyncSession = Depends(get_db)) -> 
         if settings_row.logo_data and settings_row.logo_content_type
         else None
     )
-    return BrandingResponse(tenant_name=tenant.name, logo_data_url=logo)
+    return BrandingResponse(
+        tenant_name=tenant.name,
+        logo_data_url=logo,
+        password_reset_available=await resolve_smtp_config(db, tenant.id) is not None,
+    )
 
 
 @router.put("/settings/logo", response_model=BrandingResponse)

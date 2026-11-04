@@ -73,6 +73,21 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   Stempelungen tragen einen Idempotency-Key, damit die Offline-Warteschlange nichts doppelt
   bucht.
 
+- **Konten:**
+  - Passwort selbst ändern: `POST /auth/change-password`. Andere Sitzungen enden über den
+    Passwort-Fingerabdruck `pwv` im Token.
+  - Einmal-Links für „Passwort vergessen“ und „E-Mail bestätigen“: `services/account_tokens.py`.
+    Gespeichert wird nur der SHA-256, ein Link gilt einmal, und ein neuer Link macht ältere
+    ungültig.
+  - Diese Links gibt es nur mit Mailversand (`email_service.resolve_smtp_config`: Mailserver
+    der Firma, sonst der Plattform).
+- **Kündigung und Löschung:** `services/tenant_lifecycle.py`.
+  - Der Löschplan wird generisch aus `Base.metadata` gebildet: Tabellen mit `tenant_id` direkt,
+    alle übrigen über ihren Fremdschlüssel; abhängige Zeilen zuerst.
+  - Der Test `test_every_table_is_covered` schlägt an, wenn eine neue Tabelle keinen Firmenbezug
+    hat. `test_purge_removes_everything_of_one_company_and_nothing_else` prüft die Löschung mit
+    zwei befüllten Firmen.
+
 ## 4. Sicherheit
 
 - **Eingaben:** Pydantic-Validierung an jedem Endpoint. Fehler kommen einheitlich als

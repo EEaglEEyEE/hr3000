@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
+  KeyRound,
   LogOut,
   Users,
   AlertCircle,
@@ -38,6 +39,8 @@ import { useMonthlyCapsQuery, useOpenDaysCount } from '../../api/queries/timeshe
 import { BrandLogo } from './BrandLogo'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
+import { ChangePasswordButton } from '../account/ChangePasswordDialog'
+import { CancellationBanner } from '../account/AccountCancellation'
 
 // all = auch Supervisor, hr = Admin/HR, admin = nur Admin – das Backend erzwingt dasselbe.
 type Access = 'all' | 'hr' | 'admin'
@@ -309,6 +312,16 @@ export function AppLayout() {
             </NavLink>
           )}
           <ThemeToggle className={cn('mb-1', collapsed && 'md:flex-col')} />
+          <ChangePasswordButton
+            title={collapsed ? 'Passwort ändern' : undefined}
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900',
+              collapsed && 'md:justify-center',
+            )}
+          >
+            <KeyRound className="h-4 w-4 shrink-0" />
+            <span className={label}>Passwort ändern</span>
+          </ChangePasswordButton>
           <button
             type="button"
             onClick={logout}
@@ -336,6 +349,7 @@ export function AppLayout() {
         </div>
       </aside>
       <main className="min-w-0 flex-1 bg-slate-50 p-4 md:p-6">
+        <CancellationBanner />
         <Outlet />
       </main>
     </div>

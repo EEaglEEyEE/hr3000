@@ -1,7 +1,7 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, String, false, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -47,3 +47,8 @@ class Tenant(Base):
     # services/tenant_provisioning.TERMS_VERSION) – nur bei Selbstregistrierung gesetzt.
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Kündigung (services/tenant_lifecycle.py): Vertragsende = Monatsende, danach 30 Tage Export,
+    # am Löschtermin löscht app/tools/purge_tenants.py alle Daten der Firma.
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contract_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deletion_due_on: Mapped[date | None] = mapped_column(Date, nullable=True)

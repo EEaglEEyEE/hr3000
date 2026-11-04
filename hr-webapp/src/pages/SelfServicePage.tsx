@@ -1,7 +1,7 @@
 import { LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import { useAbsenceRequestsEnabled } from '../api/queries/dashboard'
+import { initialDashboardRange, useAbsenceRequestsEnabled, useDashboardQuery } from '../api/queries/dashboard'
 import { useEmployeeQuery } from '../api/queries/employees'
 import { AbsencesTab } from '../components/absences/AbsencesTab'
 import { Dashboard } from '../components/dashboard/Dashboard'
@@ -17,11 +17,14 @@ import { TimesheetTab } from '../components/timesheet/TimesheetTab'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { BrandLogo } from '../components/layout/BrandLogo'
 import { ShiftPlanTab } from '../components/shiftplanning/ShiftPlanTab'
+import { ChangePasswordButton } from '../components/account/ChangePasswordDialog'
 
 export function SelfServicePage() {
   const { employeeId, logout, hasHrAccess } = useAuth()
   const employeeQuery = useEmployeeQuery(employeeId ?? undefined)
   const absenceRequestsEnabled = useAbsenceRequestsEnabled()
+  // Reiter "Schichtplanung" nur, wenn die Firma Schichtplanung nutzt.
+  const shiftPlanningEnabled = useDashboardQuery(initialDashboardRange()).data?.shift_planning_enabled ?? false
 
   if (employeeId === null) return null
   if (employeeQuery.isLoading) return <p className="p-6 text-slate-500">Lädt…</p>
@@ -52,6 +55,7 @@ export function SelfServicePage() {
           )}
           <ThemeToggle />
           <NotificationBell />
+          <ChangePasswordButton className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800" />
           <button
             type="button"
             onClick={logout}
@@ -71,7 +75,7 @@ export function SelfServicePage() {
             <TabsTrigger value="calendar">Kalender</TabsTrigger>
             <TabsTrigger value="timesheet">Saldenübersicht</TabsTrigger>
             <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
-            <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>
+            {shiftPlanningEnabled && <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>}
             <TabsTrigger value="periods">Monatsabschluss</TabsTrigger>
             <TabsTrigger value="documents">Dokumente</TabsTrigger>
           </TabsList>

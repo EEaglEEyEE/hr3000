@@ -15,6 +15,7 @@ import { EmployeesPage } from './pages/EmployeesPage'
 import { HolidaysPage } from './pages/HolidaysPage'
 import { LocationsPage } from './pages/LocationsPage'
 import { LoginPage } from './pages/LoginPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { OpenDaysPage } from './pages/OpenDaysPage'
 import { PayrollExportPage } from './pages/PayrollExportPage'
 import { PendingAbsencesPage } from './pages/PendingAbsencesPage'
@@ -43,6 +44,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/passwort-zuruecksetzen" element={<ResetPasswordPage />} />
             <Route
               path="/mein-bereich"
               element={

@@ -71,3 +71,31 @@ export function useUpdateTenantAdminEmailMutation() {
       ),
   })
 }
+
+/** Super-Admin: im Namen der Firma kündigen / Kündigung zurücknehmen / sofort endgültig löschen. */
+export function useCancelTenantMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ tenantId, revoke }: { tenantId: number; revoke: boolean }) =>
+      unwrap(
+        revoke
+          ? await apiClient.POST('/tenants/{tenant_id}/cancel/revoke', { params: { path: { tenant_id: tenantId } } })
+          : await apiClient.POST('/tenants/{tenant_id}/cancel', { params: { path: { tenant_id: tenantId } } }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tenants'] }),
+  })
+}
+
+export function usePurgeTenantMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ tenantId, confirmSubdomain }: { tenantId: number; confirmSubdomain: string }) =>
+      unwrap(
+        await apiClient.POST('/tenants/{tenant_id}/purge', {
+          params: { path: { tenant_id: tenantId } },
+          body: { confirm_subdomain: confirmSubdomain },
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tenants'] }),
+  })
+}

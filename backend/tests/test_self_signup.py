@@ -42,7 +42,11 @@ async def _tenant_count(db_session) -> int:
 async def test_signup_creates_ready_to_use_company(client, db_session, platform):
     response = await client.post(SIGNUP, json=_payload(company_name="  Neue Firma GmbH  "), headers=WEBSITE)
     assert response.status_code == 201, response.text
-    assert response.json() == {"subdomain": "neue-firma", "login_url": "https://neue-firma.hr3000.de/"}
+    assert response.json() == {
+        "subdomain": "neue-firma",
+        "login_url": "https://neue-firma.hr3000.de/",
+        "verification_required": False,  # ohne Mailversand sofort nutzbar
+    }
 
     tenant = await db_session.scalar(select(Tenant).where(Tenant.subdomain == "neue-firma"))
     assert tenant.name == "Neue Firma GmbH"  # Leerzeichen entfernt

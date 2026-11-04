@@ -27,6 +27,7 @@ async def provision_tenant(
     contact_email: str | None = None,
     contact_name: str | None = None,
     self_signup: bool = False,
+    admin_email_verification_pending: bool = False,
 ) -> Tenant:
     """Mandant, Standard-Einstellungen, gesetzliche §4-ArbZG-Pausenstaffel und Erst-Admin in
     EINER Transaktion – ganz oder gar nicht, sonst bliebe ein Mandant ohne Admin und mit
@@ -50,7 +51,15 @@ async def provision_tenant(
 
     await get_or_create_settings(db, tenant.id, commit=False)
     await seed_default_break_rules(db, tenant.id, commit=False)
-    db.add(HrUser(tenant_id=tenant.id, email=admin_email, password_hash=hash_password(admin_password), role=HrRole.ADMIN))
+    db.add(
+        HrUser(
+            tenant_id=tenant.id,
+            email=admin_email,
+            password_hash=hash_password(admin_password),
+            role=HrRole.ADMIN,
+            email_verification_pending=admin_email_verification_pending,
+        )
+    )
     try:
         await db.commit()
     except IntegrityError as exc:

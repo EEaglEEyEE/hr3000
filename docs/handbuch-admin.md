@@ -8,7 +8,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 - Adresse der Firma: `https://<firma>.hr3000.de`, oder über `https://hr3000.de/login` mit dem
   Firmenkürzel. Admins, HR und Mitarbeiter nutzen dieselbe Anmeldeseite („E-Mail“, „Passwort“).
 - Neue Firma: selbst unter `https://hr3000.de/registrieren`. Wer registriert, wird Erst-Admin
-  mit dem selbst gewählten Passwort.
+  mit dem selbst gewählten Passwort. Ist der Mailversand der Plattform eingerichtet, kommt
+  vorher eine Bestätigungsmail; erst nach dem Klick auf den Link klappt die Anmeldung.
+  Unbestätigte Registrierungen werden nach 7 Tagen gelöscht.
 - Rollen (beim Mitarbeiter unter „HR-Berechtigung“, nur durch Admins):
 
 | Rolle | Darf |
@@ -19,11 +21,15 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 | Keine (nur Mein Bereich) | nur die eigene Ansicht, siehe Mitarbeiter-Handbuch |
 
 - **Passwörter:**
-  - Es gibt kein „Passwort vergessen“, und niemand kann sein Passwort selbst ändern.
-  - Neue Passwörter erzeugt HR im Mitarbeiter-Dialog („Neues Passwort erzeugen …“). Das
-    Einmalpasswort wird einmal angezeigt oder auf Wunsch per E-Mail verschickt (nur mit
-    eingerichtetem E-Mail-Versand).
-  - Das Passwort des Erst-Admins setzt der Plattform-Betreiber zurück.
+  - **Selbst ändern:** in der Seitenleiste „Passwort ändern“ (in „Mein Bereich“ oben). Danach
+    enden alle anderen Sitzungen dieses Kontos.
+  - **Vergessen:** auf der Anmeldeseite „Passwort vergessen?“. Es kommt ein Link per E-Mail,
+    1 Stunde gültig. Den Link gibt es nur, wenn ein Mailversand eingerichtet ist: eigener
+    Mailserver unter „Einstellungen“ → „Logo & E-Mail“ oder der Versand der Plattform.
+    Sonst steht dort „Bitte wende dich an deine Personalabteilung“.
+  - **Für andere:** HR erzeugt im Mitarbeiter-Dialog ein neues Einmalpasswort („Neues
+    Passwort erzeugen …“). Es wird einmal angezeigt oder auf Wunsch per E-Mail verschickt.
+  - **Erst-Admin:** Ohne Mailversand setzt der Plattform-Betreiber dessen Passwort zurück.
 
 ## 2. Erste Schritte nach der Registrierung
 
@@ -170,6 +176,7 @@ für bestehende Firmen nichts ändert.
 
 - **Allgemein:**
   - „Tarif“
+  - „Konto kündigen“, siehe Abschnitt 11
   - „Gleitzeitkonten führen ab“: Datum. Leer heißt ab der ersten Stempelung; eine Änderung
     rechnet alle Konten neu.
   - „Standard-Jahresurlaub“, „Standard-Bundesland“
@@ -218,3 +225,20 @@ für bestehende Firmen nichts ändert.
   Central): Bildschirm-Timeout 1 Minute, „Beim Laden wach bleiben“ aus.
 - Tablet neu koppeln: am Tablet „Gerät zurücksetzen“ (mit Kiosk-Admin-PIN), dann den QR-Code
   erneut scannen.
+
+## 11. Kündigen und Löschen
+
+- **Kündigen:** „Einstellungen“ → „Allgemein“ → „Konto kündigen“ → „HR3000 kündigen…“. Zur
+  Bestätigung die Adresse der Firma eintippen (z. B. `musterfirma`). Nur Admins können kündigen.
+- **Fristen:**
+  - Die Kündigung gilt zum Monatsende.
+  - Danach könnt ihr HR3000 noch **30 Tage** normal nutzen und alles exportieren:
+    „Auswertungen“, „Lohn-Export“, „DSGVO-Datenexport“ und „Monatsbericht“ je Mitarbeiter.
+  - Anschließend werden **alle Daten der Firma endgültig gelöscht**: Mitarbeiter, Zeiten,
+    Abwesenheiten, Dokumente, Einstellungen, Zugänge.
+  - Kopien in den Datensicherungen verschwinden spätestens nach 12 Monaten.
+- **Hinweise:** Während der Frist steht oben in der HR-Ansicht ein Hinweis mit dem
+  Löschtermin. Mit eingerichtetem Mailversand kommt zusätzlich eine Bestätigung per E-Mail.
+- **Zurücknehmen:** bis zur Löschung jederzeit mit „Kündigung zurücknehmen“ an derselben
+  Stelle.
+

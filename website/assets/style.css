@@ -275,3 +275,5 @@ h3 { font-size: 1.1rem; margin: 0 0 6px; }
 .doc-card:hover { transform: translateY(-2px); }
 .doc-card h3 { color: var(--indigo); }
 @media (prefers-color-scheme: dark) { .doc-card h3 { color: #a5b4fc; } }
+.verify-note { background: var(--bg-tint); border-radius: 12px; padding: 12px 14px; margin: 0 0 16px; font-size: 0.95rem; }
+.btn[hidden] { display: none; }

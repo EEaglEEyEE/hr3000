@@ -85,6 +85,14 @@ for _ in $(seq 1 40); do
 done
 [ "$healthy" = yes ] || fail "Backend nicht gesund – docker compose logs backend"
 mysql_root 'echo "Migrationsstand: $(mysql --defaults-extra-file="$cnf" -N -e "SELECT version_num FROM $MYSQL_DATABASE.alembic_version")"'
+# Täglicher Lösch-Lauf (gekündigte Firmen nach Ablauf der Exportfrist, unbestätigte
+# Selbstregistrierungen nach 7 Tagen) – siehe backend/app/tools/purge_tenants.py.
+PURGE_CRON=/etc/cron.d/hr3000-purge
+if [ -d /etc/cron.d ] && [ ! -f "$PURGE_CRON" ]; then
+  printf 'SHELL=/bin/bash\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n30 4 * * * root cd %s && docker compose exec -T backend python -m app.tools.purge_tenants >> /var/log/hr3000-purge.log 2>&1\n' "$PWD" > "$PURGE_CRON"
+  chmod 644 "$PURGE_CRON"
+  echo "Lösch-Cron eingerichtet: $PURGE_CRON (04:30)"
+fi
 ADMIN_HOST=$(grep -E '^SUPER_ADMIN_HOSTNAME=' .env | cut -d= -f2-)
 [ -n "$ADMIN_HOST" ] && curl -fsS --max-time 30 "https://$ADMIN_HOST/api/health" >/dev/null && echo "https://$ADMIN_HOST erreichbar"
 echo

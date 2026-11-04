@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { employeeLogin, hrLogin } from '../api/auth'
+import { ApiError } from '../api/client'
 import {
   clearTokens,
   decodeJwtPayload,
@@ -35,6 +36,8 @@ interface AuthContextValue {
    * hinterlegten Berechtigungen, nicht nach einer manuellen Auswahl. */
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /** Nach "Passwort ändern": neue Tokens derselben Person übernehmen (alte sind ungültig). */
+  updateTokens: (accessToken: string, refreshToken: string) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -126,8 +129,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsFullHr(deriveIsFullHr('hr'))
       setIsSuperAdmin(deriveIsSuperAdmin('hr'))
       return
-    } catch {
-      // Kein HR-Zugang mit diesen Daten – als Mitarbeiter-Login versuchen.
+    } catch (error) {
+      // Richtiges Passwort, aber E-Mail-Adresse noch nicht bestätigt (Selbstregistrierung):
+      // nicht als Mitarbeiter weiterprobieren, sondern den Hinweis anzeigen.
+      if (error instanceof ApiError && (error.code === 'EMAIL_NOT_VERIFIED' || error.status === 429)) throw error
+      // Sonst: kein HR-Zugang mit diesen Daten – als Mitarbeiter-Login versuchen.
     }
 
     const tokens = await employeeLogin(email, password)
@@ -139,6 +145,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAdmin(deriveIsAdmin('employee'))
     setIsFullHr(deriveIsFullHr('employee'))
     setIsSuperAdmin(false)
+  }
+
+  function updateTokens(accessToken: string, refreshToken: string) {
+    const current = getPrincipalType()
+    if (current) setTokens(accessToken, refreshToken, current)
   }
 
   function logout() {
@@ -164,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin,
         login,
         logout,
+        updateTokens,
       }}
     >
       {children}

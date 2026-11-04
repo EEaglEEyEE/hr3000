@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { ExternalLink, Plus } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
+  useCancelTenantMutation,
+  usePurgeTenantMutation,
   useResetTenantAdminPasswordMutation,
   useTenantsQuery,
   useUpdateTenantMutation,
@@ -18,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { PLAN_LABELS } from '../api/queries/plan'
 import { formatDate } from '../lib/format'
+import { PurgeTenantDialog } from '../components/tenants/PurgeTenantDialog'
 
 // Entspricht config.free_employee_limit im Backend (nur für den Hinweis in der Übersicht).
 const FREE_LIMIT = 5
@@ -69,6 +72,9 @@ export function TenantsPage() {
   const [resetError, setResetError] = useState<string | null>(null)
   const [resetTenant, setResetTenant] = useState<Tenant | undefined>(undefined)
   const [adminEmailTenant, setAdminEmailTenant] = useState<Tenant | undefined>(undefined)
+  const [purgeTenant, setPurgeTenant] = useState<Tenant | undefined>(undefined)
+  const cancelTenant = useCancelTenantMutation()
+  const purge = usePurgeTenantMutation()
 
   function openCreateDialog() {
     setEditingTenant(undefined)
@@ -168,6 +174,11 @@ export function TenantsPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {tenant.deletion_due_on && (
+                    <span className="mt-1 block text-xs text-amber-700">
+                      Gekündigt – Löschung am {formatDate(tenant.deletion_due_on)}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Select value={tenant.plan} onValueChange={(value) => changePlan(tenant, value as Tenant['plan'])}>
@@ -219,6 +230,25 @@ export function TenantsPage() {
                   <Button variant="outline" size="sm" onClick={() => setAdminEmailTenant(tenant)}>
                     Admin-E-Mail ändern
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancelTenant.isPending}
+                    onClick={() => cancelTenant.mutate({ tenantId: tenant.id, revoke: tenant.deletion_due_on != null })}
+                  >
+                    {tenant.deletion_due_on ? 'Kündigung zurücknehmen' : 'Kündigen'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-700"
+                    onClick={() => {
+                      purge.reset()
+                      setPurgeTenant(tenant)
+                    }}
+                  >
+                    Endgültig löschen…
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -232,6 +262,17 @@ export function TenantsPage() {
           </TableBody>
         </Table>
       )}
+
+      <PurgeTenantDialog
+        tenant={purgeTenant}
+        pending={purge.isPending}
+        error={purge.isError ? (purge.error instanceof ApiError ? purge.error.message : 'Löschen fehlgeschlagen.') : null}
+        onOpenChange={(open) => !open && setPurgeTenant(undefined)}
+        onConfirm={(confirmSubdomain) =>
+          purgeTenant &&
+          purge.mutate({ tenantId: purgeTenant.id, confirmSubdomain }, { onSuccess: () => setPurgeTenant(undefined) })
+        }
+      />
 
       <TenantFormDialog
         open={dialogOpen}

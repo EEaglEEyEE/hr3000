@@ -39,7 +39,10 @@ async def _set_plan(db_session: AsyncSession, plan: TenantPlan) -> None:
 async def test_new_tenants_start_free_with_five_employees(client: AsyncClient, db_session: AsyncSession) -> None:
     location, admin = await _setup(db_session, client, active=4)
     plan = (await client.get("/plan", headers=admin)).json()
-    assert plan == {"plan": "FREE", "active_employees": 4, "limit": settings.free_employee_limit, "remaining": 1}
+    assert plan == {
+        "plan": "FREE", "active_employees": 4, "limit": settings.free_employee_limit, "remaining": 1,
+        "cancelled_at": None, "contract_end": None, "deletion_due_on": None,
+    }
 
     assert (await _create(client, admin, location.id, "N1")).status_code == 201  # Nr. 5
     sixth = await _create(client, admin, location.id, "N2")

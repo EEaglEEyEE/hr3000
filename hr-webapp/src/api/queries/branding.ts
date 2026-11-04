@@ -4,6 +4,8 @@ import { authFetch, failure } from '../documents'
 export interface Branding {
   tenant_name: string | null
   logo_data_url: string | null
+  /** "Passwort vergessen" anbieten (nur mit eingerichtetem Mailversand). */
+  password_reset_available?: boolean
 }
 
 /** Öffentlich (auch auf der Login-Seite): Mandantenname und optionales Firmenlogo. */

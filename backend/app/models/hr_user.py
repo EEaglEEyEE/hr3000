@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -30,3 +30,6 @@ class HrUser(Base):
     email: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[HrRole] = mapped_column(Enum(HrRole))
+    # Nur bei Selbstregistrierung mit Mailversand: Anmeldung erst nach Klick auf den
+    # Bestätigungslink (api/public.verify_email). Alle übrigen Konten: False.
+    email_verification_pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

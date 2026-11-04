@@ -5,6 +5,21 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 04.11.2026
 
+- **Kontakt:** Öffentliche Adresse ist jetzt support@hr3000.de (Impressum, Datenschutz, Website,
+  README).
+- **Kündigen und Löschen:**
+  - Admins kündigen unter „Einstellungen“ → „Allgemein“ → „Konto kündigen“ zum Monatsende.
+  - Danach bleiben 30 Tage zum Exportieren, dann werden alle Daten der Firma automatisch
+    gelöscht.
+  - Bis dahin lässt sich die Kündigung zurücknehmen; ein Hinweis in der HR-Ansicht nennt den
+    Löschtermin.
+  - Der Super-Admin kann im Namen einer Firma kündigen oder sie sofort endgültig löschen.
+- **Passwort ändern** für alle: Seitenleiste, „Mein Bereich“ und Super-Admin.
+- **Passwort vergessen** per Link aus der E-Mail, sobald ein Mailversand eingerichtet ist.
+- **E-Mail-Bestätigung bei der Registrierung,** sobald der Mailversand der Plattform steht.
+  Unbestätigte Registrierungen verfallen nach 7 Tagen.
+- In „Mein Bereich“ erscheint der Reiter „Schichtplanung“ nur noch, wenn die Firma
+  Schichtplanung nutzt. Das Audit-Log beschreibt jetzt richtig, was es protokolliert.
 - **Open Source:** Der Quellcode ist öffentlich unter https://github.com/EEaglEEyEE/hr3000 (Lizenz AGPL-3.0), verlinkt auf der Website. Mit README und Anleitung zum Selbstbetrieb.
 - **Doku öffentlich** unter `hr3000.de/doku`: Handbücher und Änderungen, verlinkt in Kopf und Fuß der Website.
 - **Selbstregistrierung** unter `hr3000.de/registrieren`:

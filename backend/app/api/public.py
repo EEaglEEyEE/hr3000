@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.errors import AppError
-from app.models import Tenant, TenantPlan, TenantStatus
+from app.models import AccountTokenPurpose, HrUser, Tenant, TenantPlan, TenantStatus
 from app.schemas.tenant import (
     RESERVED_SUBDOMAINS,
     SUBDOMAIN_PATTERN,
@@ -30,10 +30,14 @@ from app.schemas.tenant import (
     SignupResponse,
     SubdomainAvailabilityResponse,
     TenantLookupResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
 )
 from app.services import rate_limiter
+from app.services.account_tokens import consume_token
 from app.services.email_service import send_email
 from app.services.platform_domain import base_domain
+from app.services.signup_mail import send_verification_mail, signup_verification_possible
 from app.services.tenant_provisioning import provision_tenant
 
 _LOOKUP_MISS_LIMIT = 20
@@ -100,6 +104,9 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
     rate_limiter.check_rate_limit(ip_key, settings.self_signup_per_ip_per_day, _DAY_SECONDS, code="TOO_MANY_SIGNUPS")
     rate_limiter.check_rate_limit(global_key, settings.self_signup_per_day, _DAY_SECONDS, code="TOO_MANY_SIGNUPS")
 
+    # Mit Mailversand: Anmeldung erst nach Klick auf den Bestätigungslink (unbestätigte
+    # Registrierungen löscht app/tools/purge_tenants.py nach 7 Tagen).
+    verification = await signup_verification_possible(db)
     tenant = await provision_tenant(
         db,
         subdomain=payload.subdomain,
@@ -110,12 +117,17 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
         contact_email=str(payload.email),
         contact_name=payload.contact_name,
         self_signup=True,
+        admin_email_verification_pending=verification,
     )
     # Nur erfolgreiche Registrierungen zählen (Tippfehler bei der Adresse sollen nicht sperren).
     rate_limiter.record_failure(ip_key)
     rate_limiter.record_failure(global_key)
 
     url = f"https://{tenant.subdomain}.{base}/"
+    if verification:
+        admin = await db.scalar(select(HrUser).where(HrUser.tenant_id == tenant.id))
+        await send_verification_mail(db, tenant, admin, payload.contact_name)
+        return SignupResponse(subdomain=tenant.subdomain, login_url=url, verification_required=True)
     await send_email(
         str(payload.email),
         "Willkommen bei HR3000",
@@ -130,3 +142,23 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
         ),
     )
     return SignupResponse(subdomain=tenant.subdomain, login_url=url)
+
+
+@router.post("/verify-email", response_model=VerifyEmailResponse)
+async def verify_email(
+    payload: VerifyEmailRequest, request: Request, db: AsyncSession = Depends(get_db)
+) -> VerifyEmailResponse:
+    """Bestätigungslink aus der Registrierungsmail einlösen (Seite hr3000.de/bestaetigen)."""
+    ip_key = f"verify-email:{_client_ip(request)}"
+    rate_limiter.check_rate_limit(ip_key, 30, _DAY_SECONDS // 24)
+    token = await consume_token(db, payload.token, AccountTokenPurpose.EMAIL_VERIFY)
+    user = await db.get(HrUser, token.hr_user_id) if token and token.hr_user_id else None
+    tenant = await db.get(Tenant, token.tenant_id) if token else None
+    base = base_domain()
+    if token is None or user is None or tenant is None or base is None:
+        await db.rollback()
+        rate_limiter.record_failure(ip_key)
+        raise AppError(400, "TOKEN_INVALID", "Der Link ist ungültig oder abgelaufen. Melde dich an, dann schicken wir einen neuen.")
+    user.email_verification_pending = False
+    await db.commit()
+    return VerifyEmailResponse(login_url=f"https://{tenant.subdomain}.{base}/")

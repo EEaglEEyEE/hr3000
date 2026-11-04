@@ -1,23 +1,30 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
 from app.errors import AppError
-from app.models import Device, Employee, HrRole, HrUser
+from app.api.deps import Actor, get_current_actor
+from app.models import AccountTokenPurpose, Device, Employee, HrRole, HrUser, Tenant
 from app.schemas.device import DevicePairRequest, DevicePairResponse
 from app.schemas.auth import (
+    ChangePasswordRequest,
     DeviceLoginRequest,
     DeviceLoginResponse,
     EmployeeLoginRequest,
     HrLoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RefreshRequest,
     TokenResponse,
 )
-from app.services.auth_service import create_token, decode_token, password_fingerprint, verify_password
+from app.services.account_tokens import PASSWORD_RESET_TTL, consume_token, issue_token
+from app.services.auth_service import create_token, decode_token, hash_password, password_fingerprint, verify_password
+from app.services.email_service import resolve_smtp_config, send_email
+from app.services.signup_mail import send_verification_mail
 from app.services import rate_limiter
 from app.services.pairing_service import pairing_code_hash
 from app.services.settings_service import device_kiosk_config
@@ -132,6 +139,15 @@ async def hr_login(
         raise _login_failed(request, payload.email)
 
     rate_limiter.reset(_login_keys(request, payload.email)[0])
+    if user.email_verification_pending:
+        # Erst nach richtigem Passwort verraten; den Bestätigungslink gibt es dabei erneut.
+        tenant = await db.get(Tenant, user.tenant_id)
+        await send_verification_mail(db, tenant, user)
+        raise AppError(
+            403,
+            "EMAIL_NOT_VERIFIED",
+            "Bitte bestätige zuerst deine E-Mail-Adresse – wir haben dir den Link (erneut) geschickt.",
+        )
     return _issue_token_pair(user)
 
 
@@ -240,3 +256,119 @@ def _issue_token_pair(user: HrUser) -> TokenResponse:
         extra_claims={"pwv": password_fingerprint(user.password_hash)},
     )
     return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+# --- Passwort selbst ändern / vergessen ----------------------------------------------------
+
+_PW_CHANGE_LIMIT = 5
+_PW_RESET_MAIL_LIMIT = 3  # Links je E-Mail-Adresse und Stunde
+_PW_RESET_IP_LIMIT = 10  # Anfragen je IP und Stunde
+_HOUR = 3600
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    actor: Actor = Depends(get_current_actor),
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    """Eigenes Passwort ändern (HR-Nutzer, Mitarbeiter mit Login, Super-Admin). Alle anderen
+    Sitzungen enden (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar."""
+    principal = actor.hr_user or actor.employee
+    if principal is None:
+        raise AppError(403, "ACCOUNT_REQUIRED", "Nur für angemeldete Personen.")
+    key = f"pwchange:{'hr' if actor.hr_user else 'employee'}:{principal.id}"
+    rate_limiter.check_rate_limit(key, _PW_CHANGE_LIMIT, _LOGIN_WINDOW)
+    if principal.password_hash is None or not verify_password(payload.current_password, principal.password_hash):
+        rate_limiter.record_failure(key)
+        raise AppError(400, "PASSWORD_WRONG", "Das aktuelle Passwort stimmt nicht.")
+    if verify_password(payload.new_password, principal.password_hash):
+        raise AppError(400, "PASSWORD_UNCHANGED", "Das neue Passwort muss sich vom bisherigen unterscheiden.")
+    principal.password_hash = hash_password(payload.new_password)
+    await db.commit()
+    rate_limiter.reset(key)
+    return _issue_token_pair(actor.hr_user) if actor.hr_user else _issue_employee_token_pair(actor.employee)
+
+
+_RESET_ANSWER = {"detail": "Wenn es ein Konto mit dieser E-Mail-Adresse gibt, haben wir dir einen Link geschickt."}
+
+
+@router.post("/password-reset/request", status_code=202)
+async def request_password_reset(
+    request: Request, payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+) -> dict[str, str]:
+    """"Passwort vergessen": Link (1 Stunde gültig) an die Login-E-Mail – nur mit Mailversand
+    (eigener SMTP der Firma oder Plattform). Antwortet immer gleich, damit sich nicht
+    herausfinden lässt, welche Adressen ein Konto haben."""
+    tenant_id = _require_tenant_id(request)
+    ip_key = f"pwreset-ip:{_client_ip(request)}"
+    rate_limiter.check_rate_limit(ip_key, _PW_RESET_IP_LIMIT, _HOUR)
+    rate_limiter.record_failure(ip_key)
+    email = payload.email.lower()
+    mail_key = f"pwreset:{tenant_id}:{email}"
+    try:
+        rate_limiter.check_rate_limit(mail_key, _PW_RESET_MAIL_LIMIT, _HOUR)
+    except AppError:
+        return _RESET_ANSWER
+    config = await resolve_smtp_config(db, tenant_id)
+    if config is None:
+        return _RESET_ANSWER
+
+    user = await db.scalar(select(HrUser).where(HrUser.tenant_id == tenant_id, func.lower(HrUser.email) == email))
+    employee = None
+    if user is None:
+        employee = await db.scalar(
+            select(Employee).where(
+                Employee.tenant_id == tenant_id,
+                func.lower(Employee.login_email) == email,
+                Employee.active.is_(True),
+                Employee.password_hash.is_not(None),
+            )
+        )
+    if user is None and employee is None:
+        return _RESET_ANSWER
+
+    raw = await issue_token(
+        db, tenant_id=tenant_id, purpose=AccountTokenPurpose.PASSWORD_RESET, ttl=PASSWORD_RESET_TTL,
+        hr_user=user, employee=employee,
+    )
+    await db.commit()
+    rate_limiter.record_failure(mail_key)
+    host = request.headers.get("host") or request.url.netloc
+    link = f"{request.url.scheme}://{host}/passwort-zuruecksetzen#token={raw}"
+    await send_email(
+        user.email if user else employee.login_email,
+        "HR3000 – Passwort zurücksetzen",
+        (
+            "Hallo,\n\nfür dein HR3000-Konto wurde ein neues Passwort angefordert.\n"
+            "Mit diesem Link legst du es fest (1 Stunde gültig, nur einmal verwendbar):\n\n"
+            f"{link}\n\n"
+            "Wenn du das nicht warst, ignoriere diese E-Mail – dein Passwort bleibt unverändert.\n"
+        ),
+        config=config,
+    )
+    return _RESET_ANSWER
+
+
+@router.post("/password-reset/confirm", status_code=204)
+async def confirm_password_reset(
+    request: Request, payload: PasswordResetConfirm, db: AsyncSession = Depends(get_db)
+) -> None:
+    """Neues Passwort mit dem Link aus der E-Mail setzen. Alle bisherigen Sitzungen enden."""
+    tenant_id = _require_tenant_id(request)
+    ip_key = f"pwreset-confirm:{_client_ip(request)}"
+    rate_limiter.check_rate_limit(ip_key, 20, _HOUR)
+    token = await consume_token(db, payload.token, AccountTokenPurpose.PASSWORD_RESET)
+    user = await db.get(HrUser, token.hr_user_id) if token and token.hr_user_id else None
+    employee = await db.get(Employee, token.employee_id) if token and token.employee_id else None
+    if token is None or token.tenant_id != tenant_id or (user is None and (employee is None or not employee.active)):
+        await db.rollback()
+        rate_limiter.record_failure(ip_key)
+        raise AppError(400, "TOKEN_INVALID", "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an.")
+    if user is not None:
+        user.password_hash = hash_password(payload.new_password)
+        # Wer den Link aus seinem Postfach nutzt, hat die Adresse damit auch bestätigt.
+        user.email_verification_pending = False
+    else:
+        employee.password_hash = hash_password(payload.new_password)
+    await db.commit()

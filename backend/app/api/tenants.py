@@ -14,12 +14,15 @@ from app.schemas.tenant import (
     TenantAdminPasswordResetResponse,
     TenantCreateRequest,
     TenantCreateResponse,
+    TenantPurgeRequest,
+    TenantPurgeResponse,
     TenantResponse,
     TenantUpdateRequest,
 )
 from app.services.audit_service import log_action
 from app.services.auth_service import generate_one_time_password, hash_password
 from app.services.credentials_mail import login_url, send_credentials_email
+from app.services import tenant_lifecycle
 from app.services.tenant_provisioning import provision_tenant
 
 router = APIRouter(tags=["tenants"])
@@ -148,6 +151,8 @@ async def reset_tenant_admin_password(
 
     new_password = generate_one_time_password()
     admin.password_hash = hash_password(new_password)
+    # Der Super-Admin bürgt für die Adresse – eine ausstehende E-Mail-Bestätigung entfällt.
+    admin.email_verification_pending = False
     await db.commit()
 
     emailed = False
@@ -204,3 +209,73 @@ async def update_tenant_admin_email(
         raise AppError(409, "EMAIL_TAKEN", "Diese E-Mail wird bereits verwendet.") from exc
 
     return TenantAdminEmailUpdateResponse(admin_email=admin.email)
+
+
+@router.post("/tenants/{tenant_id}/cancel", response_model=TenantResponse)
+async def cancel_tenant(
+    tenant_id: int,
+    actor: Actor = Depends(get_current_super_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TenantResponse:
+    """Im Namen der Firma kündigen (z.B. nach Kündigung per E-Mail): Vertragsende zum
+    Monatsende, Löschung 30 Tage danach (services/tenant_lifecycle.py)."""
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise AppError(404, "TENANT_NOT_FOUND", "Mandant nicht gefunden.")
+    if tenant_lifecycle.cancel(tenant):
+        log_action(
+            db,
+            tenant_id=tenant_id,
+            actor_hr_user_id=actor.audit_hr_user_id,
+            actor_employee_id=actor.audit_employee_id,
+            action=AuditAction.SETTINGS_CHANGED,
+            entity_type="tenant",
+            entity_id=tenant_id,
+            detail=f"Gekündigt (Plattform) zum {tenant.contract_end:%d.%m.%Y}, Löschung am {tenant.deletion_due_on:%d.%m.%Y}",
+        )
+        await db.commit()
+        await db.refresh(tenant)
+    return TenantResponse.model_validate(tenant)
+
+
+@router.post("/tenants/{tenant_id}/cancel/revoke", response_model=TenantResponse)
+async def revoke_tenant_cancellation(
+    tenant_id: int,
+    actor: Actor = Depends(get_current_super_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TenantResponse:
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise AppError(404, "TENANT_NOT_FOUND", "Mandant nicht gefunden.")
+    if tenant_lifecycle.revoke_cancellation(tenant):
+        log_action(
+            db,
+            tenant_id=tenant_id,
+            actor_hr_user_id=actor.audit_hr_user_id,
+            actor_employee_id=actor.audit_employee_id,
+            action=AuditAction.SETTINGS_CHANGED,
+            entity_type="tenant",
+            entity_id=tenant_id,
+            detail="Kündigung zurückgenommen (Plattform)",
+        )
+        await db.commit()
+        await db.refresh(tenant)
+    return TenantResponse.model_validate(tenant)
+
+
+@router.post("/tenants/{tenant_id}/purge", response_model=TenantPurgeResponse)
+async def purge_tenant_now(
+    tenant_id: int,
+    payload: TenantPurgeRequest,
+    actor: Actor = Depends(get_current_super_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> TenantPurgeResponse:
+    """Firma mit ALLEN Daten sofort endgültig löschen (z.B. Spam-Registrierung oder ausdrücklicher
+    Wunsch). Nur mit eingetippter Subdomain als Bestätigung; nicht rückgängig zu machen."""
+    tenant = await db.get(Tenant, tenant_id)
+    if tenant is None:
+        raise AppError(404, "TENANT_NOT_FOUND", "Mandant nicht gefunden.")
+    if payload.confirm_subdomain.lower() != tenant.subdomain:
+        raise AppError(400, "CONFIRMATION_MISMATCH", "Die eingegebene Subdomain stimmt nicht überein.")
+    counts = await tenant_lifecycle.purge_tenant(db, tenant_id)
+    return TenantPurgeResponse(subdomain=payload.confirm_subdomain.lower(), deleted_rows=sum(counts.values()))

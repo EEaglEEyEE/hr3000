@@ -29,7 +29,7 @@ export function AuditLogPage() {
         <h1 className="text-lg font-semibold text-slate-900">Audit-Log</h1>
         <p className="text-sm text-slate-500">
           Sicherheits- und compliancerelevante Änderungen: Stempel-Korrekturen/-Löschungen,
-          HR-Rollenänderungen und Urlaubsentscheidungen.
+          Wer wann was geändert hat – z. B. Stempelungen, Mitarbeiter, Rollen, Abwesenheiten, Dokumente, Monatsabschlüsse und Einstellungen.
         </p>
       </div>
 

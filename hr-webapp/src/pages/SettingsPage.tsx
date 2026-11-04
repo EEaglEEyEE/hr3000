@@ -21,6 +21,7 @@ import { AbsenceTypesCard, NewAbsenceTypeCard } from '../components/settings/Abs
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { PlanCard } from '../components/plan/PlanNotice'
+import { AccountCancellationCard } from '../components/account/AccountCancellation'
 
 const SECTIONS = [
   { value: 'allgemein', label: 'Allgemein' },
@@ -78,6 +79,7 @@ export function SettingsPage() {
             <div className={GRID}>
               <div className="flex flex-col gap-4">
                 <PlanCard />
+                <AccountCancellationCard />
                 <SettingsCard
                   title="Gleitzeitkonten führen ab"
                   description="Leer = je Mitarbeiter ab der ersten Stempelung (frühestens ab Eintritt). Mit einem Datum (z. B. Einführung von HR3000) beginnt das Konto für alle an diesem Tag – auch für Mitarbeiter, die noch nie gestempelt haben; fehlende Stunden zählen dann ins Minus. Altsalden lassen sich am Mitarbeiter als „Übertrag“ buchen. Eine Änderung rechnet alle Konten neu."

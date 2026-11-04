@@ -40,6 +40,7 @@ export function dashboard(overrides: Partial<DashboardResponse> = {}): Dashboard
     horizon_date: '2026-11-20',
     portal_punching_enabled: false,
     absence_requests_enabled: true,
+    shift_planning_enabled: false,
     ...overrides,
   }
 }

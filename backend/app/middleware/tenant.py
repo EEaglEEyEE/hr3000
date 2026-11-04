@@ -17,6 +17,7 @@ _NO_TENANT_PATHS = frozenset(
         "/public/tenant-lookup",
         "/public/subdomain-available",
         "/public/signup",
+        "/public/verify-email",
     }
 )
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class DeviceLoginRequest(BaseModel):
@@ -56,3 +56,36 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(max_length=4096)
+
+
+def _check_new_password(value: str) -> str:
+    """Selbst gewählte Passwörter: mind. 10 Zeichen, höchstens 72 Byte (bcrypt-Grenze)."""
+    if len(value) < 10:
+        raise ValueError("Das Passwort muss mindestens 10 Zeichen haben.")
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Das Passwort ist zu lang (höchstens 72 Byte).")
+    return value
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _new_password(cls, value: str) -> str:
+        return _check_new_password(value)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str = Field(max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _new_password(cls, value: str) -> str:
+        return _check_new_password(value)

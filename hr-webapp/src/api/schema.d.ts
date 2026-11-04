@@ -82,6 +82,65 @@ export interface paths {
         patch: operations["update_tenant_admin_email_tenants__tenant_id__admin_email_patch"];
         trace?: never;
     };
+    "/tenants/{tenant_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Tenant
+         * @description Im Namen der Firma kündigen (z.B. nach Kündigung per E-Mail): Vertragsende zum
+         *     Monatsende, Löschung 30 Tage danach (services/tenant_lifecycle.py).
+         */
+        post: operations["cancel_tenant_tenants__tenant_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tenants/{tenant_id}/cancel/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Tenant Cancellation */
+        post: operations["revoke_tenant_cancellation_tenants__tenant_id__cancel_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tenants/{tenant_id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Tenant Now
+         * @description Firma mit ALLEN Daten sofort endgültig löschen (z.B. Spam-Registrierung oder ausdrücklicher
+         *     Wunsch). Nur mit eingetippter Subdomain als Bestätigung; nicht rückgängig zu machen.
+         */
+        post: operations["purge_tenant_now_tenants__tenant_id__purge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/device/login": {
         parameters: {
             query?: never;
@@ -182,6 +241,69 @@ export interface paths {
         put?: never;
         /** Employee Refresh */
         post: operations["employee_refresh_auth_employee_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Eigenes Passwort ändern (HR-Nutzer, Mitarbeiter mit Login, Super-Admin). Alle anderen
+         *     Sitzungen enden (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar.
+         */
+        post: operations["change_password_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Password Reset
+         * @description "Passwort vergessen": Link (1 Stunde gültig) an die Login-E-Mail – nur mit Mailversand
+         *     (eigener SMTP der Firma oder Plattform). Antwortet immer gleich, damit sich nicht
+         *     herausfinden lässt, welche Adressen ein Konto haben.
+         */
+        post: operations["request_password_reset_auth_password_reset_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Password Reset
+         * @description Neues Passwort mit dem Link aus der E-Mail setzen. Alle bisherigen Sitzungen enden.
+         */
+        post: operations["confirm_password_reset_auth_password_reset_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1071,11 +1193,52 @@ export interface paths {
         };
         /**
          * Get Plan
-         * @description Tarif des Mandanten und Auslastung (aktive Mitarbeiter) – für Einstellungen und Hinweise.
+         * @description Tarif des Mandanten, Auslastung (aktive Mitarbeiter) und ggf. Kündigung.
          */
         get: operations["get_plan_plan_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Account
+         * @description HR3000 für die eigene Firma kündigen (nur Admins): Vertragsende zum Monatsende, danach
+         *     30 Tage Zugriff zum Exportieren, dann Löschung aller Daten.
+         */
+        post: operations["cancel_account_account_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/cancel/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Account Cancellation
+         * @description Kündigung zurücknehmen – bis zur Löschung jederzeit möglich.
+         */
+        post: operations["revoke_account_cancellation_account_cancel_revoke_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2345,6 +2508,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Email
+         * @description Bestätigungslink aus der Registrierungsmail einlösen (Seite hr3000.de/bestaetigen).
+         */
+        post: operations["verify_email_public_verify_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2734,6 +2917,11 @@ export interface components {
             tenant_name: string | null;
             /** Logo Data Url */
             logo_data_url: string | null;
+            /**
+             * Password Reset Available
+             * @default false
+             */
+            password_reset_available: boolean;
         };
         /**
          * BreakMode
@@ -2793,6 +2981,14 @@ export interface components {
          * @enum {string}
          */
         Bundesland: "BW" | "BY" | "BE" | "BB" | "HB" | "HH" | "HE" | "MV" | "NI" | "NW" | "RP" | "SL" | "SN" | "ST" | "SH" | "TH";
+        /**
+         * CancellationRequest
+         * @description Kündigen nur mit Bestätigung: die Adresse der Firma (Subdomain) muss eingetippt werden.
+         */
+        CancellationRequest: {
+            /** Confirm Subdomain */
+            confirm_subdomain: string;
+        };
         /** CardRegistrationRequest */
         CardRegistrationRequest: {
             /** Employee Id */
@@ -2801,6 +2997,13 @@ export interface components {
             pin: string;
             /** Nfc Uid */
             nfc_uid: string;
+        };
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
         };
         /** ChecklistItemResponse */
         ChecklistItemResponse: {
@@ -3175,6 +3378,11 @@ export interface components {
              * @default true
              */
             absence_requests_enabled: boolean;
+            /**
+             * Shift Planning Enabled
+             * @default false
+             */
+            shift_planning_enabled: boolean;
         };
         /** DashboardTeam */
         DashboardTeam: {
@@ -4146,6 +4354,21 @@ export interface components {
             /** Kiosk Url */
             kiosk_url?: string | null;
         };
+        /** PasswordResetConfirm */
+        PasswordResetConfirm: {
+            /** Token */
+            token: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /**
          * PayType
          * @enum {string}
@@ -4275,6 +4498,12 @@ export interface components {
             limit: number | null;
             /** Remaining */
             remaining: number | null;
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Contract End */
+            contract_end?: string | null;
+            /** Deletion Due On */
+            deletion_due_on?: string | null;
         };
         /** PunchCorrectionRequest */
         PunchCorrectionRequest: {
@@ -4774,6 +5003,11 @@ export interface components {
             subdomain: string;
             /** Login Url */
             login_url: string;
+            /**
+             * Verification Required
+             * @default false
+             */
+            verification_required: boolean;
         };
         /** SmtpTestRequest */
         SmtpTestRequest: {
@@ -5134,6 +5368,12 @@ export interface components {
             self_signup: boolean;
             /** Created At */
             created_at?: string | null;
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Contract End */
+            contract_end?: string | null;
+            /** Deletion Due On */
+            deletion_due_on?: string | null;
             /** Admin Email */
             admin_email: string;
             /** Initial Admin Password */
@@ -5157,6 +5397,21 @@ export interface components {
          * @enum {string}
          */
         TenantPlan: "FREE" | "PAID" | "UNLIMITED";
+        /**
+         * TenantPurgeRequest
+         * @description Sofort löschen nur mit eingetippter Subdomain als Bestätigung.
+         */
+        TenantPurgeRequest: {
+            /** Confirm Subdomain */
+            confirm_subdomain: string;
+        };
+        /** TenantPurgeResponse */
+        TenantPurgeResponse: {
+            /** Subdomain */
+            subdomain: string;
+            /** Deleted Rows */
+            deleted_rows: number;
+        };
         /** TenantResponse */
         TenantResponse: {
             /** Id */
@@ -5181,6 +5436,12 @@ export interface components {
             self_signup: boolean;
             /** Created At */
             created_at?: string | null;
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Contract End */
+            contract_end?: string | null;
+            /** Deletion Due On */
+            deletion_due_on?: string | null;
         };
         /**
          * TenantStatus
@@ -5284,6 +5545,16 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VerifyEmailRequest */
+        VerifyEmailRequest: {
+            /** Token */
+            token: string;
+        };
+        /** VerifyEmailResponse */
+        VerifyEmailResponse: {
+            /** Login Url */
+            login_url: string;
         };
         /** WeeklyBalanceWeek */
         WeeklyBalanceWeek: {
@@ -5610,6 +5881,103 @@ export interface operations {
             };
         };
     };
+    cancel_tenant_tenants__tenant_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_tenant_cancellation_tenants__tenant_id__cancel_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_tenant_now_tenants__tenant_id__purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantPurgeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantPurgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     device_login_auth_device_login_post: {
         parameters: {
             query?: never;
@@ -5796,6 +6164,105 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TokenResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_password_reset_auth_password_reset_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_password_reset_auth_password_reset_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -7569,6 +8036,59 @@ export interface operations {
         };
     };
     get_plan_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanResponse"];
+                };
+            };
+        };
+    };
+    cancel_account_account_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancellationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_account_cancellation_account_cancel_revoke_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -10392,6 +10912,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_email_public_verify_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyEmailResponse"];
                 };
             };
             /** @description Validation Error */

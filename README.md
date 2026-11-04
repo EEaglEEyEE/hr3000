@@ -62,7 +62,7 @@ cd kiosk-app && npm test
 
 ## Sicherheit
 
-Sicherheitslücken bitte nicht öffentlich melden, sondern per E-Mail an johannes@lassners.de.
+Sicherheitslücken bitte nicht öffentlich melden, sondern per E-Mail an support@hr3000.de.
 
 ## Lizenz
 

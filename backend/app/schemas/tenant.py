@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -67,6 +67,16 @@ class SignupRequest(BaseModel):
 class SignupResponse(BaseModel):
     subdomain: str
     login_url: str
+    # True = erst den Link in der E-Mail bestätigen, dann anmelden (nur mit Mailversand).
+    verification_required: bool = False
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+
+
+class VerifyEmailResponse(BaseModel):
+    login_url: str
 
 
 class TenantCreateRequest(BaseModel):
@@ -112,6 +122,10 @@ class TenantResponse(BaseModel):
     # Selbst registriert (Website) statt vom Super-Admin angelegt, mit Anlagedatum.
     self_signup: bool = False
     created_at: datetime | None = None
+    # Kündigung: None = nicht gekündigt (services/tenant_lifecycle.py)
+    cancelled_at: datetime | None = None
+    contract_end: date | None = None
+    deletion_due_on: date | None = None
 
 
 class TenantCreateResponse(TenantResponse):
@@ -141,3 +155,16 @@ class TenantAdminEmailUpdateRequest(BaseModel):
 
 class TenantAdminEmailUpdateResponse(BaseModel):
     admin_email: str
+
+
+class TenantPurgeRequest(BaseModel):
+    """Sofort löschen nur mit eingetippter Subdomain als Bestätigung."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    confirm_subdomain: str = Field(min_length=1, max_length=63)
+
+
+class TenantPurgeResponse(BaseModel):
+    subdomain: str
+    deleted_rows: int
