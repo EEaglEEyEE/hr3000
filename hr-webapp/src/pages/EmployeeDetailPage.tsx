@@ -1,0 +1,180 @@
+import { useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
+import { ArrowLeft, Download, Pencil, ShieldOff } from 'lucide-react'
+import { downloadEmployeeDataExport } from '../api/employeeDataExport'
+import { useAnonymizeEmployeeMutation, useEmployeeQuery } from '../api/queries/employees'
+import { useLocationsQuery } from '../api/queries/locations'
+import { useAuth } from '../auth/AuthContext'
+import { ApiError } from '../api/client'
+import { AbsencesTab } from '../components/absences/AbsencesTab'
+import { EmployeeFormDialog } from '../components/employees/EmployeeFormDialog'
+import { PunchHistoryTab } from '../components/punches/PunchHistoryTab'
+import { Button } from '../components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { CalendarTab } from '../components/timesheet/CalendarTab'
+import { TimesheetTab } from '../components/timesheet/TimesheetTab'
+import { ShiftPlanTab } from '../components/shiftplanning/ShiftPlanTab'
+import { WorkTimeModelTab } from '../components/workTimeModel/WorkTimeModelTab'
+import { EmploymentTab } from '../components/employment/EmploymentTab'
+import { DocumentsTab } from '../components/documents/DocumentsTab'
+import { EmployeeChecklistsTab } from '../components/checklists/EmployeeChecklistsTab'
+import { MonthReportButton } from '../components/periods/MonthReportButton'
+import { useFeaturesQuery } from '../api/queries/workTimeModel'
+
+export function EmployeeDetailPage() {
+  const { employeeId } = useParams<{ employeeId: string }>()
+  const id = Number(employeeId)
+  const { isAdmin, isFullHr } = useAuth()
+  const featuresQuery = useFeaturesQuery()
+  const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
+  const employeeQuery = useEmployeeQuery(id)
+  const locationsQuery = useLocationsQuery()
+  const anonymizeEmployee = useAnonymizeEmployeeMutation()
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
+
+  if (employeeQuery.isLoading) return <p className="text-slate-500">Lädt…</p>
+  if (employeeQuery.isError || !employeeQuery.data) {
+    return <p className="text-red-600">Mitarbeiter nicht gefunden.</p>
+  }
+
+  const employee = employeeQuery.data
+
+  async function handleDataExport() {
+    setExportError(null)
+    try {
+      await downloadEmployeeDataExport(id)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Datenexport fehlgeschlagen.')
+    }
+  }
+
+  async function handleAnonymize() {
+    setAnonymizeError(null)
+    if (
+      !window.confirm(
+        `Mitarbeiter "${employee.first_name} ${employee.last_name}" wirklich anonymisieren? Name, Login und Zugangsdaten werden unwiderruflich überschrieben. Stempelungen und Abwesenheiten bleiben erhalten.`,
+      )
+    ) {
+      return
+    }
+    try {
+      await anonymizeEmployee.mutateAsync(id)
+    } catch (err) {
+      setAnonymizeError(
+        err instanceof ApiError && err.code === 'EMPLOYEE_NOT_TERMINATED'
+          ? 'Nur ausgeschiedene Mitarbeiter (mit Austrittsdatum) können anonymisiert werden.'
+          : 'Anonymisierung fehlgeschlagen.',
+      )
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link to="/mitarbeiter" className="mb-2 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
+            <ArrowLeft className="h-4 w-4" />
+            Zurück zur Mitarbeiterliste
+          </Link>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {employee.first_name} {employee.last_name}
+            <span className="ml-2 text-sm font-normal text-slate-500">{employee.employee_number}</span>
+          </h1>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <MonthReportButton employeeId={id} />
+          {isFullHr && (
+            <Button variant="outline" size="sm" onClick={handleDataExport}>
+              <Download className="h-4 w-4" />
+              DSGVO-Datenexport
+            </Button>
+          )}
+          {isAdmin && !employee.anonymized_at && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={anonymizeEmployee.isPending}
+              onClick={handleAnonymize}
+            >
+              <ShieldOff className="h-4 w-4" />
+              Anonymisieren
+            </Button>
+          )}
+          {isFullHr && (
+            <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(true)}>
+              <Pencil className="h-4 w-4" />
+              Bearbeiten
+            </Button>
+          )}
+        </div>
+      </div>
+      {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+      {anonymizeError && <p className="text-sm text-red-600">{anonymizeError}</p>}
+      {employee.anonymized_at && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Dieser Mitarbeiter wurde am {new Date(employee.anonymized_at).toLocaleDateString('de-DE')}{' '}
+          DSGVO-anonymisiert. Stammdaten sind unwiderruflich überschrieben, Stempelungen und
+          Abwesenheiten bleiben für die Aufbewahrungsfrist erhalten.
+        </p>
+      )}
+
+      <EmployeeFormDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        employee={employee}
+        locations={locationsQuery.data ?? []}
+      />
+
+      <Tabs defaultValue="punches">
+        <TabsList>
+          <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
+          <TabsTrigger value="calendar">Kalender</TabsTrigger>
+          <TabsTrigger value="timesheet">Saldenübersicht</TabsTrigger>
+          <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
+          <TabsTrigger value="worktime">Arbeitszeitmodell</TabsTrigger>
+          {isFullHr && <TabsTrigger value="employment">Vertrag{isAdmin ? ' & Vergütung' : ''}</TabsTrigger>}
+          {isFullHr && <TabsTrigger value="documents">Dokumente</TabsTrigger>}
+          {isFullHr && <TabsTrigger value="checklists">Checklisten</TabsTrigger>}
+          {shiftPlanningEnabled && <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="punches">
+          <PunchHistoryTab employeeId={id} readOnly={!isFullHr} />
+        </TabsContent>
+        <TabsContent value="calendar">
+          <CalendarTab employeeId={id} />
+        </TabsContent>
+        <TabsContent value="timesheet">
+          <TimesheetTab employeeId={id} canAdjust={isFullHr} />
+        </TabsContent>
+        <TabsContent value="absences">
+          <AbsencesTab employeeId={id} entitlementReadOnly={!isFullHr} />
+        </TabsContent>
+        <TabsContent value="worktime">
+          <WorkTimeModelTab employeeId={id} canEdit={isFullHr} />
+        </TabsContent>
+        {isFullHr && (
+          <TabsContent value="employment">
+            <EmploymentTab employeeId={id} isAdmin={isAdmin} />
+          </TabsContent>
+        )}
+        {isFullHr && (
+          <TabsContent value="checklists">
+            <EmployeeChecklistsTab employeeId={id} />
+          </TabsContent>
+        )}
+        {isFullHr && (
+          <TabsContent value="documents">
+            <DocumentsTab employeeId={id} isAdmin={isAdmin} />
+          </TabsContent>
+        )}
+        {shiftPlanningEnabled && (
+          <TabsContent value="shiftplan">
+            <ShiftPlanTab employeeId={id} />
+          </TabsContent>
+        )}
+      </Tabs>
+    </div>
+  )
+}

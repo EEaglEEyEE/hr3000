@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Navigations-Sidebar (siehe AppLayout.tsx) ist nie Teil eines Ausdrucks –
+ * einzelne Seiten steuern ihren eigenen Druckinhalt über die print:-Utility
+ * (siehe z.B. ShiftPlanCalendarPage.tsx). */
+@media print {
+  aside {
+    display: none;
+  }
+
+  main {
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  /* Hintergrundfarben (z.B. Status-Badges, Kalender-Chips) werden von
+   * Browsern beim Drucken standardmäßig zur Tinten-Ersparnis entfernt –
+   * hier aber fachlich bedeutungstragend (Statusfarben), daher erhalten. */
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  table tr {
+    break-inside: avoid;
+  }
+}

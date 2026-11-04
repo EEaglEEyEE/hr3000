@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kostenlos registrieren – HR3000</title>
+  <meta name="description" content="HR3000 kostenlos starten: Firma registrieren, eigene Adresse erhalten, sofort loslegen. Bis 5 Mitarbeiter kostenlos.">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/signup.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="32" height="32">HR3000</a>
+      <nav class="site-nav"><a class="btn btn-ghost btn-small" href="/login/">Anmelden</a></nav>
+    </div>
+  </header>
+
+  <main class="login-page">
+    <div class="card login-card signup-card">
+      <section id="signup-form-view">
+        <h1>Kostenlos starten</h1>
+        <p class="muted">In zwei Minuten eingerichtet. Bis 5 aktive Mitarbeiter dauerhaft kostenlos – ohne Kreditkarte.</p>
+
+        <form id="signup-form" novalidate>
+          <div class="field">
+            <label for="company">Name deiner Firma</label>
+            <input class="text-input" id="company" name="company_name" type="text" autocomplete="organization" required minlength="2" maxlength="255" placeholder="z. B. Bäckerei Muster GmbH">
+          </div>
+
+          <div class="field">
+            <label for="subdomain">Deine Adresse</label>
+            <div class="address-input">
+              <input id="subdomain" name="subdomain" type="text" inputmode="url" autocapitalize="none" spellcheck="false" required maxlength="63" placeholder="baeckerei-muster" aria-describedby="subdomain-status">
+              <span id="domain-suffix">.hr3000.de</span>
+            </div>
+            <small id="subdomain-status" class="field-hint" aria-live="polite">Kleinbuchstaben, Ziffern und Bindestriche. Lässt sich später nicht ändern.</small>
+          </div>
+
+          <div class="field">
+            <label for="contact">Dein Name</label>
+            <input class="text-input" id="contact" name="contact_name" type="text" autocomplete="name" required minlength="2" maxlength="255">
+          </div>
+
+          <div class="field">
+            <label for="email">E-Mail (dein Login)</label>
+            <input class="text-input" id="email" name="email" type="email" autocomplete="email" required maxlength="255">
+          </div>
+
+          <div class="field">
+            <label for="password">Passwort</label>
+            <input class="text-input" id="password" name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="72">
+            <small class="field-hint">Mindestens 10 Zeichen.</small>
+          </div>
+
+          <div class="field">
+            <label for="password2">Passwort wiederholen</label>
+            <input class="text-input" id="password2" type="password" autocomplete="new-password" required minlength="10" maxlength="72">
+          </div>
+
+          <!-- Für Menschen unsichtbar (Honeypot gegen Bots) – bitte leer lassen. -->
+          <div class="hp" aria-hidden="true">
+            <label for="website">Website</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+
+          <label class="remember"><input id="is-business" type="checkbox" required> Ich registriere HR3000 für ein Unternehmen (nicht als Verbraucher).</label>
+          <label class="remember"><input id="accept-terms" type="checkbox" required> <span>Ich akzeptiere die <a href="/agb/" target="_blank">Nutzungsbedingungen</a> und den <a href="/avv/" target="_blank">Vertrag zur Auftragsverarbeitung</a> und habe die <a href="/datenschutz/" target="_blank">Datenschutzerklärung</a> gelesen.</span></label>
+
+          <button class="btn btn-primary" type="submit" id="submit">Firma einrichten</button>
+          <p id="message" class="message" role="status" aria-live="polite"></p>
+        </form>
+        <noscript><p class="message error">Bitte JavaScript aktivieren, um dich zu registrieren.</p></noscript>
+        <p class="help">Schon registriert? <a href="/login/">Zur Anmeldung</a></p>
+      </section>
+
+      <section id="signup-done-view" hidden>
+        <h1>Fertig! 🎉</h1>
+        <p>Deine Firma ist eingerichtet und unter dieser Adresse erreichbar:</p>
+        <p class="done-address"><a id="done-url" href="#"></a></p>
+        <a class="btn btn-primary" id="done-login" href="#">Jetzt anmelden</a>
+        <h2 class="done-heading">So geht es weiter</h2>
+        <ol class="done-steps">
+          <li>Mit deiner E-Mail und deinem Passwort anmelden.</li>
+          <li>Unter „Standorte“ deinen Standort anlegen, unter „Mitarbeiter“ dein Team.</li>
+          <li>Unter „Tablets“ ein Tablet anlegen und per QR-Code koppeln – die Tablet-Adresse ist <strong id="done-kiosk"></strong>.</li>
+        </ol>
+        <p class="help">Bitte merk dir die Adresse – oder melde dich künftig über <a href="/login/">hr3000.de/login</a> an.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>© 2026 HR3000 · Lassners IT Factory</span>
+      <nav aria-label="Rechtliches">
+        <a href="/doku/">Doku</a>
+        <a href="https://github.com/EEaglEEyEE/hr3000" rel="noopener">Quellcode</a>
+        <a href="/">Startseite</a>
+        <a href="/agb/">Nutzungsbedingungen</a>
+        <a href="/avv/">AV-Vertrag</a>
+        <a href="/impressum/">Impressum</a>
+        <a href="/datenschutz/">Datenschutz</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

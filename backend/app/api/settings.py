@@ -1,0 +1,286 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import Actor, get_current_admin_principal, get_current_hr_principal
+from app.db import get_db
+from app.models import AuditAction
+from app.errors import AppError
+from app.schemas.settings import (
+    FeaturesResponse,
+    SettingsResponse,
+    SettingsUpdateRequest,
+    SmtpTestRequest,
+    SmtpTestResponse,
+)
+from app.services.email_service import describe_smtp_error, ensure_public_smtp_host, resolve_smtp_config, send_email
+from app.services.auth_service import hash_password
+from app.services.secret_box import encrypt_secret
+from app.services.audit_service import log_action
+from app.services.settings_service import get_or_create_settings
+from app.services.timesheet_service import DAY_FLAGS, invalidate_tenant_balances
+
+router = APIRouter(tags=["settings"])
+
+
+@router.get("/settings", response_model=SettingsResponse)
+async def get_settings(
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> SettingsResponse:
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    return SettingsResponse.model_validate(settings_row)
+
+
+@router.get("/features", response_model=FeaturesResponse)
+async def get_features(
+    actor: Actor = Depends(get_current_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> FeaturesResponse:
+    """Nur die Feature-Schalter, die die Oberfläche für alle HR-Rollen braucht
+    (z.B. zum Ein-/Ausblenden von Schichtplanungs-Tabs) – die übrigen
+    Einstellungen bleiben Admin-only (GET /settings)."""
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    return FeaturesResponse(
+        shift_planning_enabled=settings_row.shift_planning_enabled,
+        absence_requests_enabled=settings_row.absence_requests_enabled,
+        default_auto_break=settings_row.default_auto_break,
+        default_show_birthday=settings_row.default_show_birthday,
+        default_day_minutes=[int(v) for v in settings_row.default_day_minutes.split(",")] if settings_row.default_day_minutes else None,
+    )
+
+
+@router.patch("/settings", response_model=SettingsResponse)
+async def update_settings(
+    payload: SettingsUpdateRequest,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> SettingsResponse:
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    changed: list[str] = []
+    if payload.require_pin_for_punch is not None:
+        settings_row.require_pin_for_punch = payload.require_pin_for_punch
+        changed.append(f"require_pin_for_punch={payload.require_pin_for_punch}")
+    if payload.vacation_approval_required is not None:
+        settings_row.vacation_approval_required = payload.vacation_approval_required
+        changed.append(f"vacation_approval_required={payload.vacation_approval_required}")
+    if payload.default_bundesland is not None:
+        settings_row.default_bundesland = payload.default_bundesland.value
+        changed.append(f"default_bundesland={payload.default_bundesland.value}")
+    if payload.default_annual_vacation_days is not None:
+        settings_row.default_annual_vacation_days = payload.default_annual_vacation_days
+        changed.append(f"default_annual_vacation_days={payload.default_annual_vacation_days}")
+    if payload.show_birthdays_in_calendar is not None:
+        settings_row.show_birthdays_in_calendar = payload.show_birthdays_in_calendar
+        changed.append(f"show_birthdays_in_calendar={payload.show_birthdays_in_calendar}")
+    if payload.smtp_host is not None:
+        if payload.smtp_host:
+            try:
+                await ensure_public_smtp_host(payload.smtp_host)
+            except ValueError as exc:
+                raise AppError(400, "SMTP_HOST_NOT_ALLOWED", str(exc)) from exc
+        settings_row.smtp_host = payload.smtp_host or None
+        changed.append(f"smtp_host={payload.smtp_host or '(Plattform-SMTP)'}")
+    if payload.smtp_port is not None:
+        settings_row.smtp_port = payload.smtp_port
+        changed.append(f"smtp_port={payload.smtp_port}")
+    if payload.smtp_user is not None:
+        settings_row.smtp_user = payload.smtp_user or None
+        changed.append("smtp_user geändert")
+    if payload.smtp_password is not None:
+        settings_row.smtp_password_encrypted = (
+            encrypt_secret(payload.smtp_password) if payload.smtp_password else None
+        )
+        changed.append("smtp_password geändert")
+    if payload.smtp_from is not None:
+        settings_row.smtp_from = payload.smtp_from or None
+        changed.append(f"smtp_from={payload.smtp_from}")
+    if payload.smtp_security is not None:
+        settings_row.smtp_security = payload.smtp_security
+        changed.append(f"smtp_security={payload.smtp_security}")
+    if payload.email_notifications_enabled is not None:
+        settings_row.email_notifications_enabled = payload.email_notifications_enabled
+        changed.append(f"email_notifications_enabled={payload.email_notifications_enabled}")
+    if payload.shift_planning_enabled is not None and payload.shift_planning_enabled != settings_row.shift_planning_enabled:
+        settings_row.shift_planning_enabled = payload.shift_planning_enabled
+        changed.append(f"shift_planning_enabled={payload.shift_planning_enabled}")
+        await invalidate_tenant_balances(db, actor.tenant_id, None)
+    if payload.default_auto_break is not None:
+        settings_row.default_auto_break = payload.default_auto_break
+        changed.append(f"default_auto_break={payload.default_auto_break}")
+    if payload.default_show_birthday is not None:
+        settings_row.default_show_birthday = payload.default_show_birthday
+        changed.append(f"default_show_birthday={payload.default_show_birthday}")
+    if payload.default_day_minutes is not None:
+        minutes = payload.default_day_minutes
+        if minutes and (len(minutes) != 7 or any(m < 0 or m > 600 for m in minutes) or not any(minutes)):
+            raise AppError(400, "INVALID_DEFAULT_MODEL", "Standard-Arbeitszeitmodell: 7 Werte zwischen 0 und 600 Minuten, mindestens ein Arbeitstag.")
+        settings_row.default_day_minutes = ",".join(str(m) for m in minutes) if minutes else None
+        changed.append(f"default_day_minutes={settings_row.default_day_minutes}")
+    if payload.prorate_part_time_vacation is not None:
+        settings_row.prorate_part_time_vacation = payload.prorate_part_time_vacation
+        changed.append(f"prorate_part_time_vacation={payload.prorate_part_time_vacation}")
+    if payload.vacation_carry_over_auto is not None:
+        settings_row.vacation_carry_over_auto = payload.vacation_carry_over_auto
+        changed.append(f"vacation_carry_over_auto={payload.vacation_carry_over_auto}")
+    if payload.clear_vacation_carry_over_max_days:
+        settings_row.vacation_carry_over_max_days = None
+        changed.append("vacation_carry_over_max_days=unbegrenzt")
+    elif payload.vacation_carry_over_max_days is not None:
+        settings_row.vacation_carry_over_max_days = payload.vacation_carry_over_max_days
+        changed.append(f"vacation_carry_over_max_days={payload.vacation_carry_over_max_days}")
+    if payload.vacation_carry_over_expiry is not None:
+        expiry = payload.vacation_carry_over_expiry or None
+        if expiry is not None:
+            month, day = (int(v) for v in expiry.split("-"))
+            if day > (29 if month == 2 else 30 if month in (4, 6, 9, 11) else 31):
+                raise AppError(400, "INVALID_EXPIRY", "Ungültiges Verfallsdatum.")
+        settings_row.vacation_carry_over_expiry = expiry
+        changed.append(f"vacation_carry_over_expiry={expiry or 'kein Verfall'}")
+    if payload.disabled_day_flags is not None:
+        allowed = set(DAY_FLAGS)
+        if any(flag not in allowed for flag in payload.disabled_day_flags):
+            raise AppError(400, "INVALID_FLAG", "Unbekannter Sonderfall.")
+        settings_row.disabled_day_flags = ",".join(sorted(set(payload.disabled_day_flags))) or None
+        changed.append(f"disabled_day_flags={settings_row.disabled_day_flags}")
+        await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
+    punctuality_changed = False
+    # Erst prüfen, dann übernehmen: Kernzeit muss im (neuen bzw. bestehenden) Gleitzeit-Rahmen liegen.
+    new_core = (
+        (payload.core_time_start, payload.core_time_end)
+        if payload.core_time_start is not None
+        else (None, None) if payload.clear_core_time else (settings_row.core_time_start, settings_row.core_time_end)
+    )
+    new_frame = (
+        (payload.flex_frame_start, payload.flex_frame_end)
+        if payload.flex_frame_start is not None
+        else (None, None) if payload.clear_flex_frame else (settings_row.flex_frame_start, settings_row.flex_frame_end)
+    )
+    if None not in new_core and None not in new_frame and not (new_frame[0] <= new_core[0] and new_core[1] <= new_frame[1]):
+        raise AppError(400, "CORE_TIME_OUTSIDE_FRAME", "Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen.")
+    if payload.core_time_start is not None:
+        settings_row.core_time_start, settings_row.core_time_end = payload.core_time_start, payload.core_time_end
+        changed.append(f"core_time={payload.core_time_start:%H:%M}-{payload.core_time_end:%H:%M}")
+        punctuality_changed = True
+    elif payload.clear_core_time:
+        settings_row.core_time_start = settings_row.core_time_end = None
+        changed.append("core_time=keine")
+        punctuality_changed = True
+    if payload.flex_frame_start is not None:
+        settings_row.flex_frame_start, settings_row.flex_frame_end = payload.flex_frame_start, payload.flex_frame_end
+        changed.append(f"flex_frame={payload.flex_frame_start:%H:%M}-{payload.flex_frame_end:%H:%M}")
+        punctuality_changed = True
+    elif payload.clear_flex_frame:
+        settings_row.flex_frame_start = settings_row.flex_frame_end = None
+        changed.append("flex_frame=keiner")
+        punctuality_changed = True
+    if payload.punctuality_check is not None and payload.punctuality_check != settings_row.punctuality_check:
+        settings_row.punctuality_check = payload.punctuality_check
+        changed.append(f"punctuality_check={payload.punctuality_check}")
+        punctuality_changed = True
+    if payload.late_tolerance_minutes is not None and payload.late_tolerance_minutes != settings_row.late_tolerance_minutes:
+        settings_row.late_tolerance_minutes = payload.late_tolerance_minutes
+        changed.append(f"late_tolerance_minutes={payload.late_tolerance_minutes}")
+        punctuality_changed = True
+    if payload.kiosk_screen_on_from is not None:
+        settings_row.kiosk_screen_on_from = payload.kiosk_screen_on_from
+        settings_row.kiosk_screen_on_until = payload.kiosk_screen_on_until
+        changed.append(f"kiosk_screen_hours={payload.kiosk_screen_on_from:%H:%M}-{payload.kiosk_screen_on_until:%H:%M}")
+    elif payload.clear_kiosk_screen_hours:
+        settings_row.kiosk_screen_on_from = settings_row.kiosk_screen_on_until = None
+        changed.append("kiosk_screen_hours=immer an")
+    if punctuality_changed:
+        await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
+    if payload.max_shift_span_hours is not None and payload.max_shift_span_hours != settings_row.max_shift_span_hours:
+        settings_row.max_shift_span_hours = payload.max_shift_span_hours
+        changed.append(f"max_shift_span_hours={payload.max_shift_span_hours}")
+        await invalidate_tenant_balances(db, actor.tenant_id, None)
+    if payload.kiosk_rfid_enabled is not None:
+        settings_row.kiosk_rfid_enabled = payload.kiosk_rfid_enabled
+        changed.append(f"kiosk_rfid_enabled={payload.kiosk_rfid_enabled}")
+        if not payload.kiosk_rfid_enabled and settings_row.rfid_required and not payload.rfid_required:
+            # Ohne Chip-Funktion kann keine RFID-Pflicht gelten.
+            settings_row.rfid_required = False
+            changed.append("rfid_required=False")
+    if payload.rfid_required is not None:
+        if payload.rfid_required and not settings_row.kiosk_rfid_enabled:
+            raise AppError(400, "RFID_DISABLED", "Die RFID-Pflicht setzt die aktivierte Chip-Funktion am Tablet voraus.")
+        settings_row.rfid_required = payload.rfid_required
+        changed.append(f"rfid_required={payload.rfid_required}")
+    for field in (
+        "kiosk_show_balance",
+        "kiosk_show_vacation",
+        "kiosk_break_buttons",
+        "kiosk_errand_buttons",
+        "portal_punching_enabled",
+        "absence_requests_enabled",
+        "kiosk_sort",
+        "kiosk_theme",
+        "kiosk_card_self_registration",
+        "kiosk_pin_self_setup",
+    ):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(settings_row, field, value)
+            changed.append(f"{field}={value}")
+    if payload.kiosk_greeting is not None:
+        settings_row.kiosk_greeting = payload.kiosk_greeting.strip() or None
+        changed.append("kiosk_greeting geändert")
+    if payload.kiosk_admin_pin is not None:
+        settings_row.kiosk_admin_pin_hash = hash_password(payload.kiosk_admin_pin) if payload.kiosk_admin_pin else None
+        changed.append("kiosk_admin_pin geändert" if payload.kiosk_admin_pin else "kiosk_admin_pin entfernt")
+    if payload.balance_start_date is not None or payload.clear_balance_start_date:
+        new_start = None if payload.clear_balance_start_date else payload.balance_start_date
+        if new_start != settings_row.balance_start_date:
+            settings_row.balance_start_date = new_start
+            changed.append(f"balance_start_date={new_start}")
+            await invalidate_tenant_balances(db, actor.tenant_id, None)
+
+    if changed:
+        log_action(
+            db,
+            tenant_id=actor.tenant_id,
+            actor_hr_user_id=actor.audit_hr_user_id,
+            actor_employee_id=actor.audit_employee_id,
+            action=AuditAction.SETTINGS_CHANGED,
+            entity_type="app_settings",
+            entity_id=settings_row.id,
+            detail=", ".join(changed),
+        )
+
+    await db.commit()
+    await db.refresh(settings_row)
+    return SettingsResponse.model_validate(settings_row)
+
+
+@router.post("/settings/smtp-test", response_model=SmtpTestResponse)
+async def send_smtp_test(
+    payload: SmtpTestRequest,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> SmtpTestResponse:
+    """Schickt eine Testmail über den für den Mandanten gültigen SMTP (eigener
+    Server, sonst Plattform-SMTP) und meldet Fehler im Klartext zurück."""
+    recipient = payload.to or (
+        actor.hr_user.email if actor.hr_user is not None else actor.employee.login_email if actor.employee else None
+    )
+    if not recipient:
+        raise AppError(400, "NO_RECIPIENT", "Bitte eine Empfängeradresse angeben.")
+
+    config = await resolve_smtp_config(db, actor.tenant_id)
+    if config is None:
+        raise AppError(400, "EMAIL_NOT_CONFIGURED", "Es ist kein SMTP-Server konfiguriert.")
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    try:
+        if settings_row.smtp_host:
+            # Nur mandantenkonfigurierte Server prüfen; der Plattform-SMTP gehört dem Betreiber.
+            await ensure_public_smtp_host(config.host)
+        await send_email(
+            recipient,
+            "HR3000 – Testmail",
+            "Diese Testmail bestätigt, dass der SMTP-Versand von HR3000 funktioniert.",
+            config=config,
+            raise_errors=True,
+        )
+    except Exception as exc:
+        raise AppError(400, "SMTP_TEST_FAILED", describe_smtp_error(exc)) from exc
+    return SmtpTestResponse(sent_to=recipient)

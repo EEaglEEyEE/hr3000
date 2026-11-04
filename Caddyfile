@@ -1,0 +1,117 @@
+{
+	# Zertifikate für Mandanten unter der Plattform-Domain erst beim ersten Aufruf holen
+	# (On-Demand-TLS) – aber nur nach Freigabe durch das Backend (bestehender, nicht
+	# gesperrter Mandant), siehe backend/app/api/tls.py.
+	on_demand_tls {
+		ask http://backend:8000/internal/tls-allowed
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'self' blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+}
+
+# Backend unter /api – interne Schnittstellen (nur Caddy -> backend:8000) nie von außen.
+(backend_api) {
+	handle_path /api/* {
+		@internal path /internal/*
+		respond @internal 404
+		reverse_proxy backend:8000
+	}
+}
+
+(hr_app) {
+	import security_headers
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+	encode zstd gzip
+	import backend_api
+	handle {
+		reverse_proxy hr-webapp:80
+	}
+}
+
+(kiosk_app) {
+	import security_headers
+	# Kamera nur für den QR-Scan bei der Geräte-Einrichtung (Tablet-Token).
+	header Permissions-Policy "camera=(self), microphone=(), geolocation=(self)"
+	encode zstd gzip
+	import backend_api
+	handle {
+		reverse_proxy kiosk-app:80
+	}
+}
+
+# Das Backend ordnet jeden Request über den Host einem Mandanten zu (siehe
+# backend/app/middleware/tenant.py); reverse_proxy reicht den Host-Header unverändert durch.
+#
+# 1) Fest eingetragene Hosts aus der .env (HR_HOSTS / KIOSK_HOSTS, altes Schema: erster
+#    Hostname-Teil = Mandant, z.B. lassner.kiosk.hr.lassners.de), je Host ein DNS-A-Record,
+#    Zertifikat vorab per HTTP-01. Der Super-Admin-Host (SUPER_ADMIN_HOSTNAME) steht hier
+#    bewusst NICHT: Liegt er unter der Plattform-Domain (admin.hr3000.de), bedient ihn der
+#    Sammel-Block unten (ein fester Host unter der Plattform-Domain bekäme von Caddy kein
+#    eigenes Zertifikat); liegt er woanders, muss er zusätzlich in HR_HOSTS stehen.
+{$HR_HOSTS} {
+	import hr_app
+}
+
+{$KIOSK_HOSTS} {
+	import kiosk_app
+}
+
+# 2) Plattform-Domain (TENANT_BASE_DOMAIN, z.B. hr3000.de): jeder Mandant automatisch unter
+#    <subdomain>.<domain> (HR-Webapp) und kiosk.<subdomain>.<domain> (Kiosk), dazu der
+#    Super-Admin-Host. DNS: ein Wildcard-A-Record "*" (deckt auch kiosk.<subdomain> ab).
+#    Alle übrigen Namen landen in diesem Sammel-Block – ein Zertifikat gibt es aber nur,
+#    wenn das Backend den Namen freigibt (on_demand_tls oben); erfundene oder fremde Namen
+#    scheitern schon am TLS-Handshake. Welche Namen gültig sind, steht allein in
+#    backend/app/services/platform_domain.py.
+https:// {
+	tls {
+		on_demand
+	}
+	@kiosk expression `{host}.startsWith("kiosk.")`
+	handle @kiosk {
+		import kiosk_app
+	}
+	handle {
+		import hr_app
+	}
+}
+
+# 3) Website auf der Plattform-Domain selbst (hr3000.de): statische Seiten aus website/
+#    (Volume /srv/website), vom Backend nur die öffentliche Firmensuche für /login
+#    (api/public.py) – alle anderen /api-Pfade gibt es hier nicht. www leitet um.
+#    DNS: A-Record "@" für die Domain selbst; "www" deckt der Wildcard-Record "*" ab.
+{$TENANT_BASE_DOMAIN:hr3000.localhost} {
+	import security_headers
+	header Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	encode zstd gzip
+	handle /api/public/* {
+		uri strip_prefix /api
+		reverse_proxy backend:8000
+	}
+	handle /api/* {
+		respond 404
+	}
+	handle {
+		root * /srv/website
+		try_files {path} {path}/index.html
+		file_server
+	}
+	handle_errors 404 {
+		root * /srv/website
+		rewrite * /404.html
+		file_server
+	}
+}
+
+www.{$TENANT_BASE_DOMAIN:hr3000.localhost} {
+	redir https://{$TENANT_BASE_DOMAIN:hr3000.localhost}{uri} permanent
+}

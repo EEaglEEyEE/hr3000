@@ -1,0 +1,82 @@
+# Container-Protokolle größenbegrenzt (je Dienst max. 3 x 10 MB, älteste werden überschrieben) –
+# siehe website/datenschutz: Protokolle mit IP-Adressen werden nicht unbegrenzt aufbewahrt.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  backend:
+    logging: *default-logging
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      # Personalakte: verschlüsselte Dateien liegen im Volume (Backup: scripts/backup_db.sh).
+      DOCUMENTS_DIR: /app/data/documents
+    volumes:
+      - documents_data:/app/data/documents
+    # Migrationen laufen bei jedem Start automatisch (alembic upgrade head),
+    # damit ein frisches Deployment nicht erst manuell die DB einrichten muss.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    logging: *default-logging
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    # Auf 4 GB RAM-Server begrenzen, damit MySQL nicht den ganzen Speicher beansprucht.
+    command: --innodb-buffer-pool-size=512M --max-connections=100
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  hr-webapp:
+    logging: *default-logging
+    build: ./hr-webapp
+    restart: unless-stopped
+
+  kiosk-app:
+    logging: *default-logging
+    build: ./kiosk-app
+    restart: unless-stopped
+
+  # Reverse Proxy + automatisches HTTPS (Let's Encrypt) für beide Domains,
+  # siehe Caddyfile. Einziger Dienst mit veröffentlichten Ports.
+  caddy:
+    logging: *default-logging
+    image: caddy:2-alpine
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      # Website hr3000.de (statisch, siehe website/ und Caddyfile)
+      - ./website:/srv/website:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - hr-webapp
+      - kiosk-app
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  documents_data:
+  caddy_data:
+  caddy_config:

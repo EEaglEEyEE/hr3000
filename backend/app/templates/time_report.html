@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4 portrait; margin: 1.5cm; @bottom-right { content: "Seite " counter(page) " / " counter(pages); font-size: 8pt; color: #64748b; } }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #1e293b; }
+  h1 { font-size: 15pt; margin: 0 0 2px; }
+  p.sub { color: #64748b; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #e2e8f0; padding: 3px 6px; text-align: left; }
+  th { background: #f8fafc; font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.off td { background: #f1f5f9; color: #64748b; }
+  tr.open td { background: #fef2f2; color: #991b1b; }
+  table.summary { width: auto; margin-top: 14px; }
+  table.summary td { border: none; padding: 2px 14px 2px 0; }
+  .foot { margin-top: 18px; color: #64748b; font-size: 8pt; }
+  table.brand { margin-bottom: 10px; }
+  table.brand td { border: none; padding: 0; vertical-align: middle; }
+  table.brand td.right { text-align: right; }
+  img.icon { height: 22px; vertical-align: middle; }
+  .wordmark { font-weight: 700; font-size: 12pt; color: #312e81; vertical-align: middle; letter-spacing: 0.5px; }
+  img.tenant-logo { max-height: 36px; max-width: 180px; }
+</style>
+</head>
+<body>
+  <table class="brand"><tr>
+    <td><img src="{{ brand_icon }}" alt="" class="icon"> <span class="wordmark">HR3000</span></td>
+    <td class="right">{% if tenant_logo %}<img src="{{ tenant_logo }}" alt="" class="tenant-logo">{% endif %}</td>
+  </tr></table>
+  <h1>Monatsnachweis Arbeitszeit – {{ title }}</h1>
+  <p class="sub">{{ r.tenant_name }} · {{ r.employee.last_name }}, {{ r.employee.first_name }} · Personalnummer {{ r.employee.employee_number }}</p>
+  <table>
+    <thead>
+      <tr><th>Datum</th><th></th><th>Zeiten</th><th class="num">Pause</th><th class="num">Ist</th><th class="num">Soll</th><th class="num">Saldo</th><th>Bemerkung</th></tr>
+    </thead>
+    <tbody>
+      {% for d in r.days %}
+      <tr class="{{ 'open' if d.open else ('off' if d.non_working else '') }}">
+        <td>{{ d.day.strftime('%d.%m.') }}</td>
+        <td>{{ d.weekday }}</td>
+        <td>{{ d.blocks }}</td>
+        <td class="num">{{ fmt(d.break_minutes) if d.break_minutes else '' }}</td>
+        <td class="num">{{ fmt(d.actual_minutes) if d.actual_minutes is not none else '' }}</td>
+        <td class="num">{{ fmt(d.target_minutes) if d.target_minutes is not none else '' }}</td>
+        <td class="num">{{ fmt(d.delta_minutes, true) if d.delta_minutes is not none else '' }}</td>
+        <td>{{ d.label }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <table class="summary">
+    <tr><td>Soll gesamt</td><td class="num"><b>{{ fmt(r.target_minutes) }} h</b></td></tr>
+    <tr><td>Ist gesamt</td><td class="num"><b>{{ fmt(r.actual_minutes) }} h</b></td></tr>
+    <tr><td>Pausen gesamt</td><td class="num"><b>{{ fmt(r.break_minutes) }} h</b></td></tr>
+    <tr><td>Saldo im Monat</td><td class="num"><b>{{ fmt(r.delta_minutes, true) }} h</b></td></tr>
+    <tr><td>Gleitzeitkonto zum Monatsende</td><td class="num"><b>{{ fmt(r.balance_end_minutes, true) }} h</b></td></tr>
+    <tr><td>Urlaubstage / Krankheitstage / Sonderurlaub</td><td class="num"><b>{{ r.vacation_days|days }} / {{ r.sick_days|days }} / {{ r.special_leave_days|days }}</b></td></tr>
+    {% if r.child_sick_days %}<tr><td>Kind krank</td><td class="num"><b>{{ r.child_sick_days|days }}</b></td></tr>{% endif %}
+    {% if r.unpaid_days or r.time_off_days %}<tr><td>Unbezahlt / Freizeitausgleich</td><td class="num"><b>{{ r.unpaid_days|days }} / {{ r.time_off_days|days }}</b></td></tr>{% endif %}
+  </table>
+  {% if r.surcharges %}
+  <table class="summary">
+    <tr><td colspan="2"><b>Zuschlagszeiten</b></td></tr>
+    {% for name, percent, minutes in r.surcharges %}
+    <tr><td>{{ name }} ({{ '%g' % percent }} %)</td><td class="num"><b>{{ fmt(minutes) }} h</b></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% if r.open_days %}<p class="foot" style="color:#991b1b">Achtung: {{ r.open_days|length }} Tag(e) sind noch offen/unvollständig (rot markiert).</p>{% endif %}
+  {% if for_confirmation %}
+  <p class="foot">Erstellt am {{ generated }}. Bitte prüfen und im System bestätigen oder widersprechen.</p>
+  {% else %}
+  <p class="foot">Druckansicht, Stand {{ generated }} – vorläufig, solange der Monat nicht abgeschlossen ist.</p>
+  <table class="summary" style="margin-top:28px">
+    <tr><td style="padding-right:80px">______________________________</td><td>______________________________</td></tr>
+    <tr><td>Datum, Unterschrift Mitarbeiter/in</td><td>Datum, Unterschrift Arbeitgeber</td></tr>
+  </table>
+  {% endif %}
+</body>
+</html>

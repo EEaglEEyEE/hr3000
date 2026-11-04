@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anmelden – HR3000</title>
+  <meta name="description" content="Zur Anmeldung deiner Firma bei HR3000.">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/login.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="32" height="32">HR3000</a>
+    </div>
+  </header>
+
+  <main class="login-page">
+    <div class="card login-card">
+      <h1>Anmelden</h1>
+      <p class="muted">Gib die Adresse deiner Firma ein – wir bringen dich zur richtigen Anmeldeseite.</p>
+
+      <form id="login-form" novalidate>
+        <div class="field">
+          <label for="firma">Adresse deiner Firma</label>
+          <div class="address-input">
+            <input id="firma" name="firma" type="text" inputmode="url" autocomplete="organization" autocapitalize="none" spellcheck="false" placeholder="deinefirma" required aria-describedby="message">
+            <span id="domain-suffix">.hr3000.de</span>
+          </div>
+        </div>
+        <label class="remember"><input id="remember" type="checkbox"> Auf diesem Gerät merken</label>
+        <button class="btn btn-primary" type="submit" id="submit">Weiter</button>
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+      </form>
+
+      <noscript><p class="message error">Bitte JavaScript aktivieren – oder die Adresse deiner Firma direkt aufrufen, z.&nbsp;B. deinefirma.hr3000.de.</p></noscript>
+
+      <p class="help">Die Adresse steht in der E-Mail mit deinen Zugangsdaten. Wenn du sie nicht findest, frag deine Personalabteilung.</p>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span>© 2026 HR3000 · Lassners IT Factory</span>
+      <nav aria-label="Rechtliches">
+        <a href="/doku/">Doku</a>
+        <a href="https://github.com/EEaglEEyEE/hr3000" rel="noopener">Quellcode</a>
+        <a href="/">Startseite</a>
+        <a href="/impressum/">Impressum</a>
+        <a href="/datenschutz/">Datenschutz</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

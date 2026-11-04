@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+node_modules/
+dist/
+build/
+.DS_Store
+
+# Symlinked caches / lokale Artefakte
+node_modules
+*.sqlite3
+openapi.json
+build

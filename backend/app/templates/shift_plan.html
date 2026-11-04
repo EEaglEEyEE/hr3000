@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4 landscape; margin: 1.5cm; }
+  body { font-family: Arial, sans-serif; font-size: 9pt; color: #1e293b; }
+  h1 { font-size: 14pt; margin: 0 0 2px; }
+  p.range { color: #64748b; margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #e2e8f0; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; }
+  .cell-off { background: #eef2ff; color: #4338ca; }
+  .cell-shift { background: #f8fafc; }
+  .cell-empty { color: #94a3b8; }
+</style>
+</head>
+<body>
+  <h1>Schichtplan</h1>
+  <p class="range">{{ range_label }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Mitarbeiter</th>
+        {% for d in dates %}<th>{{ d }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.name }}</td>
+        {% for cell in row.cells %}
+          {% if not cell.plan_exists and cell.is_workday %}
+            <td class="cell-empty">–</td>
+          {% elif not cell.is_workday %}
+            <td class="cell-off">Frei</td>
+          {% else %}
+            <td class="cell-shift">{{ cell.template_name or 'Schicht' }}{% if cell.start_time and cell.end_time %}<br>{{ cell.start_time }}&ndash;{{ cell.end_time }}{% endif %}</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

@@ -1,0 +1,220 @@
+# HR3000 – Handbuch für Admins, HR und Teamleader
+
+Stand: 04.11.2026. Für Mitarbeiter: [Handbuch für Mitarbeiter](handbuch-mitarbeiter.md).
+Bezeichnungen in „…“ entsprechen genau der Oberfläche.
+
+## 1. Anmelden und Rollen
+
+- Adresse der Firma: `https://<firma>.hr3000.de`, oder über `https://hr3000.de/login` mit dem
+  Firmenkürzel. Admins, HR und Mitarbeiter nutzen dieselbe Anmeldeseite („E-Mail“, „Passwort“).
+- Neue Firma: selbst unter `https://hr3000.de/registrieren`. Wer registriert, wird Erst-Admin
+  mit dem selbst gewählten Passwort.
+- Rollen (beim Mitarbeiter unter „HR-Berechtigung“, nur durch Admins):
+
+| Rolle | Darf |
+|---|---|
+| Admin | alles, auch „Einstellungen“, Vergütung („Vertrag & Vergütung“), „Lohn-Export“, „Zuschläge“, „Pausenregeln“, „Teams“, „Audit-Log“ |
+| HR | Mitarbeiter, Abwesenheiten, „Zu klären“, „Monatsabschluss“, „Auswertungen“, „Feiertage“, „Standorte“, „Tablets“, „Checklisten“ – ohne Vergütung und Einstellungen |
+| Teamleader | „Tagesgeschäft“ für die eigenen Teams |
+| Keine (nur Mein Bereich) | nur die eigene Ansicht, siehe Mitarbeiter-Handbuch |
+
+- **Passwörter:**
+  - Es gibt kein „Passwort vergessen“, und niemand kann sein Passwort selbst ändern.
+  - Neue Passwörter erzeugt HR im Mitarbeiter-Dialog („Neues Passwort erzeugen …“). Das
+    Einmalpasswort wird einmal angezeigt oder auf Wunsch per E-Mail verschickt (nur mit
+    eingerichtetem E-Mail-Versand).
+  - Das Passwort des Erst-Admins setzt der Plattform-Betreiber zurück.
+
+## 2. Erste Schritte nach der Registrierung
+
+1. **„Standorte“** → „Neuer Standort“: Name, Zeitzone, Bundesland. Das Bundesland bestimmt
+   die Feiertage.
+2. **„Einstellungen“ → „Allgemein“:** „Gleitzeitkonten führen ab“, „Standard-Jahresurlaub“,
+   „Standard-Bundesland“.
+3. **„Mitarbeiter“** → „Neuer Mitarbeiter“ oder „CSV-Import“.
+4. **„Tablets“** → „Neues Tablet“, dann „QR-Code“ und mit dem Tablet scannen. Die
+   Tablet-Adresse ist `https://kiosk.<firma>.hr3000.de`.
+5. Optional: „Pausenregeln“ prüfen (die gesetzliche Staffel nach § 4 ArbZG ist vorbelegt),
+   „Teams“ anlegen, „Abwesenheitsarten“ anpassen.
+
+## 3. Menü
+
+- **Tagesgeschäft:** „Startseite“, „Mitarbeiter“, „Anwesenheit“, „Kalender“, „Zu klären“,
+  „Urlaubsanträge“ (nur sichtbar, wenn Anträge erlaubt sind oder welche offen sind)
+- **Abrechnung:** „Monatsabschluss“, „Auswertungen“, „Lohn-Export“, „Zuschläge“
+- **Arbeitszeit:** „Pausenregeln“, „Schichtvorlagen“ und „Schichtplan-Kalender“ (nur mit
+  eingeschalteter Schichtplanung), „Feiertage“
+- **Organisation:** „Teams“, „Standorte“, „Tablets“, „Checklisten“, „Audit-Log“
+- **Unten:** „Mein Bereich“ (wenn der Login zu einem Mitarbeiter gehört), „Einstellungen“,
+  „Darstellung“ (Hell/Dunkel/Wie System), „Abmelden“
+- **Glocke:** Benachrichtigungen, mit „Alle als gelesen markieren“
+
+## 4. Tagesgeschäft
+
+- **Startseite:**
+  - eigene Werte: „Gleitzeitsaldo“, „Resturlaub“, „Heute“, „Diese Woche“
+  - Kacheln „Zu klären“ und „Urlaubsanträge“
+  - „Heute“: Anwesend / In Pause / Dienstgang / Abwesend
+  - „Nächste Termine“
+- **Anwesenheit:** Wochenraster („Vorherige Woche“ / „Nächste Woche“ / „Heute“).
+- **Kalender:** Monatsansicht mit Abwesenheiten, Feiertagen und Geburtstagen, Filter „Teams:“.
+- **Zu klären:**
+  - Hier landen Tage mit fehlenden oder widersprüchlichen Stempelungen und die Sonderfälle,
+    die in den Einstellungen eingeschaltet sind:
+    - außerplanmäßig gestempelt
+    - gestempelt trotz Abwesenheit
+    - Arbeit an einem Feiertag
+    - außerhalb des Beschäftigungszeitraums
+    - mehr als 10 Std.
+    - zu spät / zu früh
+    - außerhalb der Gleitzeit-Rahmenzeit
+  - Ein „Kommen“ ohne „Gehen“ gilt nach der „Maximalen Schichtlänge“ als vergessenes „Gehen“.
+  - Je Tag: „Korrigieren →“ oder „Erledigt“ (mit „Rückgängig“). „Erledigt“ ändert an der
+    Berechnung nichts.
+  - Darunter: „Korrekturanträge“ der Mitarbeiter („Übernehmen“ / „Ablehnen“) und
+    „Monatsgrenzen“.
+- **Urlaubsanträge:** „Genehmigen“ / „Ablehnen“.
+
+## 5. Mitarbeiter
+
+- **Liste:** Suche, Standortfilter, „Auch inaktive anzeigen“, Hinweis auf die Tarifgrenze.
+- **Dialog „Neuer Mitarbeiter“ / „Mitarbeiter bearbeiten“:**
+  - Stammdaten, Standort („Standortwechsel gilt ab“), Team, Aktiv
+  - Eintritts-, Austritts- und Geburtsdatum
+  - „Pausen automatisch stempeln (nach Pausenregeln)“
+  - „Kernarbeitszeit / Pünktlichkeit“: wie Einstellungen, eigene Kernzeit oder „Keine Prüfung“
+  - „Login (Mein Bereich)“: Login-E-Mail und Passwort
+  - „Stempel-PIN (Tablet)“ mit „PIN zurücksetzen“
+  - „NFC-Karte (Tablet)“ mit „Karten-UID (optional)“
+  - „HR-Berechtigung“
+- **Detailseite:** Knöpfe „Monatsbericht“, „DSGVO-Datenexport“, „Anonymisieren“ (nur bei
+  Ausgeschiedenen), „Bearbeiten“. Reiter:
+  - „Zeiterfassung“: „Stempelung nachtragen“, „Korrigieren“, „Endgültig löschen“
+  - „Kalender“
+  - „Saldenübersicht“: Gleitzeitsaldo, Wochen- und Tagesansicht, „Korrekturbuchungen
+    Gleitzeitkonto“ (Übertrag / Auszahlung / Korrektur)
+  - „Abwesenheiten“: „Urlaubsanspruch“ und „Neue Abwesenheit“ mit Art, Von, Bis und Umfang
+    („Ganzer Tag“ / „Halber Tag“ / „Stunden“)
+  - „Arbeitszeitmodell“, jeweils mit „Gültig ab“ und Verlauf:
+    - „Gleichmäßig verteilt“
+    - „Stunden je Wochentag (Teilzeit)“
+    - „Flexibel ohne feste Tage“
+    - „Nach Aufwand (Aushilfe)“
+  - „Vertrag“, für Admins „Vertrag & Vergütung“
+  - „Dokumente“: verschlüsselt abgelegt; mit „Für den Mitarbeiter in Mein Bereich sichtbar“
+    und „Vertraulich“
+  - „Checklisten“
+  - „Schichtplanung“: Standard-Schichten und Ausnahmen
+- **Tarif:**
+  - Bis 5 aktive Mitarbeiter ist alles kostenlos.
+  - Ab 6 aktiven Mitarbeitern kostet jeder aktive Mitarbeiter 1 € im Monat; freigeschaltet wird
+    über den Anbieter.
+  - Ausgeschiedene Mitarbeiter zählen nicht.
+
+## 6. Abwesenheiten
+
+- **Arten** unter „Einstellungen“ → „Abwesenheiten & Urlaub“ → „Abwesenheitsarten“:
+  - je Art Name, Farbe und Kategorie
+  - Kategorien: Urlaub, Krankheit, Kind krank, Sonderurlaub, Feiertag, Arbeitszeit, Unbezahlt,
+    Freizeitausgleich
+  - „Mitarbeiter dürfen selbst beantragen“, „Genehmigung nötig“, „Nachweis ab Tag“,
+    „Deaktivieren“
+  - Wird die Kategorie nachträglich geändert, rechnet HR3000 bestehende Einträge neu, außer in
+    abgeschlossenen Monaten.
+- **Halbe Tage:** möglich, höchstens zwei Hälften pro Tag, z. B. Weihnachten halb Sonderurlaub
+  und halb Urlaub.
+- **Stunden:** z. B. Homeoffice von 3 Std. mit der Kategorie Arbeitszeit.
+- **Urlaubsübertrag:** automatisch, mit Höchstgrenze und Verfallsdatum (TT.MM.).
+
+## 7. Abrechnung
+
+- **„Monatsabschluss“:**
+  - Monat wählen.
+  - Je Mitarbeiter: „Vorlegen“, dann bestätigt der Mitarbeiter in „Mein Bereich“; danach
+    „Abschließen“.
+  - Außerdem „Ohne Bestätigung abschließen“, „Zurückziehen“, „Wieder öffnen“ und „Alle
+    Berichte drucken“.
+  - Abgeschlossene Monate lassen sich nicht mehr ändern.
+- **„Auswertungen“:**
+  - Reiter: Handlungsbedarf (BEM, Probezeit, Befristung, Austritt), Fehlzeiten, Urlaub,
+    Überstunden, Lohnkosten (nur Admin)
+  - jeweils „CSV exportieren“
+- **„Lohn-Export“:** Monat und Standort wählen, CSV für das Lohnbüro.
+- **„Zuschläge“:** Regeln für Nacht, Sonntag, Feiertag und eigene Regeln
+  („Standardregeln anlegen“, „Neue Regel“).
+
+## 8. Arbeitszeit und Organisation
+
+- **„Pausenregeln“:** Staffel „Ab Arbeitsminuten“ / „Pausenabzug (Minuten)“ mit
+  „Änderungen gültig ab“.
+- **Schichtplanung:**
+  - einschalten unter „Einstellungen“ → „Allgemein“
+  - „Schichtvorlagen“: Beginn, Ende, Tages-/Wochen-/Monatssoll, Pausenregelung, Standort
+  - „Schichtplan-Kalender“: Schichten per Ziehen zuweisen, „PDF exportieren“
+- **„Feiertage“:** je Standort automatisch importiert; eigene Feiertage mit „Feiertag
+  hinzufügen“.
+- **„Teams“:** Teams anlegen, Teamleader zuordnen.
+- **„Tablets“:**
+  - „Neues Tablet“: Name, Standort, Darstellung, Bildschirmzeiten
+  - „QR-Code“: Mit der Kamera scannen öffnet den Kiosk fertig eingerichtet. Ohne Kamera gibt
+    es einen Kopplungscode zum Eintippen (einmalig, läuft ab).
+  - „Token kopieren“, „Bearbeiten“
+- **„Checklisten“:** Vorlagen für On- und Offboarding, offene Aufgaben „Als erledigt
+  markieren“.
+- **„Audit-Log“:** wer wann was geändert hat, filterbar.
+
+## 9. Einstellungen (nur Admin)
+
+Grundsatz: Neue Funktionen sind einzeln schaltbar und standardmäßig so eingestellt, dass sich
+für bestehende Firmen nichts ändert.
+
+- **Allgemein:**
+  - „Tarif“
+  - „Gleitzeitkonten führen ab“: Datum. Leer heißt ab der ersten Stempelung; eine Änderung
+    rechnet alle Konten neu.
+  - „Standard-Jahresurlaub“, „Standard-Bundesland“
+  - „Schichtplanung aktivieren“
+  - „Stempeln über den Web-Login (Home-Office)“: Stempel-Karte in „Mein Bereich“, mit
+    Serverzeit
+  - „Geburtstage im Kalender anzeigen“
+- **Mitarbeiter & Regeln:**
+  - „Standardwerte für neue Mitarbeiter“
+  - „Urlaubsanspruch für Teilzeit anteilig berechnen“
+  - welche Sonderfälle unter „Zu klären“ erscheinen (8 einzeln abschaltbare Häkchen)
+  - „Maximale Schichtlänge (Stunden)“
+  - „Kernarbeitszeit & Gleitzeit“: Kernzeit, „Pünktlichkeit prüfen“ mit Toleranz,
+    Gleitzeit-Rahmen. Das erzeugt nur Hinweise und kürzt keine Stunden.
+- **Abwesenheiten & Urlaub:** Abwesenheitsarten, „Mitarbeiter dürfen Urlaub/Abwesenheiten
+  beantragen“, „Urlaubsübertrag ins neue Jahr“.
+- **Kiosk:**
+  - „PIN zum Stempeln erforderlich“
+  - „PIN beim ersten Stempeln selbst festlegen“
+  - „Chips/RFID am Tablet nutzen“
+  - „Mitarbeiter registrieren ihren Chip selbst“
+  - „RFID-Pflicht“
+  - „Anzeige am Tablet“:
+    - Saldo und Resturlaub nach dem Stempeln
+    - „Pausen-Buttons anzeigen“, „Dienstgang-Buttons anzeigen“
+    - „Darstellung am Tablet“ Dunkel/Hell
+    - „Bildschirm nur zu bestimmten Zeiten anlassen“ (von–bis, über Mitternacht möglich; je
+      Tablet abweichend einstellbar)
+    - „Sortierung der Kacheln“
+    - „Hinweistext über den Kacheln“
+  - „Kiosk-Admin-PIN“: wird zum Zurücksetzen des Tablets gebraucht.
+  - Änderungen erreichen die Tablets innerhalb von 30 Sekunden.
+- **Logo & E-Mail:**
+  - „Firmenlogo“: max. 256 KB
+  - „E-Mail-Versand (SMTP)“: eigener Mailserver für Benachrichtigungen und Zugangsdaten, mit
+    „Testmail an mich senden“
+
+## 10. Tablets im Betrieb
+
+- Ein Android-Tablet mit Chrome reicht. Für Chips dient NFC oder ein USB- bzw.
+  Bluetooth-Leser im Tastatur-Modus.
+- Bei Netzausfall puffert das Tablet die Stempelungen und sendet sie automatisch nach. Offene
+  Einträge zeigt die „Offline-Warteschlange“.
+- Bildschirm aus nach Zeitfenster: Das Tablet hält den Bildschirm nur im eingestellten Fenster
+  wach. Morgens weckt man es per Ein/Aus-Taste. Mit einer Geräteverwaltung (z. B. Endpoint
+  Central): Bildschirm-Timeout 1 Minute, „Beim Laden wach bleiben“ aus.
+- Tablet neu koppeln: am Tablet „Gerät zurücksetzen“ (mit Kiosk-Admin-PIN), dann den QR-Code
+  erneut scannen.
