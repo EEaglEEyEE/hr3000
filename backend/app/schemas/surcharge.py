@@ -16,6 +16,7 @@ class SurchargeRuleCreateRequest(BaseModel):
     weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4, 5, 6], min_length=1, max_length=7)
     exclusive_group: str | None = Field(default=None, pattern=_GROUP)
     active: bool = True
+    wage_type: str | None = Field(default=None, pattern=r"^\d{1,6}$")
 
     @model_validator(mode="after")
     def _consistent(self) -> "SurchargeRuleCreateRequest":
@@ -40,6 +41,8 @@ class SurchargeRuleUpdateRequest(BaseModel):
     exclusive_group: str | None = Field(default=None, pattern=_GROUP)
     clear_exclusive_group: bool = False
     active: bool | None = None
+    # Lohnart (DATEV); "" = entfernen
+    wage_type: str | None = Field(default=None, pattern=r"^\d{0,6}$")
 
 
 class SurchargeRuleResponse(BaseModel):
@@ -52,6 +55,7 @@ class SurchargeRuleResponse(BaseModel):
     weekdays: list[int]
     exclusive_group: str | None
     active: bool
+    wage_type: str | None = None
 
 
 class SurchargeLine(BaseModel):

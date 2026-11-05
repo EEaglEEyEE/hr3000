@@ -67,10 +67,18 @@ class AppSettings(Base):
     # (unter "Zu klären", im Monatsbericht samt Sperre für den Abschluss, im Lohn-Export). Aus: nur
     # unvollständig gestempelte Tage gelten als offen – das Soll zählt trotzdem (Minus im Konto).
     report_days_without_punches: Mapped[bool] = mapped_column(Boolean, default=True)
+    # --- DATEV-LODAS-Export (siehe app/services/datev_export_service.py) ---
+    datev_consultant_number: Mapped[str | None] = mapped_column(String(7), nullable=True)  # Beraternummer
+    datev_client_number: Mapped[str | None] = mapped_column(String(5), nullable=True)  # Mandantennummer
+    # Lohnart für die Ist-Stunden von Mitarbeitern mit Stundenlohn; leer = keine Stunden übertragen
+    datev_hours_wage_type: Mapped[str | None] = mapped_column(String(6), nullable=True)
     # --- Kernarbeitszeit / Gleitzeit (alles optional, Standard aus) ---
     # Kernzeit, in der Mitarbeiter anwesend sein sollen (z.B. 09:00–15:00); NULL = keine Kernzeit.
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     core_time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # Kernzeit je Wochentag (z.B. freitags kürzer); NULL = jeden Tag core_time_start/-end.
+    # Format siehe app/schemas/core_time.py.
+    core_time_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Zu spät kommen / zu früh gehen (gegenüber Schicht bzw. Kernzeit) unter "Zu klären" melden
     punctuality_check: Mapped[bool] = mapped_column(Boolean, default=False)
     late_tolerance_minutes: Mapped[int] = mapped_column(Integer, default=5)

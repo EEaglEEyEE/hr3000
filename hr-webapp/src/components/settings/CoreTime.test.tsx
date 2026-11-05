@@ -79,6 +79,35 @@ describe('Einstellungen: Kernarbeitszeit & Gleitzeit', () => {
     expect(await screen.findByText('Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen.')).toBeInTheDocument()
   })
 
+  it('Kernzeit je Wochentag: freitags kürzer, Wochenende ohne', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const current = settings({ core_time_start: '09:00:00', core_time_end: '15:00:00' })
+    const calls = mockApi(settingsRoutes(current))
+    const { unmount } = renderWithProviders(<CoreTimeCard settings={current} />)
+    await userEvent.click(screen.getByRole('checkbox', { name: /Kernzeit je Wochentag unterschiedlich/ }))
+    // vorbelegt: Mo–Fr mit der Kernzeit, Sa/So ohne
+    expect(screen.getByLabelText('Mo von')).toHaveValue('09:00')
+    expect(screen.getByRole('checkbox', { name: 'Sa Kernzeit' })).not.toBeChecked()
+    const fridayEnd = screen.getByLabelText('Fr bis')
+    await userEvent.clear(fridayEnd)
+    await userEvent.type(fridayEnd, '12:00')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Mi Kernzeit' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Kernzeiten übernehmen' }))
+    await waitFor(() => expect(lastPatch(calls)).toHaveProperty('core_time_days'))
+    const days = lastPatch(calls)!.core_time_days as unknown[]
+    expect(days[2]).toBeNull()
+    expect(days[4]).toEqual({ start: '09:00', end: '12:00' })
+    expect(days[5]).toBeNull()
+    unmount()
+
+    // gespeichert: wieder einheitlich schaltet per null zurück
+    const saved = settings({ ...current, core_time_days: days as never })
+    renderWithProviders(<CoreTimeCard settings={saved} />)
+    expect(screen.getByLabelText('Fr bis')).toHaveValue('12:00')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Kernzeit je Wochentag unterschiedlich/ }))
+    await waitFor(() => expect(lastPatch(calls)).toMatchObject({ core_time_days: null }))
+  })
+
   it('die neuen Sonderfälle lassen sich unter "Regeln" einzeln abschalten', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     const calls = mockApi(settingsRoutes())
@@ -136,6 +165,26 @@ describe('Mitarbeiter: eigene Kernzeit', () => {
       core_time_start: '10:00',
       core_time_end: '14:00',
     })
+  })
+
+  it('sendet eine eigene Kernzeit je Wochentag', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi(routes())
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    await fillBasics()
+    await userEvent.selectOptions(screen.getByLabelText('Kernarbeitszeit / Pünktlichkeit'), 'CUSTOM')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Je Wochentag unterschiedlich' }))
+    expect(screen.queryByLabelText('Eigene Kernzeit von')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Di Kernzeit' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+    const body = calls.find((call) => call.method === 'POST')?.init.body as Record<string, unknown>
+    expect(body).toMatchObject({ core_time_mode: 'CUSTOM' })
+    expect(body).not.toHaveProperty('core_time_start')
+    const days = body.core_time_days as unknown[]
+    expect(days).toHaveLength(7)
+    expect(days[0]).toEqual({ start: '09:00', end: '15:00' })
+    expect(days[1]).toBeNull()
   })
 
   it('blendet die Uhrzeiten bei "Keine Prüfung" aus', async () => {

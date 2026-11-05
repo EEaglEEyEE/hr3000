@@ -56,6 +56,7 @@ def _response(rule: SurchargeRule) -> SurchargeRuleResponse:
         weekdays=_days(rule.weekdays_mask),
         exclusive_group=rule.exclusive_group,
         active=rule.active,
+        wage_type=rule.wage_type,
     )
 
 
@@ -103,6 +104,7 @@ async def create_surcharge_rule(
         weekdays_mask=_mask(payload.weekdays),
         exclusive_group=payload.exclusive_group,
         active=payload.active,
+        wage_type=payload.wage_type,
     )
     db.add(rule)
     await db.flush()
@@ -166,6 +168,8 @@ async def update_surcharge_rule(
         rule.exclusive_group = payload.exclusive_group
     elif payload.clear_exclusive_group:
         rule.exclusive_group = None
+    if payload.wage_type is not None:
+        rule.wage_type = payload.wage_type or None
     _audit(db, actor, rule.id, f"Regel geändert: {rule.name}")
     await db.commit()
     await db.refresh(rule)

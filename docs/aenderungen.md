@@ -3,6 +3,30 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 05.11.2026
+
+- **Feste Pausen:** Unter „Pausenregeln“ gibt es neben der gesetzlichen Staffel jetzt „Feste
+  Pausen des Betriebs“: eine feste Uhrzeit (z. B. 12:00–12:30, abgezogen, soweit anwesend) oder
+  feste Minuten ab einer Arbeitszeit, jeweils auch ohne Pausenstempelung. Je Mitarbeiter geht
+  das im Arbeitszeitmodell unter „Pause“. Die gesetzliche Pause gilt immer mindestens.
+- **Umstieg von einem Altsystem:** Unter „Mitarbeiter“ → „CSV-Import“ lassen sich jetzt auch
+  Werte bestehender Mitarbeiter übernehmen: Gleitzeit-Übertrag, Urlaubsanspruch, Übertrag aus
+  dem Vorjahr und Arbeitszeitmodell zu einem Stichtag, mit Vorschau vor dem Übernehmen.
+- **Einstellungen übertragen:** Unter „Einstellungen“ → „Allgemein“ lassen sich Einstellungen,
+  Pausenregeln, Abwesenheitsarten und Zuschläge als Datei exportieren und in einer anderen Firma
+  importieren, mit Vorschau.
+- **DATEV LODAS:** Auf der Seite „Lohn-Export“ erzeugen Admins eine Importdatei für DATEV LODAS
+  mit Ist-Stunden (Stundenlohn), Zuschlagsstunden sowie Zulagen und Einmalzahlungen, jeweils nach
+  Lohnart. Mit Vorschau und Hinweisen. Urlaub und Krankheit überträgt die Datei nicht.
+- **Zulagen und Einmalzahlungen:** Unter „Vertrag & Vergütung“ (nur Admins) lassen sich
+  wiederkehrende Zulagen (je Monat oder je Stunde auf den Stundenlohn) und Einmalzahlungen wie
+  Weihnachtsgeld hinterlegen. Sie erscheinen im Lohn-Export, wenn ein Admin ihn zieht.
+- **Kernzeit je Wochentag:** Unter „Einstellungen“ → „Kernarbeitszeit & Gleitzeit“ und bei der
+  eigenen Kernzeit eines Mitarbeiters lässt sich die Kernzeit je Wochentag festlegen, z. B.
+  freitags kürzer oder an einzelnen Tagen gar keine.
+- Die „Pausenregelung“ in Schichtvorlagen (feste Pausenzeit bzw. Mindestpause) wird jetzt auch
+  wirklich abgezogen. Bisher war sie nur gespeichert.
+
 ## 04.11.2026
 
 - **Monatsstunden im Arbeitszeitmodell:** Neue Art „Monatsstunden (fest)“: jeden Monat dasselbe

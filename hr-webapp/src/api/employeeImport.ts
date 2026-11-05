@@ -23,3 +23,26 @@ export async function uploadEmployeeBulkImport(file: File): Promise<BulkImportRe
   }
   return body as BulkImportResult
 }
+
+export type MigrationImportResult = components['schemas']['MigrationImportResult']
+
+/** Migration: Werte aus dem Altsystem für bestehende Mitarbeiter (apply=false = nur Vorschau). */
+export async function uploadMigrationValues(file: File, cutover: string, apply: boolean): Promise<MigrationImportResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('cutover', cutover)
+  formData.append('apply', apply ? 'true' : 'false')
+
+  const token = getAccessToken()
+  const response = await fetch('/api/migration/employee-values', {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = (body as { detail?: unknown } | null)?.detail
+    throw new Error(typeof detail === 'string' ? detail : 'Übernahme fehlgeschlagen.')
+  }
+  return body as MigrationImportResult
+}

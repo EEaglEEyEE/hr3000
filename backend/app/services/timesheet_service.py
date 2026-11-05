@@ -13,7 +13,9 @@ from app.models import (
     BalanceAdjustment,
     AbsenceApprovalStatus,
     AbsenceType,
+    BreakMode,
     BreakRule,
+    BreakRuleKind,
     DailySummary,
     Employee,
     EmployeeLocationPeriod,
@@ -22,8 +24,10 @@ from app.models import (
     Punch,
     PunchSource,
     PunchType,
+    ShiftTemplate,
     SummaryStatus,
 )
+from app.schemas.core_time import parse_core_time_days
 from app.services.absence_type_service import CATEGORY_LABELS, absence_day_values
 from app.services.holiday_service import is_holiday_for_location
 from app.services.shift_planning_service import MAX_DAILY_WORKING_MINUTES, resolve_effective_shift
@@ -176,14 +180,19 @@ async def _punctuality_flags(
                 AppSettings.late_tolerance_minutes,
                 AppSettings.flex_frame_start,
                 AppSettings.flex_frame_end,
+                AppSettings.core_time_days,
             ).where(AppSettings.tenant_id == employee.tenant_id)
         )
     ).first()
     if rules is None:
         return []
-    core_start, core_end, check, tolerance, frame_start, frame_end = rules
+    core_start, core_end, check, tolerance, frame_start, frame_end, core_days = rules
     if employee.core_time_mode == "CUSTOM":
-        core_start, core_end = employee.core_time_start, employee.core_time_end
+        core_start, core_end, core_days = employee.core_time_start, employee.core_time_end, employee.core_time_days
+    by_weekday = parse_core_time_days(core_days)
+    if by_weekday is not None:
+        # Kernzeit je Wochentag: an Tagen ohne Eintrag gibt es keine Kernzeit.
+        core_start, core_end = by_weekday[work_date.weekday()] or (None, None)
 
     comes = [p for p in day_punches if p.punch_type == PunchType.COME]
     goes = [p for p in day_punches if p.punch_type == PunchType.GO]
@@ -482,6 +491,8 @@ def absence_day_counts(calculation: DayCalculation) -> dict[AbsenceType, float]:
     return counts
 
 
+Interval = tuple[datetime, datetime]
+
 # §4 ArbZG: Ruhepausen zählen erst ab 15 Minuten – kürzere Unterbrechungen sind keine Pause.
 MIN_BREAK_BLOCK_MINUTES = 15
 
@@ -645,6 +656,8 @@ async def pair_punches_detail(
     gross_minutes = 0.0
     break_minutes = 0.0
     gap_minutes = 0.0  # Unterbrechungen zwischen Gehen und erneutem Kommen (zählen als Pause)
+    presence: list[Interval] = []  # Kommen–Gehen (naive UTC), für feste Pausenzeiten
+    punched_breaks: list[Interval] = []
     malformed = False
 
     for punch in day_punches:
@@ -662,6 +675,7 @@ async def pair_punches_detail(
                 malformed = True
                 break
             gross_minutes += (punch.timestamp_utc - open_come).total_seconds() / 60
+            presence.append((_naive_utc(open_come), _naive_utc(punch.timestamp_utc)))
             open_come = None
             last_go = punch.timestamp_utc
         elif punch.punch_type == PunchType.BREAK_START:
@@ -684,6 +698,7 @@ async def pair_punches_detail(
                 malformed = True
                 break
             break_minutes += (punch.timestamp_utc - open_break).total_seconds() / 60
+            punched_breaks.append((_naive_utc(open_break), _naive_utc(punch.timestamp_utc)))
             open_break = None
 
     if malformed:
@@ -721,30 +736,100 @@ async def pair_punches_detail(
             return None, SummaryStatus.ON_ERRAND, None
         return None, SummaryStatus.PRESENT, None
 
-    required_break = await _required_break_minutes(db, employee.tenant_id, gross_minutes, work_date)
-    # Gestempelte Pausen und Unterbrechungen zwischen mehreren Kommen/Gehen erfüllen die
-    # gesetzliche Pause; nur ein verbleibender Fehlbetrag wird zusätzlich abgezogen.
-    shortfall = max(required_break - break_minutes - gap_minutes, 0.0)
-    actual_minutes = max(round(gross_minutes - break_minutes - shortfall), 0)
-    return actual_minutes, SummaryStatus.COMPLETE, round(break_minutes + gap_minutes + shortfall)
+    policy = await break_policy(db, employee, work_date)
+    # Feste Pausenzeiten: abgezogen, soweit anwesend und nicht ohnehin als Pause gestempelt.
+    window_minutes = policy.window_minutes(presence, punched_breaks, work_date, tz)
+    # Gestempelte Pausen, Unterbrechungen zwischen mehreren Kommen/Gehen und feste Pausenzeiten
+    # erfüllen die Mindestpause (gesetzliche Staffel bzw. feste Minuten); nur ein verbleibender
+    # Fehlbetrag wird zusätzlich abgezogen.
+    taken = break_minutes + gap_minutes + window_minutes
+    shortfall = max(policy.required_minutes(gross_minutes) - taken, 0.0)
+    actual_minutes = max(round(gross_minutes - break_minutes - window_minutes - shortfall), 0)
+    return actual_minutes, SummaryStatus.COMPLETE, round(taken + shortfall)
 
 
-async def _required_break_minutes(
-    db: AsyncSession, tenant_id: int, gross_minutes: float, work_date: date | None = None
-) -> float:
-    """Gesetzliche Mindestpause nach §4 ArbZG-Staffel (break_rules), falls der
-    Mitarbeiter selbst keine oder zu wenig Pause gestempelt hat – mit der Staffel,
-    die an diesem Tag galt (effektiv-datiert)."""
-    day = work_date or date.today()
-    result = await db.execute(
-        select(BreakRule).where(
-            BreakRule.tenant_id == tenant_id,
-            BreakRule.valid_from <= day,
-            or_(BreakRule.valid_to.is_(None), BreakRule.valid_to >= day),
+def overlap_minutes(a: Interval, b: Interval) -> float:
+    return max((min(a[1], b[1]) - max(a[0], b[0])).total_seconds() / 60, 0.0)
+
+
+@dataclass
+class BreakPolicy:
+    """Pausenregeln eines Arbeitstags. steps: (Schwelle, Minuten) aus gesetzlicher Staffel und
+    festen Pausenminuten – maßgeblich ist die höchste erreichte Stufe (Mindestpause). windows: feste
+    Pausenzeiten in Ortszeit, abgezogen soweit der Mitarbeiter darin anwesend war."""
+
+    steps: list[tuple[int, int]] = field(default_factory=list)
+    windows: list[tuple[time, time]] = field(default_factory=list)
+
+    def required_minutes(self, gross_minutes: float) -> float:
+        applicable = [minutes for threshold, minutes in self.steps if gross_minutes > threshold]
+        return float(max(applicable)) if applicable else 0.0
+
+    def local_windows(self, work_date: date) -> list[Interval]:
+        """Feste Pausenzeiten (naive Ortszeit) am Arbeitstag und am Folgetag (Nachtschicht)."""
+        return [
+            (datetime.combine(day, start), datetime.combine(day, end))
+            for day in (work_date, work_date + timedelta(days=1))
+            for start, end in self.windows
+        ]
+
+    def window_minutes(self, presence: list[Interval], punched_breaks: list[Interval], work_date: date, tz: ZoneInfo) -> float:
+        """Minuten fester Pausenzeit, in denen der Mitarbeiter anwesend war und nicht ohnehin
+        Pause gestempelt hat (Intervalle in naiver UTC-Zeit)."""
+        if not self.windows:
+            return 0.0
+        windows = [
+            (_naive_utc(start.replace(tzinfo=tz)), _naive_utc(end.replace(tzinfo=tz)))
+            for start, end in self.local_windows(work_date)
+        ]
+        present = sum(overlap_minutes(p, w) for p in presence for w in windows)
+        on_break = sum(overlap_minutes(b, w) for b in punched_breaks for w in windows)
+        return max(present - on_break, 0.0)
+
+
+async def break_policy(db: AsyncSession, employee: Employee, work_date: date) -> BreakPolicy:
+    """Pausenregeln, die an diesem Tag gelten (effektiv-datiert): die gesetzliche Staffel immer;
+    dazu feste Minuten/Zeiten aus dem Arbeitszeitmodell bzw. der Schichtvorlage des Tages, falls
+    dort eine eigene Pause hinterlegt ist – sonst die betrieblichen Regeln des Mandanten."""
+    rules = (
+        await db.execute(
+            select(BreakRule).where(
+                BreakRule.tenant_id == employee.tenant_id,
+                BreakRule.valid_from <= work_date,
+                or_(BreakRule.valid_to.is_(None), BreakRule.valid_to >= work_date),
+            )
         )
-    )
-    applicable = [r.deduct_minutes for r in result.scalars().all() if gross_minutes > r.min_work_minutes]
-    return float(max(applicable)) if applicable else 0.0
+    ).scalars().all()
+    steps = [(r.min_work_minutes, r.deduct_minutes) for r in rules if r.kind in (None, BreakRuleKind.LEGAL)]
+    own = await _template_break(db, employee, work_date)
+    if own is not None:
+        fixed, windows = own
+    else:
+        fixed = [(r.min_work_minutes, r.deduct_minutes) for r in rules if r.kind == BreakRuleKind.FIXED_MINUTES]
+        windows = [
+            (r.start_time, r.end_time)
+            for r in rules
+            if r.kind == BreakRuleKind.FIXED_WINDOW and r.start_time is not None and r.end_time is not None
+        ]
+    return BreakPolicy(steps=steps + fixed, windows=windows)
+
+
+async def _template_break(
+    db: AsyncSession, employee: Employee, work_date: date
+) -> tuple[list[tuple[int, int]], list[tuple[time, time]]] | None:
+    """Eigene Pause der Schichtvorlage bzw. des Arbeitszeitmodells an diesem Tag: feste Pausenzeit
+    (break_mode FIXED) oder feste Minuten (min_break_minutes, ab der ersten Arbeitsminute)."""
+    plan = await resolve_effective_shift(db, employee.id, work_date)
+    if plan.shift_template_id is None:
+        return None
+    template = await db.get(ShiftTemplate, plan.shift_template_id)
+    if template is None:
+        return None
+    if template.break_mode == BreakMode.FIXED and template.fixed_break_start and template.fixed_break_end:
+        return [], [(template.fixed_break_start, template.fixed_break_end)]
+    if template.min_break_minutes:
+        return [(0, template.min_break_minutes)], []
+    return None
 
 
 async def maybe_auto_insert_break(
@@ -755,7 +840,7 @@ async def maybe_auto_insert_break(
     für diese Schicht eine Pause verlangt und der Mitarbeiter selbst keine Pause
     gestempelt hat (manuelle Stempelungen haben Vorrang, siehe day_punches-Schleife
     unten). Materialisiert damit den bisher rein rechnerischen Pausenabzug
-    (_required_break_minutes) als echte, auditierbare Punches."""
+    (break_policy: Staffel bzw. feste Minuten) als echte, auditierbare Punches."""
     if not employee.auto_break_enabled:
         return
 
@@ -768,6 +853,7 @@ async def maybe_auto_insert_break(
     last_go: datetime | None = None
     gross_minutes = 0.0
     gap_minutes = 0.0
+    presence: list[Interval] = []
     for punch in day_punches:
         if punch.id == go_punch.id:
             break
@@ -780,6 +866,7 @@ async def maybe_auto_insert_break(
         elif punch.punch_type == PunchType.GO:
             if come_time is not None:
                 gross_minutes += (_naive_utc(punch.timestamp_utc) - _naive_utc(come_time)).total_seconds() / 60
+                presence.append((_naive_utc(come_time), _naive_utc(punch.timestamp_utc)))
             come_time = None
             last_go = punch.timestamp_utc
         elif punch.punch_type in (PunchType.BREAK_START, PunchType.BREAK_END):
@@ -790,8 +877,11 @@ async def maybe_auto_insert_break(
 
     last_pair_minutes = (_naive_utc(go_punch.timestamp_utc) - _naive_utc(come_time)).total_seconds() / 60
     gross_minutes += last_pair_minutes
-    required_break = await _required_break_minutes(db, employee.tenant_id, gross_minutes, work_date)
-    missing = min(required_break - gap_minutes, last_pair_minutes - 1)
+    presence.append((_naive_utc(come_time), _naive_utc(go_punch.timestamp_utc)))
+    policy = await break_policy(db, employee, work_date)
+    # Feste Pausenzeiten zieht die Tagesberechnung ohnehin ab – gebucht wird nur der Rest.
+    window_minutes = policy.window_minutes(presence, [], work_date, tz)
+    missing = min(policy.required_minutes(gross_minutes) - gap_minutes - window_minutes, last_pair_minutes - 1)
     if missing <= 0:
         return
 

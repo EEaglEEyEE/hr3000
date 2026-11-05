@@ -5,6 +5,7 @@ from app.api.deps import Actor, get_current_admin_principal, get_current_hr_prin
 from app.db import get_db
 from app.models import AuditAction
 from app.errors import AppError
+from app.schemas.core_time import parse_core_time_days, serialize_core_time_days
 from app.schemas.settings import (
     FeaturesResponse,
     SettingsResponse,
@@ -143,6 +144,11 @@ async def update_settings(
         settings_row.disabled_day_flags = ",".join(sorted(set(payload.disabled_day_flags))) or None
         changed.append(f"disabled_day_flags={settings_row.disabled_day_flags}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
+    for field in ("datev_consultant_number", "datev_client_number", "datev_hours_wage_type"):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(settings_row, field, value or None)
+            changed.append(f"{field}={value or 'leer'}")
     if payload.report_days_without_punches is not None:
         settings_row.report_days_without_punches = payload.report_days_without_punches
         changed.append(f"report_days_without_punches={payload.report_days_without_punches}")
@@ -161,6 +167,20 @@ async def update_settings(
     )
     if None not in new_core and None not in new_frame and not (new_frame[0] <= new_core[0] and new_core[1] <= new_frame[1]):
         raise AppError(400, "CORE_TIME_OUTSIDE_FRAME", "Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen.")
+    days_sent = "core_time_days" in payload.model_fields_set
+    new_days = (
+        [None if d is None else (d.start, d.end) for d in payload.core_time_days or []] or None
+        if days_sent
+        else None if payload.clear_core_time else parse_core_time_days(settings_row.core_time_days)
+    )
+    if None not in new_frame and any(d and not (new_frame[0] <= d[0] and d[1] <= new_frame[1]) for d in new_days or []):
+        raise AppError(400, "CORE_TIME_OUTSIDE_FRAME", "Die Kernzeit muss an jedem Tag innerhalb des Gleitzeit-Rahmens liegen.")
+    if days_sent:
+        settings_row.core_time_days = serialize_core_time_days(payload.core_time_days)
+        changed.append(f"core_time_days={settings_row.core_time_days or 'jeden Tag gleich'}")
+        punctuality_changed = True
+    elif payload.clear_core_time:
+        settings_row.core_time_days = None
     if payload.core_time_start is not None:
         settings_row.core_time_start, settings_row.core_time_end = payload.core_time_start, payload.core_time_end
         changed.append(f"core_time={payload.core_time_start:%H:%M}-{payload.core_time_end:%H:%M}")

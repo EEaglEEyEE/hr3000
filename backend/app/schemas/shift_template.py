@@ -1,6 +1,8 @@
 from datetime import date, time
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.schemas.break_rule import check_window
 
 from app.models.shift_template import BreakMode, TargetPeriod
 
@@ -12,10 +14,17 @@ class ShiftTemplateCreateRequest(BaseModel):
     break_mode: BreakMode = BreakMode.FLEXIBLE
     fixed_break_start: time | None = None
     fixed_break_end: time | None = None
-    min_break_minutes: int | None = Field(default=None, ge=0)
+    # Feste Minuten Pause (ab der ersten Arbeitsminute), nur bei FLEXIBLE; 0/leer = Pausenregeln des Mandanten.
+    min_break_minutes: int | None = Field(default=None, ge=0, le=240)
     target_minutes: int = Field(default=0, ge=0)
     target_period: TargetPeriod = TargetPeriod.DAILY
     location_id: int | None = None
+
+    @model_validator(mode="after")
+    def _break(self) -> "ShiftTemplateCreateRequest":
+        if self.break_mode == BreakMode.FIXED:
+            check_window(self.fixed_break_start, self.fixed_break_end)
+        return self
 
 
 class ShiftTemplateUpdateRequest(BaseModel):
@@ -25,7 +34,7 @@ class ShiftTemplateUpdateRequest(BaseModel):
     break_mode: BreakMode | None = None
     fixed_break_start: time | None = None
     fixed_break_end: time | None = None
-    min_break_minutes: int | None = Field(default=None, ge=0)
+    min_break_minutes: int | None = Field(default=None, ge=0, le=240)
     target_minutes: int | None = Field(default=None, ge=0)
     target_period: TargetPeriod | None = None
     location_id: int | None = None

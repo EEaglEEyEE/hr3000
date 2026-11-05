@@ -2,6 +2,13 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
 import { useUpdateSettingsMutation, type Settings } from '../../api/queries/settings'
 import { DAY_FLAG_LABELS } from '../../lib/labels'
+import {
+  CoreTimeDaysEditor,
+  coreTimeDaysFromApi,
+  coreTimeDaysValid,
+  initialCoreTimeDays,
+  type CoreTimeDay,
+} from '../coreTime/CoreTimeDaysEditor'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 
@@ -602,6 +609,54 @@ function TimeRangeField({
   )
 }
 
+/** Kernzeit je Wochentag: an = eigene Zeiten je Tag (z. B. freitags kürzer), aus = jeden Tag dieselbe. */
+function CoreTimeByWeekday({
+  settings,
+  save,
+}: {
+  settings: Settings
+  save: ReturnType<typeof useSettingsSave>['save']
+}) {
+  const saved = coreTimeDaysFromApi(settings.core_time_days)
+  const [days, setDays] = useState<CoreTimeDay[] | null>(saved)
+  const savedKey = JSON.stringify(saved)
+  useEffect(() => setDays(coreTimeDaysFromApi(settings.core_time_days)), [savedKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={days !== null}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setDays(initialCoreTimeDays(hhmm(settings.core_time_start), hhmm(settings.core_time_end)))
+            } else {
+              setDays(null)
+              if (saved) void save({ core_time_days: null })
+            }
+          }}
+        />
+        Kernzeit je Wochentag unterschiedlich (z. B. freitags kürzer)
+      </label>
+      {days && (
+        <>
+          <CoreTimeDaysEditor days={days} onChange={setDays} />
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!coreTimeDaysValid(days) || JSON.stringify(days) === savedKey}
+              onClick={() => void save({ core_time_days: days })}
+            >
+              Kernzeiten übernehmen
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /** Kernarbeitszeit, Pünktlichkeit und Gleitzeit-Rahmen – alles optional, Standard aus. */
 export function CoreTimeCard({ settings }: { settings: Settings }) {
   const { save, message, error } = useSettingsSave()
@@ -623,6 +678,7 @@ export function CoreTimeCard({ settings }: { settings: Settings }) {
         onClear={() => void save({ clear_core_time: true })}
         clearLabel="Keine Kernzeit"
       />
+      <CoreTimeByWeekday settings={settings} save={save} />
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"

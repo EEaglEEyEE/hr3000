@@ -3,6 +3,8 @@ import { FileDown } from 'lucide-react'
 import { downloadPayrollExport } from '../api/payrollExport'
 import { useEmployeesQuery } from '../api/queries/employees'
 import { useLocationsQuery } from '../api/queries/locations'
+import { useAuth } from '../auth/AuthContext'
+import { DatevExportSection } from '../components/payroll/DatevExportSection'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
@@ -16,6 +18,7 @@ export function PayrollExportPage() {
   const [locationFilter, setLocationFilter] = useState(ALL_LOCATIONS)
   const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { isAdmin } = useAuth()
 
   const locationsQuery = useLocationsQuery()
   const employeesQuery = useEmployeesQuery({
@@ -53,7 +56,8 @@ export function PayrollExportPage() {
         <p className="text-sm text-slate-500">
           CSV-Export mit Soll/Ist/Saldo sowie Urlaubs-, Krankheits- und Feiertagen pro Mitarbeiter für die
           Lohnbuchhaltung. Tage mit offener oder fehlerhafter Buchung werden separat gezählt – vor dem
-          Lohnlauf bitte in „Zu klären“ prüfen.
+          Lohnlauf bitte in „Zu klären“ prüfen. Zieht ein Admin den Export, kommen Spalten für Zulagen und
+          Einmalzahlungen dazu.
         </p>
       </div>
 
@@ -101,6 +105,8 @@ export function PayrollExportPage() {
           </button>
         </p>
       )}
+
+      {isAdmin && <DatevExportSection employeeIds={employees.map((employee) => employee.id)} month={yearMonth} />}
     </div>
   )
 }

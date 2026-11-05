@@ -64,10 +64,51 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Arbeitstage ganz ohne Stempelung: Schalter `AppSettings.report_days_without_punches`.
     Ausgewertet über `missing_punch_reported` (Monatsbericht, Lohn-Export) und beim Füllen des
     Tages-Caches in `rebuild_balance` (Zu klären, Übersicht Monatsabschluss).
+  - „Erledigt“ ist ein `DayReview` und ändert die Berechnung nicht.
+- **Zulagen/Einmalzahlungen:** `PayComponent` (`ALLOWANCE` mit `PER_MONTH`/`PER_HOUR` und
+  Gültigkeit, `ONE_TIME` mit `pay_date`, optionale `wage_type`), Endpunkte unter
+  `/employees/{id}/pay-components` (nur Admin, Audit wie Vergütung ohne Beträge, Sperre über
+  `ensure_*_open`). Beträge je Zeitraum in `services/pay_component_service.py` (Monatsbetrag
+  anteilig nach Kalendertagen, Stundenbetrag × Ist aus `summarize_payroll`, Cent kaufmännisch
+  gerundet). Lohn-Export: Spalten nur bei `actor.is_admin_level`.
+- **Migration (Werte aus dem Altsystem):** `POST /migration/employee-values` (multipart: Datei,
+  `cutover`, `apply`), `services/migration_import_service.py` parst ohne DB, `api/migration.py`
+  prüft Sichtbarkeit, Sperren und doppelten `OPENING_BALANCE` zum Stichtag und übernimmt
+  `BalanceAdjustment`, `LeaveEntitlement` (Jahr des Stichtags) und Arbeitszeitmodell
+  (`set_work_time_model`).
+- **Einstellungen übertragen:** `GET /migration/settings-export` / `POST
+  /migration/settings-import?apply=` (nur Admin, `TenantSettingsFile` Version 1). Übertragbare
+  Felder: `PORTABLE_SETTINGS` in `api/migration.py`; Import über `update_settings`,
+  `create_break_rule` (gültig ab heute), `create_absence_type`, `create_surcharge_rule`. Die
+  Vorschau schreibt nichts.
+- **DATEV LODAS:** `services/datev_export_service.py` baut aus Ist-Stunden (nur Zeiträume mit
+  `Compensation.pay_type = HOURLY`), Zuschlagsstunden (`SurchargeRule.wage_type`) und
+  `PayComponent`s die Bewegungsdaten (`u_lod_bwd_buchung_standard`, Bearbeitungsschlüssel 01 =
+  Stunden, 02 = Betrag) samt Hinweisen. Endpunkte `GET /payroll-export/datev` (Datei, cp1252,
+  CRLF) und `/payroll-export/datev/preview` (JSON), nur Admin; Berater-/Mandantennummer und
+  Lohnart Ist-Stunden in `AppSettings.datev_*`. Grundlage: LODAS-Schnittstellenhandbuch;
+  Fehlzeiten bewusst nicht enthalten.
+- **Kernzeit je Wochentag:** `core_time_days` (Text, 7 Einträge „HH:MM-HH:MM“ oder leer, Format
+  und Schema in `schemas/core_time.py`) an `AppSettings` und `Employee` (nur bei `CUSTOM`). NULL =
+  jeden Tag `core_time_start/-end`. Ausgewertet in `timesheet_service._punctuality_flags`; der
+  Gleitzeit-Rahmen wird je Tag geprüft (`CORE_TIME_OUTSIDE_FRAME`).
 - **Monatssoll:** Arbeitszeitmodell mit `monthly_hours` → Vorlage mit
   `TargetPeriod.MONTHLY`; `shift_planning_service._resolve_target_minutes` verteilt es auf die
   Arbeitstage des Kalendermonats (Rest auf die ersten Tage, Summe exakt).
-  - „Erledigt“ ist ein `DayReview` und ändert die Berechnung nicht.
+- **Pausen:** `timesheet_service.break_policy` liefert je Tag eine `BreakPolicy`.
+  - `BreakRule.kind`: `LEGAL` (gesetzliche Staffel, immer Untergrenze), `FIXED_MINUTES`
+    (Schwelle + Mindestminuten) und `FIXED_WINDOW` (feste Uhrzeit, Ortszeit, nicht über
+    Mitternacht). Alle effektiv-datiert.
+  - Eigene Pause der Vorlage des Tages ersetzt `FIXED_*` des Mandanten: `break_mode=FIXED` mit
+    `fixed_break_start/end` oder `min_break_minutes` (ab der ersten Minute). Arbeitszeitmodelle
+    legen dafür eigene Vorlagen an (Name mit Zusatz „, Pause …“). Pausenänderungen an
+    Schichtvorlagen versionieren wie Soll-Änderungen (`_version_for_target_change`).
+  - `pair_punches_detail`: Abzug = gestempelte Pausen + Anwesenheit in festen Pausenzeiten
+    (ohne Doppelzählung gestempelter Pausen) + Rest bis zur Mindestpause (Staffel bzw. feste
+    Minuten; Unterbrechungen zwischen Gehen und Kommen zählen mit). Feste Pausenzeiten gelten am
+    Arbeitstag und am Folgetag (Nachtschicht).
+  - `maybe_auto_insert_break` bucht nur den Rest, den feste Pausenzeiten nicht schon abdecken;
+    `surcharge_service.work_intervals` schneidet die festen Pausenzeiten an ihrer Uhrzeit heraus.
 - **Abwesenheiten:** Kategorien (`AbsenceType`), halbe Tage (`Absence.half_day`), Stunden
   (`Absence.duration_minutes`), Urlaubskonto in `services/leave_service.py`.
 - **Monatsabschluss:** gesperrte Monate; mitarbeiterbezogene Schreibvorgänge mit Datum rufen

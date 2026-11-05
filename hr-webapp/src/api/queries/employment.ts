@@ -88,3 +88,64 @@ export function useDeleteCompensationMutation(employeeId: number) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'compensation'] }),
   })
 }
+
+// --- Zulagen und Einmalzahlungen (nur Admin) -------------------------------------------------------
+
+export type PayComponent = components['schemas']['PayComponentResponse']
+export type PayComponentCreateRequest = components['schemas']['PayComponentCreateRequest']
+export type PayComponentUpdateRequest = components['schemas']['PayComponentUpdateRequest']
+
+export function usePayComponentsQuery(employeeId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['employees', employeeId, 'pay-components'],
+    enabled,
+    // Jeder Abruf wird im Audit-Log protokolliert – nicht bei jedem Fensterwechsel neu laden.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async () =>
+      unwrap(
+        await apiClient.GET('/employees/{employee_id}/pay-components', { params: { path: { employee_id: employeeId } } }),
+      ),
+  })
+}
+
+export function useCreatePayComponentMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: PayComponentCreateRequest) =>
+      unwrap(
+        await apiClient.POST('/employees/{employee_id}/pay-components', {
+          params: { path: { employee_id: employeeId } },
+          body: payload,
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'pay-components'] }),
+  })
+}
+
+export function useUpdatePayComponentMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ componentId, payload }: { componentId: number; payload: PayComponentUpdateRequest }) =>
+      unwrap(
+        await apiClient.PATCH('/employees/{employee_id}/pay-components/{component_id}', {
+          params: { path: { employee_id: employeeId, component_id: componentId } },
+          body: payload,
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'pay-components'] }),
+  })
+}
+
+export function useDeletePayComponentMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (componentId: number) => {
+      const result = await apiClient.DELETE('/employees/{employee_id}/pay-components/{component_id}', {
+        params: { path: { employee_id: employeeId, component_id: componentId } },
+      })
+      if (result.error !== undefined) throwApiError(result)
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'pay-components'] }),
+  })
+}

@@ -29,6 +29,7 @@ from app.api.leave_entitlements import router as leave_entitlements_router
 from app.api.locations import router as locations_router
 from app.api.notifications import router as notifications_router
 from app.api.payroll_export import router as payroll_export_router
+from app.api.migration import router as migration_router
 from app.api.punches import router as punches_router
 from app.api.plan import router as plan_router
 from app.api.settings import router as settings_router
@@ -134,6 +135,7 @@ app.include_router(shift_plan_pdf_router)
 app.include_router(audit_log_router)
 app.include_router(notifications_router)
 app.include_router(payroll_export_router)
+app.include_router(migration_router)
 app.include_router(employee_data_export_router)
 app.include_router(team_calendar_router)
 app.include_router(work_time_model_router)

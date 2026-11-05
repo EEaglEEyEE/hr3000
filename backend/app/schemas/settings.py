@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, TypeAdapter, field_validator, model_validator
 
+from app.schemas.core_time import CoreTimeDays
 from app.services.holiday_calendar import Bundesland
 
 
@@ -34,8 +35,13 @@ class SettingsResponse(BaseModel):
     vacation_carry_over_expiry: str | None = None
     disabled_day_flags: list[str] = []
     report_days_without_punches: bool = True
+    datev_consultant_number: str | None = None
+    datev_client_number: str | None = None
+    datev_hours_wage_type: str | None = None
     core_time_start: time | None = None
     core_time_end: time | None = None
+    # Kernzeit je Wochentag (Mo..So, None = an dem Tag keine); None = jeden Tag dieselbe.
+    core_time_days: CoreTimeDays = None
     punctuality_check: bool = False
     late_tolerance_minutes: int = 5
     flex_frame_start: time | None = None
@@ -96,11 +102,17 @@ class SettingsUpdateRequest(BaseModel):
     vacation_carry_over_expiry: str | None = Field(default=None, pattern=r"^((0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))?$")
     disabled_day_flags: list[str] | None = Field(default=None, max_length=10)
     report_days_without_punches: bool | None = None
+    # DATEV-LODAS-Export; "" = entfernen
+    datev_consultant_number: str | None = Field(default=None, pattern=r"^(\d{4,7})?$")
+    datev_client_number: str | None = Field(default=None, pattern=r"^(\d{1,5})?$")
+    datev_hours_wage_type: str | None = Field(default=None, pattern=r"^\d{0,6}$")
     max_shift_span_hours: int | None = Field(default=None, ge=8, le=24)
     # Kernzeit und Gleitzeit-Rahmen: jeweils beide Zeiten zusammen; clear_* = entfernen
     core_time_start: time | None = None
     core_time_end: time | None = None
     clear_core_time: bool = False
+    # Kernzeit je Wochentag; nur wenn mitgeschickt: null = wieder jeden Tag dieselbe Kernzeit.
+    core_time_days: CoreTimeDays = None
     punctuality_check: bool | None = None
     late_tolerance_minutes: int | None = Field(default=None, ge=0, le=120)
     flex_frame_start: time | None = None

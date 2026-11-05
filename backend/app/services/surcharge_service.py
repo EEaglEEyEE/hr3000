@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Employee, Punch, PunchType, SummaryStatus, SurchargeKind, SurchargeRule
 from app.services.timesheet_service import (
     _is_holiday,
-    _required_break_minutes,
+    break_policy,
     calculate_day,
     employee_timezone,
     punches_for_day,
@@ -102,7 +102,21 @@ async def work_intervals(db: AsyncSession, employee: Employee, work_date: date, 
         )
         if gap >= 15
     )
-    shortfall = max(await _required_break_minutes(db, employee.tenant_id, gross, work_date) - break_minutes, 0.0)
+    policy = await break_policy(db, employee, work_date)
+    # Feste Pausenzeiten an ihrer Uhrzeit herausschneiden (zählen als Pause).
+    for w_start, w_end in policy.local_windows(work_date):
+        cut: list[Interval] = []
+        for start, end in pieces:
+            if end <= w_start or start >= w_end:
+                cut.append((start, end))
+                continue
+            break_minutes += (min(end, w_end) - max(start, w_start)).total_seconds() / 60
+            if start < w_start:
+                cut.append((start, w_start))
+            if end > w_end:
+                cut.append((w_end, end))
+        pieces = cut
+    shortfall = max(policy.required_minutes(gross) - break_minutes, 0.0)
     while shortfall > 0 and pieces:
         start, end = pieces[-1]
         length = (end - start).total_seconds() / 60

@@ -22,6 +22,13 @@ function toIsoDate(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+/** Eigene Pause eines Modells als Text, z. B. ", Pause 30 Min." (leer = Pausenregeln). */
+function breakLabel(source: { break_minutes?: number | null; break_start?: string | null; break_end?: string | null }): string {
+  if (source.break_minutes) return `, Pause ${source.break_minutes} Min.`
+  if (source.break_start && source.break_end) return `, Pause ${source.break_start.slice(0, 5)}–${source.break_end.slice(0, 5)}`
+  return ''
+}
+
 function formatHours(minutes: number): string {
   return (minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
@@ -58,6 +65,11 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   const [monthlyHours, setMonthlyHours] = useState('')
   const [capHours, setCapHours] = useState('')
   const [dailyHours, setDailyHours] = useState<string[]>(['8', '8', '8', '8', '8', '', ''])
+  // Eigene Pause: "rules" = Pausenregeln des Mandanten, "minutes" = feste Minuten, "window" = feste Uhrzeit.
+  const [breakKind, setBreakKind] = useState<'rules' | 'minutes' | 'window'>('rules')
+  const [breakMinutes, setBreakMinutes] = useState('30')
+  const [breakStart, setBreakStart] = useState('12:00')
+  const [breakEnd, setBreakEnd] = useState('12:30')
   const [validFrom, setValidFrom] = useState(() => toIsoDate(new Date()))
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -77,6 +89,18 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
         : mode === 'monthly'
           ? monthlyHours.trim() !== '' && Number.isFinite(monthly) && monthly > 0 && monthly <= 260
           : Number.isFinite(hours) && hours > 0 && hours <= 60
+  const breakMinutesNumber = Number(breakMinutes)
+  const breakValid =
+    breakKind === 'rules' ||
+    (breakKind === 'minutes'
+      ? Number.isInteger(breakMinutesNumber) && breakMinutesNumber > 0 && breakMinutesNumber <= 240
+      : breakStart !== '' && breakEnd !== '' && breakStart < breakEnd)
+  const breakPayload =
+    breakKind === 'minutes'
+      ? { break_minutes: breakMinutesNumber }
+      : breakKind === 'window'
+        ? { break_start: breakStart, break_end: breakEnd }
+        : {}
   const dailyPreview = hoursValid && weekdays.length > 0 ? formatHours(Math.round((hours * 60) / weekdays.length)) : null
   // Monatssoll: Tagessoll je nach Monat zwischen (Monat mit den meisten) und (Monat mit den wenigsten Arbeitstagen).
   const monthlyPreview =
@@ -97,7 +121,17 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   const loadedFor = useRef<string | null>(null)
   useEffect(() => {
     const key = model
-      ? JSON.stringify([model.valid_from, model.weekly_minutes, model.monthly_minutes, model.day_minutes, model.on_demand, model.monthly_cap_minutes])
+      ? JSON.stringify([
+          model.valid_from,
+          model.weekly_minutes,
+          model.monthly_minutes,
+          model.day_minutes,
+          model.on_demand,
+          model.monthly_cap_minutes,
+          model.break_minutes,
+          model.break_start,
+          model.break_end,
+        ])
       : null
     if (!model?.configured || key === loadedFor.current) return
     loadedFor.current = key
@@ -119,7 +153,20 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
     on_demand?: boolean
     monthly_cap_minutes?: number | null
     monthly_minutes?: number | null
+    break_minutes?: number | null
+    break_start?: string | null
+    break_end?: string | null
   }) {
+    if (source.break_minutes) {
+      setBreakKind('minutes')
+      setBreakMinutes(String(source.break_minutes))
+    } else if (source.break_start && source.break_end) {
+      setBreakKind('window')
+      setBreakStart(source.break_start.slice(0, 5))
+      setBreakEnd(source.break_end.slice(0, 5))
+    } else {
+      setBreakKind('rules')
+    }
     if (source.on_demand) {
       setMode('onDemand')
       setCapHours(source.monthly_cap_minutes ? String(source.monthly_cap_minutes / 60).replace('.', ',') : '')
@@ -170,7 +217,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
     event.preventDefault()
     setError(null)
     setSaved(false)
-    const payload =
+    const modelPayload =
       mode === 'onDemand'
         ? { on_demand: true, flexible: false, monthly_cap_hours: cap, valid_from: validFrom }
         : mode === 'perDay'
@@ -180,6 +227,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
         : mode === 'flex'
           ? { weekly_hours: hours, flexible: true, on_demand: false, valid_from: validFrom }
           : { weekly_hours: hours, weekdays, flexible: false, on_demand: false, valid_from: validFrom }
+    const payload = { ...modelPayload, ...breakPayload }
     try {
       if (editing) {
         await updateVersion.mutateAsync({ versionId: editing.id, payload })
@@ -217,6 +265,12 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
           </p>
         )}
         {model?.configured && <CurrentModel model={model} />}
+        {model?.configured && model.is_work_time_model && (
+          <p className="mt-2 text-slate-500">
+            Pause:{' '}
+            {breakLabel(model) ? breakLabel(model).replace(', Pause ', '') : 'wie Pausenregeln'}
+          </p>
+        )}
       </div>
 
       {canEdit ? (
@@ -375,6 +429,70 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
           </>
           )}
 
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1.5 text-sm font-medium">Pause</legend>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {(
+                [
+                  ['rules', 'Wie Pausenregeln'],
+                  ['minutes', 'Feste Minuten'],
+                  ['window', 'Feste Uhrzeit'],
+                ] as const
+              ).map(([kind, label]) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  size="sm"
+                  variant={breakKind === kind ? 'default' : 'outline'}
+                  aria-pressed={breakKind === kind}
+                  onClick={() => setBreakKind(kind)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            {breakKind === 'minutes' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  id="break-minutes"
+                  aria-label="Pausenminuten"
+                  inputMode="numeric"
+                  className="w-24"
+                  value={breakMinutes}
+                  onChange={(event) => setBreakMinutes(event.target.value)}
+                />
+                <span className="text-sm text-slate-600">Minuten an jedem Arbeitstag, auch ohne Pausenstempelung</span>
+              </div>
+            )}
+            {breakKind === 'window' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label="Pause von"
+                  type="time"
+                  className="w-32"
+                  value={breakStart}
+                  onChange={(event) => setBreakStart(event.target.value)}
+                />
+                <span className="text-sm text-slate-600">bis</span>
+                <Input
+                  aria-label="Pause bis"
+                  type="time"
+                  className="w-32"
+                  value={breakEnd}
+                  onChange={(event) => setBreakEnd(event.target.value)}
+                />
+              </div>
+            )}
+            <p className="text-sm text-slate-500">
+              {breakKind === 'rules'
+                ? 'Es gelten die Pausenregeln (gesetzliche Staffel und ggf. feste Pausen des Betriebs).'
+                : breakKind === 'minutes'
+                  ? 'Gestempelte Pausen zählen mit; nur was fehlt, wird abgezogen.'
+                  : 'Abgezogen wird, soweit der Mitarbeiter in dieser Zeit da war.'}{' '}
+              Die gesetzliche Pause gilt immer mindestens.
+            </p>
+          </fieldset>
+
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="valid-from">Gültig ab</Label>
             <Input
@@ -401,6 +519,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
                 setModel.isPending ||
                 updateVersion.isPending ||
                 !hoursValid ||
+                !breakValid ||
                 ((mode === 'even' || mode === 'monthly') && weekdays.length === 0) ||
                 !validFrom
               }
@@ -454,6 +573,10 @@ function formatRange(version: WorkTimeModelVersion): string {
 }
 
 function describeVersion(version: WorkTimeModelVersion): string {
+  return describeTarget(version) + (version.is_work_time_model ? breakLabel(version) : '')
+}
+
+function describeTarget(version: WorkTimeModelVersion): string {
   if (!version.is_work_time_model) return `Schichtvorlage „${version.template_name}“`
   if (version.on_demand) {
     return `Nach Aufwand ohne Soll${version.monthly_cap_minutes ? `, Monatsgrenze ${formatHours(version.monthly_cap_minutes)} h` : ''}`

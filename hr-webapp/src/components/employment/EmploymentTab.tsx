@@ -19,6 +19,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
+import { PayComponentsSection } from './PayComponentsSection'
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof ApiError && err.status !== 422 ? err.message : fallback
@@ -34,6 +35,7 @@ export function EmploymentTab({ employeeId, isAdmin }: { employeeId: number; isA
     <div className="flex flex-col gap-8">
       <ContractSection employeeId={employeeId} />
       {isAdmin && <CompensationSection employeeId={employeeId} />}
+      {isAdmin && <PayComponentsSection employeeId={employeeId} />}
     </div>
   )
 }

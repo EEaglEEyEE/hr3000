@@ -64,6 +64,8 @@ class Employee(Base):
     core_time_mode: Mapped[str] = mapped_column(String(10), default="TENANT")
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     core_time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); NULL = jeden Tag core_time_start/-end.
+    core_time_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # DSGVO-Anonymisierung (siehe app/api/employees.py anonymize_employee):
     # gesetzt, sobald Name/Kontaktdaten überschrieben wurden. Punches/Absences
     # bleiben für die Aufbewahrungsfrist erhalten – nur die Stammdaten werden

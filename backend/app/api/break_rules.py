@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
@@ -7,8 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_admin_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import BreakRule
-from app.schemas.break_rule import BreakRuleCreateRequest, BreakRuleResponse, BreakRuleUpdateRequest
+from app.models import BreakRule, BreakRuleKind
+from app.schemas.break_rule import (
+    BreakRuleCreateRequest,
+    BreakRuleResponse,
+    BreakRuleUpdateRequest,
+    check_window,
+    window_length,
+)
 from app.services.period_service import ensure_tenant_open_from
 from app.services.timesheet_service import invalidate_tenant_balances
 
@@ -25,16 +31,26 @@ async def _get_rule(db: AsyncSession, rule_id: int, tenant_id: int) -> BreakRule
     return rule
 
 
-async def _ensure_unique_threshold(db: AsyncSession, tenant_id: int, threshold: int, valid_from: date, exclude_id: int | None = None) -> None:
-    stmt = select(BreakRule.id).where(
+async def _ensure_no_conflict(
+    db: AsyncSession, tenant_id: int, rule: BreakRule, valid_from: date, exclude_id: int | None = None
+) -> None:
+    """Je Art und Zeitraum: Staffel/feste Minuten mit eindeutiger Schwelle, feste Pausenzeiten
+    ohne Überschneidung."""
+    stmt = select(BreakRule).where(
         BreakRule.tenant_id == tenant_id,
-        BreakRule.min_work_minutes == threshold,
         or_(BreakRule.valid_to.is_(None), BreakRule.valid_to >= valid_from),
     )
     if exclude_id is not None:
         stmt = stmt.where(BreakRule.id != exclude_id)
-    if (await db.execute(stmt.limit(1))).first() is not None:
-        raise AppError(409, "THRESHOLD_TAKEN", "Für diese Arbeitszeitschwelle gibt es bereits eine Regel.")
+    kind = rule.kind or BreakRuleKind.LEGAL
+    for other in (await db.execute(stmt)).scalars().all():
+        if (other.kind or BreakRuleKind.LEGAL) != kind:
+            continue
+        if kind == BreakRuleKind.FIXED_WINDOW:
+            if other.start_time < rule.end_time and rule.start_time < other.end_time:
+                raise AppError(409, "WINDOW_OVERLAP", "Diese Pausenzeit überschneidet sich mit einer anderen.")
+        elif other.min_work_minutes == rule.min_work_minutes:
+            raise AppError(409, "THRESHOLD_TAKEN", "Für diese Arbeitszeitschwelle gibt es bereits eine Regel.")
 
 
 @router.get("/break-rules", response_model=list[BreakRuleResponse])
@@ -47,8 +63,13 @@ async def list_break_rules(
     stmt = select(BreakRule).where(BreakRule.tenant_id == actor.tenant_id)
     if not include_history:
         stmt = stmt.where(or_(BreakRule.valid_to.is_(None), BreakRule.valid_to >= date.today()))
-    result = await db.execute(stmt.order_by(BreakRule.min_work_minutes.asc(), BreakRule.valid_from.asc()))
-    return [BreakRuleResponse.model_validate(r) for r in result.scalars().all()]
+    rules = (await db.execute(stmt)).scalars().all()
+    order = list(BreakRuleKind)
+    rules = sorted(
+        rules,
+        key=lambda r: (order.index(r.kind or BreakRuleKind.LEGAL), r.start_time or time.min, r.min_work_minutes, r.valid_from),
+    )
+    return [BreakRuleResponse.model_validate(r) for r in rules]
 
 
 @router.post("/break-rules", response_model=BreakRuleResponse, status_code=201)
@@ -59,13 +80,16 @@ async def create_break_rule(
 ) -> BreakRuleResponse:
     valid_from = payload.valid_from or date.today()
     await ensure_tenant_open_from(db, actor.tenant_id, valid_from)
-    await _ensure_unique_threshold(db, actor.tenant_id, payload.min_work_minutes, valid_from)
     rule = BreakRule(
         tenant_id=actor.tenant_id,
+        kind=payload.kind,
         min_work_minutes=payload.min_work_minutes,
         deduct_minutes=payload.deduct_minutes,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
         valid_from=valid_from,
     )
+    await _ensure_no_conflict(db, actor.tenant_id, rule, valid_from)
     db.add(rule)
     await invalidate_tenant_balances(db, actor.tenant_id, valid_from)
     await db.commit()
@@ -83,24 +107,37 @@ async def update_break_rule(
     rule = await _get_rule(db, rule_id, actor.tenant_id)
     effective = max(payload.valid_from or date.today(), rule.valid_from)
     await ensure_tenant_open_from(db, actor.tenant_id, effective)
-    threshold = payload.min_work_minutes if payload.min_work_minutes is not None else rule.min_work_minutes
-    deduct = payload.deduct_minutes if payload.deduct_minutes is not None else rule.deduct_minutes
+    changed = BreakRule(
+        tenant_id=actor.tenant_id,
+        kind=rule.kind or BreakRuleKind.LEGAL,
+        min_work_minutes=payload.min_work_minutes if payload.min_work_minutes is not None else rule.min_work_minutes,
+        deduct_minutes=payload.deduct_minutes if payload.deduct_minutes is not None else rule.deduct_minutes,
+        start_time=payload.start_time or rule.start_time,
+        end_time=payload.end_time or rule.end_time,
+    )
+    if changed.kind == BreakRuleKind.FIXED_WINDOW:
+        try:
+            check_window(changed.start_time, changed.end_time)
+        except ValueError as exc:
+            raise AppError(422, "INVALID_WINDOW", str(exc)) from exc
+        changed.min_work_minutes = 0
+        changed.deduct_minutes = window_length(changed.start_time, changed.end_time)
 
     if rule.valid_from >= effective:
         # Regel wirkt noch nicht bzw. erst ab heute: direkt ändern.
-        await _ensure_unique_threshold(db, actor.tenant_id, threshold, rule.valid_from, exclude_id=rule.id)
-        rule.min_work_minutes = threshold
-        rule.deduct_minutes = deduct
+        await _ensure_no_conflict(db, actor.tenant_id, changed, rule.valid_from, exclude_id=rule.id)
+        rule.min_work_minutes = changed.min_work_minutes
+        rule.deduct_minutes = changed.deduct_minutes
+        rule.start_time, rule.end_time = changed.start_time, changed.end_time
         target = rule
     else:
         # Bisherige Fassung endet am Vortag, neue Fassung gilt ab Stichtag.
         old_end = rule.valid_to
         rule.valid_to = effective - timedelta(days=1)
-        await _ensure_unique_threshold(db, actor.tenant_id, threshold, effective, exclude_id=rule.id)
-        target = BreakRule(
-            tenant_id=actor.tenant_id, min_work_minutes=threshold, deduct_minutes=deduct, valid_from=effective, valid_to=old_end
-        )
-        db.add(target)
+        await _ensure_no_conflict(db, actor.tenant_id, changed, effective, exclude_id=rule.id)
+        changed.valid_from, changed.valid_to = effective, old_end
+        db.add(changed)
+        target = changed
     await invalidate_tenant_balances(db, actor.tenant_id, effective)
     await db.commit()
     await db.refresh(target)

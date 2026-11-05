@@ -7,14 +7,17 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 from app.models.daily_summary import SummaryStatus
 from app.models.hr_user import HrRole
 from app.schemas.common import NewPassword, normalize_card_uid
+from app.schemas.core_time import CoreTimeDays
 from app.schemas.work_time_model import WorkTimeModelInput
 
 
 CoreTimeMode = Literal["TENANT", "CUSTOM", "NONE"]
 
 
-def _check_core_time(mode: str | None, start: dt.time | None, end: dt.time | None) -> None:
+def _check_core_time(mode: str | None, start: dt.time | None, end: dt.time | None, days: list | None = None) -> None:
     if mode == "CUSTOM":
+        if days is not None:
+            return  # Kernzeit je Wochentag (je Tag geprüft, siehe CoreTimeDay)
         if start is None or end is None:
             raise ValueError("Eigene Kernzeit: bitte Beginn und Ende angeben.")
         if start >= end:
@@ -49,10 +52,12 @@ class EmployeeCreateRequest(BaseModel):
     core_time_mode: CoreTimeMode = "TENANT"
     core_time_start: dt.time | None = None
     core_time_end: dt.time | None = None
+    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
+    core_time_days: CoreTimeDays = None
 
     @model_validator(mode="after")
     def _valid_core_time(self) -> "EmployeeCreateRequest":
-        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end)
+        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end, self.core_time_days)
         return self
 
 
@@ -89,10 +94,12 @@ class EmployeeUpdateRequest(BaseModel):
     core_time_mode: CoreTimeMode | None = None
     core_time_start: dt.time | None = None
     core_time_end: dt.time | None = None
+    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
+    core_time_days: CoreTimeDays = None
 
     @model_validator(mode="after")
     def _valid_core_time(self) -> "EmployeeUpdateRequest":
-        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end)
+        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end, self.core_time_days)
         return self
 
 
@@ -132,6 +139,7 @@ class EmployeeResponse(BaseModel):
     core_time_mode: str = "TENANT"
     core_time_start: dt.time | None = None
     core_time_end: dt.time | None = None
+    core_time_days: CoreTimeDays = None
     anonymized_at: dt.datetime | None
 
 

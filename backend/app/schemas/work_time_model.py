@@ -1,6 +1,8 @@
-from datetime import date
+from datetime import date, time
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.schemas.break_rule import check_window
 
 
 class WorkTimeModelInput(BaseModel):
@@ -22,6 +24,28 @@ class WorkTimeModelInput(BaseModel):
     # Nach Aufwand: kein Soll, Abrechnung nach Ist-Stunden; optional Monatsgrenze als Warnung.
     on_demand: bool = False
     monthly_cap_hours: float | None = Field(default=None, gt=0, le=400)
+    # Eigene Pause statt der betrieblichen Pausenregeln des Mandanten (die gesetzliche Staffel gilt
+    # immer zusätzlich als Untergrenze): feste Minuten je Arbeitstag ODER feste Pausenzeit.
+    break_minutes: int | None = Field(default=None, gt=0, le=240)
+    break_start: time | None = None
+    break_end: time | None = None
+
+    @model_validator(mode="after")
+    def _break(self) -> "WorkTimeModelInput":
+        if self.break_start is not None or self.break_end is not None:
+            if self.break_minutes is not None:
+                raise ValueError("Pause entweder als feste Minuten oder als feste Uhrzeit angeben.")
+            check_window(self.break_start, self.break_end)
+        return self
+
+    @property
+    def break_label(self) -> str:
+        """Namenszusatz der Vorlage bzw. Audit-Text, z.B. ", Pause 30 Min." / ", Pause 12:00–12:30"."""
+        if self.break_minutes is not None:
+            return f", Pause {self.break_minutes} Min."
+        if self.break_start is not None and self.break_end is not None:
+            return f", Pause {self.break_start:%H:%M}–{self.break_end:%H:%M}"
+        return ""
 
     @field_validator("weekdays")
     @classmethod
@@ -130,6 +154,10 @@ class WorkTimeModelResponse(BaseModel):
     monthly_cap_minutes: int | None = None
     # Festes Monatssoll (Tagessoll schwankt dann je nach Zahl der Arbeitstage im Monat).
     monthly_minutes: int | None = None
+    # Eigene Pause des Modells (sonst gelten die Pausenregeln des Mandanten).
+    break_minutes: int | None = None
+    break_start: time | None = None
+    break_end: time | None = None
     valid_from: date | None
 
 
@@ -151,3 +179,6 @@ class WorkTimeModelVersion(BaseModel):
     on_demand: bool = False
     monthly_cap_minutes: int | None = None
     monthly_minutes: int | None = None
+    break_minutes: int | None = None
+    break_start: time | None = None
+    break_end: time | None = None

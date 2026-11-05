@@ -8,6 +8,7 @@ import { useTeamsQuery } from '../api/queries/teams'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { MigrationValuesSection } from '../components/migration/MigrationValuesSection'
 
 const REQUIRED_COLUMNS = ['vorname', 'nachname', 'personalnummer', 'standort']
 const OPTIONAL_COLUMNS = [
@@ -147,6 +148,8 @@ export function EmployeeBulkImportPage() {
           )}
         </div>
       )}
+
+      <MigrationValuesSection />
     </div>
   )
 }

@@ -5,7 +5,7 @@ from app.models.app_settings import AppSettings
 from app.models.audit_log_entry import AuditAction, AuditLogEntry
 from app.models.balance_adjustment import AdjustmentKind, BalanceAdjustment
 from app.models.base import Base
-from app.models.break_rule import BreakRule
+from app.models.break_rule import BreakRule, BreakRuleKind
 from app.models.checklist import (
     ChecklistKind,
     ChecklistRole,
@@ -22,6 +22,7 @@ from app.models.employee import Employee
 from app.models.employee_default_shift import EmployeeDefaultShift
 from app.models.employee_location_period import EmployeeLocationPeriod
 from app.models.employment import Compensation, ContractType, EmploymentContract, PayType
+from app.models.pay_component import AllowanceUnit, PayComponent, PayComponentKind
 from app.models.holiday import Holiday, holiday_locations
 from app.models.hr_user import HrRole, HrUser
 from app.models.leave_entitlement import LeaveEntitlement
@@ -49,6 +50,9 @@ __all__ = [
     "PunchCorrectionRequest",
     "AppSettings",
     "Compensation",
+    "AllowanceUnit",
+    "PayComponent",
+    "PayComponentKind",
     "ContractType",
     "EmploymentContract",
     "PayType",
@@ -65,6 +69,7 @@ __all__ = [
     "EmployeeChecklistItem",
     "BreakMode",
     "BreakRule",
+    "BreakRuleKind",
     "DailySummary",
     "DayReview",
     "DocumentCategory",

@@ -74,7 +74,8 @@ export function ShiftTemplateFormDialog({
       break_mode: breakMode,
       fixed_break_start: breakMode === 'FIXED' ? fixedBreakStart || null : null,
       fixed_break_end: breakMode === 'FIXED' ? fixedBreakEnd || null : null,
-      min_break_minutes: breakMode === 'FLEXIBLE' && minBreakMinutes !== '' ? minBreakMinutes : null,
+      // 0 = keine eigene Pause (es gelten die Pausenregeln); leer lassen entfernt eine bisherige.
+      min_break_minutes: breakMode === 'FLEXIBLE' ? (minBreakMinutes === '' ? 0 : minBreakMinutes) : null,
       target_minutes: targetMinutes,
       target_period: targetPeriod,
       location_id: selectedLocationId,
@@ -101,6 +102,14 @@ export function ShiftTemplateFormDialog({
   }
 
   const isSubmitting = createTemplate.isPending || updateTemplate.isPending
+  const targetChanged = isEditMode && (targetMinutes !== template.target_minutes || targetPeriod !== template.target_period)
+  const breakChanged =
+    isEditMode &&
+    (breakMode !== template.break_mode ||
+      (breakMode === 'FIXED'
+        ? fixedBreakStart !== (template.fixed_break_start?.slice(0, 5) ?? '') ||
+          fixedBreakEnd !== (template.fixed_break_end?.slice(0, 5) ?? '')
+        : (minBreakMinutes || 0) !== (template.min_break_minutes || 0)))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -183,12 +192,13 @@ export function ShiftTemplateFormDialog({
             />
           </div>
 
-          {isEditMode && (targetMinutes !== template.target_minutes || targetPeriod !== template.target_period) && (
+          {(targetChanged || breakChanged) && (
             <div className="flex flex-col gap-1.5 rounded-md bg-amber-50 p-3">
-              <Label htmlFor="template_valid_from">Neues Soll gilt ab</Label>
+              <Label htmlFor="template_valid_from">{targetChanged ? 'Neues Soll gilt ab' : 'Neue Pause gilt ab'}</Label>
               <Input id="template_valid_from" type="date" value={validFrom} onChange={(e) => e.target.value && setValidFrom(e.target.value)} />
               <p className="text-xs text-amber-800">
-                Tage davor rechnen weiter mit dem bisherigen Soll (die alte Fassung wird archiviert).
+                Tage davor rechnen weiter mit {targetChanged ? 'dem bisherigen Soll' : 'der bisherigen Pause'} (die alte
+                Fassung wird archiviert).
               </p>
             </div>
           )}
@@ -200,8 +210,8 @@ export function ShiftTemplateFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="FLEXIBLE">Flexibel (Mitarbeiter stempelt Pause selbst)</SelectItem>
-                <SelectItem value="FIXED">Fest (automatisches Pausenfenster)</SelectItem>
+                <SelectItem value="FLEXIBLE">Flexibel (Pause stempeln, optional feste Minuten)</SelectItem>
+                <SelectItem value="FIXED">Feste Pausenzeit (wird automatisch abgezogen)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -229,11 +239,12 @@ export function ShiftTemplateFormDialog({
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="min_break_minutes">Mindestpause (Minuten, optional)</Label>
+              <Label htmlFor="min_break_minutes">Feste Pause (Minuten, optional)</Label>
               <Input
                 id="min_break_minutes"
                 type="number"
                 min={0}
+                max={240}
                 value={minBreakMinutes}
                 onChange={(event) =>
                   setMinBreakMinutes(event.target.value === '' ? '' : Number(event.target.value))
@@ -241,6 +252,12 @@ export function ShiftTemplateFormDialog({
               />
             </div>
           )}
+          <p className="-mt-2 text-xs text-slate-500">
+            {breakMode === 'FIXED'
+              ? 'Die Pausenzeit wird abgezogen, soweit der Mitarbeiter in dieser Zeit da war – auch ohne Pausenstempelung.'
+              : 'Feste Minuten werden an jedem Arbeitstag mindestens abgezogen. Leer = es gelten die Pausenregeln.'}{' '}
+            Die gesetzliche Pause gilt immer mindestens.
+          </p>
 
           <div className="flex flex-col gap-1.5">
             <Label>Standort</Label>

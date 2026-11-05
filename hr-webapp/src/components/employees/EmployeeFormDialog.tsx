@@ -1,5 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  CoreTimeDaysEditor,
+  coreTimeDaysFromApi,
+  initialCoreTimeDays,
+  type CoreTimeDay,
+} from '../coreTime/CoreTimeDaysEditor'
+import {
   useCreateEmployeeMutation,
   useResetEmployeePasswordMutation,
   useUpdateEmployeeHrRoleMutation,
@@ -73,6 +79,8 @@ export function EmployeeFormDialog({
   const [coreTimeMode, setCoreTimeMode] = useState<'TENANT' | 'CUSTOM' | 'NONE'>('TENANT')
   const [coreStart, setCoreStart] = useState('')
   const [coreEnd, setCoreEnd] = useState('')
+  // Eigene Kernzeit je Wochentag (null = jeden Tag dieselbe)
+  const [coreDays, setCoreDays] = useState<CoreTimeDay[] | null>(null)
   const [hrRole, setHrRole] = useState<string>(NO_HR_ROLE)
   const [error, setError] = useState<string | null>(null)
   const [hrRoleError, setHrRoleError] = useState<string | null>(null)
@@ -103,6 +111,7 @@ export function EmployeeFormDialog({
     setCoreTimeMode((employee?.core_time_mode as 'TENANT' | 'CUSTOM' | 'NONE' | undefined) ?? 'TENANT')
     setCoreStart(employee?.core_time_start?.slice(0, 5) ?? '')
     setCoreEnd(employee?.core_time_end?.slice(0, 5) ?? '')
+    setCoreDays(coreTimeDaysFromApi(employee?.core_time_days))
     setHrRole(employee?.hr_role ?? NO_HR_ROLE)
     setError(null)
     setHrRoleError(null)
@@ -125,7 +134,11 @@ export function EmployeeFormDialog({
       login_email: loginEmail || undefined,
       auto_break_enabled: autoBreakEnabled,
       core_time_mode: coreTimeMode,
-      ...(coreTimeMode === 'CUSTOM' ? { core_time_start: coreStart, core_time_end: coreEnd } : {}),
+      ...(coreTimeMode === 'CUSTOM'
+        ? coreDays
+          ? { core_time_days: coreDays }
+          : { core_time_start: coreStart, core_time_end: coreEnd, core_time_days: null }
+        : {}),
       // Leerer String entfernt die Karte beim Bearbeiten (None hieße "unverändert").
       nfc_uid: nfcUid.trim(),
       hire_date: hireDate || undefined,
@@ -382,6 +395,17 @@ export function EmployeeFormDialog({
               <option value="NONE">Keine Prüfung (z. B. Außendienst)</option>
             </select>
             {coreTimeMode === 'CUSTOM' && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={coreDays !== null}
+                  onChange={(e) => setCoreDays(e.target.checked ? initialCoreTimeDays(coreStart, coreEnd) : null)}
+                />
+                Je Wochentag unterschiedlich
+              </label>
+            )}
+            {coreTimeMode === 'CUSTOM' && coreDays && <CoreTimeDaysEditor days={coreDays} onChange={setCoreDays} />}
+            {coreTimeMode === 'CUSTOM' && !coreDays && (
               <div className="flex items-center gap-2">
                 <Input
                   type="time"

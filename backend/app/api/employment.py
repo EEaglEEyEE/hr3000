@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_admin_principal, get_current_full_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, Compensation, ContractType, Employee, EmploymentContract
+from app.models import AuditAction, Compensation, ContractType, Employee, EmploymentContract, PayComponent, PayComponentKind
 from app.schemas.employment import (
     CompensationCreateRequest,
     CompensationResponse,
@@ -15,7 +15,9 @@ from app.schemas.employment import (
     ContractResponse,
     ContractUpdateRequest,
 )
+from app.schemas.pay_component import PayComponentCreateRequest, PayComponentResponse, PayComponentUpdateRequest
 from app.services.audit_service import log_action
+from app.services.period_service import ensure_open_from, ensure_period_open, ensure_range_open
 from app.services.effective_dating import apply_new_period
 
 router = APIRouter(tags=["employment"])
@@ -205,4 +207,119 @@ async def delete_compensation(
         raise AppError(404, "COMPENSATION_NOT_FOUND", "Vergütung nicht gefunden.")
     _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"Vergütung gelöscht (ab {compensation.valid_from.isoformat()})")
     await db.delete(compensation)
+    await db.commit()
+
+
+# --- Zulagen und Einmalzahlungen (nur Admin, wie Vergütung) ---------------------------------------
+
+
+def _label(component: PayComponent) -> str:
+    return f"{'Zulage' if component.kind == PayComponentKind.ALLOWANCE else 'Einmalzahlung'} „{component.name}“"
+
+
+async def _ensure_component_open(db: AsyncSession, component: PayComponent) -> None:
+    """Abgeschlossene Monate bleiben unverändert (der Lohn-Export dafür ist schon gelaufen)."""
+    if component.kind == PayComponentKind.ONE_TIME:
+        await ensure_period_open(db, component.employee_id, component.pay_date)
+    elif component.valid_to is None:
+        await ensure_open_from(db, component.employee_id, component.valid_from)
+    else:
+        await ensure_range_open(db, component.employee_id, component.valid_from, component.valid_to)
+
+
+async def _get_component(db: AsyncSession, employee_id: int, component_id: int) -> PayComponent:
+    component = await db.get(PayComponent, component_id)
+    if component is None or component.employee_id != employee_id:
+        raise AppError(404, "PAY_COMPONENT_NOT_FOUND", "Zulage bzw. Einmalzahlung nicht gefunden.")
+    return component
+
+
+@router.get("/employees/{employee_id}/pay-components", response_model=list[PayComponentResponse])
+async def list_pay_components(
+    employee_id: int,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[PayComponentResponse]:
+    employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
+    result = await db.execute(select(PayComponent).where(PayComponent.employee_id == employee_id))
+    components = sorted(
+        result.scalars().all(), key=lambda c: (c.kind != PayComponentKind.ALLOWANCE, -(c.valid_from or c.pay_date).toordinal())
+    )
+    _audit(db, actor, AuditAction.COMPENSATION_VIEWED, employee, "Zulagen/Einmalzahlungen eingesehen")
+    await db.commit()
+    return [PayComponentResponse.model_validate(c) for c in components]
+
+
+@router.post("/employees/{employee_id}/pay-components", response_model=PayComponentResponse, status_code=201)
+async def create_pay_component(
+    employee_id: int,
+    payload: PayComponentCreateRequest,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> PayComponentResponse:
+    employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
+    component = PayComponent(tenant_id=actor.tenant_id, employee_id=employee_id, **payload.model_dump())
+    await _ensure_component_open(db, component)
+    db.add(component)
+    when = (
+        f"ab {payload.valid_from.isoformat()}" if payload.kind == PayComponentKind.ALLOWANCE else f"am {payload.pay_date.isoformat()}"
+    )
+    # Bewusst ohne Betrag: der Audit-Log ist auch für HR lesbar.
+    _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"{_label(component)} angelegt ({when})")
+    await db.commit()
+    await db.refresh(component)
+    return PayComponentResponse.model_validate(component)
+
+
+@router.patch("/employees/{employee_id}/pay-components/{component_id}", response_model=PayComponentResponse)
+async def update_pay_component(
+    employee_id: int,
+    component_id: int,
+    payload: PayComponentUpdateRequest,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> PayComponentResponse:
+    employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
+    component = await _get_component(db, employee_id, component_id)
+    changes: list[str] = []
+    if payload.valid_to is not None or payload.clear_valid_to:
+        if component.kind != PayComponentKind.ALLOWANCE:
+            raise AppError(400, "NOT_AN_ALLOWANCE", "Nur Zulagen haben ein Ende.")
+        new_to = None if payload.clear_valid_to else payload.valid_to
+        if new_to is not None and new_to < component.valid_from:
+            raise AppError(400, "INVALID_RANGE", "„Gültig bis“ darf nicht vor „Gültig ab“ liegen.")
+        if new_to != component.valid_to:
+            # Betroffen sind die Tage zwischen altem und neuem Ende.
+            first_changed = min(d for d in (component.valid_to, new_to) if d is not None) + timedelta(days=1)
+            if component.valid_to is None or new_to is None:
+                await ensure_open_from(db, employee_id, first_changed)
+            else:
+                await ensure_range_open(db, employee_id, first_changed, max(component.valid_to, new_to))
+            component.valid_to = new_to
+            changes.append(f"bis {new_to.isoformat()}" if new_to else "unbefristet")
+    if payload.wage_type is not None:
+        component.wage_type = payload.wage_type or None
+        changes.append("Lohnart")
+    if payload.note is not None:
+        component.note = payload.note.strip() or None
+        changes.append("Notiz")
+    if changes:
+        _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"{_label(component)} geändert: {', '.join(changes)}")
+    await db.commit()
+    await db.refresh(component)
+    return PayComponentResponse.model_validate(component)
+
+
+@router.delete("/employees/{employee_id}/pay-components/{component_id}", status_code=204)
+async def delete_pay_component(
+    employee_id: int,
+    component_id: int,
+    actor: Actor = Depends(get_current_admin_principal),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
+    component = await _get_component(db, employee_id, component_id)
+    await _ensure_component_open(db, component)
+    _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"{_label(component)} gelöscht")
+    await db.delete(component)
     await db.commit()

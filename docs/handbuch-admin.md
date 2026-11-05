@@ -38,6 +38,17 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 2. **„Einstellungen“ → „Allgemein“:** „Gleitzeitkonten führen ab“, „Standard-Jahresurlaub“,
    „Standard-Bundesland“.
 3. **„Mitarbeiter“** → „Neuer Mitarbeiter“ oder „CSV-Import“.
+   - Umstieg von einem anderen System: auf derselben Seite unter „Werte aus dem Altsystem
+     übernehmen“ eine zweite CSV hochladen (Pflichtspalte `personalnummer`). Optional sind
+     `saldo_stunden` (Gleitzeit-Übertrag, auch negativ), `urlaubsanspruch_tage` und
+     `uebertrag_vorjahr_tage` für das Jahr des Stichtags sowie das Arbeitszeitmodell ab Stichtag
+     (`wochenstunden`, `arbeitstage`, `tagesstunden`, `monatsstunden`, `monatsgrenze`,
+     `pause_minuten`). Leere Zellen ändern nichts.
+   - „Stichtag“ wählen, „Vorschau“ prüfen, dann „Übernehmen“. Fehlerhafte Zeilen werden
+     übersprungen und angezeigt. Ein zweiter Gleitzeit-Übertrag zum selben Stichtag wird
+     abgelehnt, ebenso Änderungen in abgeschlossenen Monaten.
+   - Wer mitten im Jahr umsteigt: als `urlaubsanspruch_tage` den restlichen Anspruch für den Rest
+     des Jahres eintragen, da bereits genommener Urlaub nicht im neuen System steht.
 4. **„Tablets“** → „Neues Tablet“, dann „QR-Code“ und mit dem Tablet scannen. Die
    Tablet-Adresse ist `https://kiosk.<firma>.hr3000.de`.
 5. Optional: „Pausenregeln“ prüfen (die gesetzliche Staffel nach § 4 ArbZG ist vorbelegt),
@@ -89,7 +100,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   - Stammdaten, Standort („Standortwechsel gilt ab“), Team, Aktiv
   - Eintritts-, Austritts- und Geburtsdatum
   - „Pausen automatisch stempeln (nach Pausenregeln)“
-  - „Kernarbeitszeit / Pünktlichkeit“: wie Einstellungen, eigene Kernzeit oder „Keine Prüfung“
+  - „Kernarbeitszeit / Pünktlichkeit“: wie Einstellungen, eigene Kernzeit oder „Keine Prüfung“.
+    Die eigene Kernzeit geht mit „Je Wochentag unterschiedlich“ auch je Tag, ohne Häkchen an einem
+    Tag gilt dort keine Kernzeit.
   - „Login (Mein Bereich)“: Login-E-Mail und Passwort
   - „Stempel-PIN (Tablet)“ mit „PIN zurücksetzen“
   - „NFC-Karte (Tablet)“ mit „Karten-UID (optional)“
@@ -113,7 +126,18 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
       Passt für Teilzeit, die mal an 2, mal an 3 Tagen arbeitet: Tage ohne Stempelung sind nie
       „zu klären“.
     - „Nach Aufwand (Aushilfe)“
-  - „Vertrag“, für Admins „Vertrag & Vergütung“
+    - „Pause“: „Wie Pausenregeln“ (Standard), „Feste Minuten“ (an jedem Arbeitstag mindestens so
+      viel Pause, gestempelte Pausen zählen mit) oder „Feste Uhrzeit“ (z. B. 12:00–12:30, abgezogen,
+      soweit der Mitarbeiter da war). Eine eigene Pause ersetzt die festen Pausen des Betriebs; die
+      gesetzliche Pausenstaffel gilt immer mindestens.
+  - „Vertrag“, für Admins „Vertrag & Vergütung“. Dort zusätzlich „Zulagen & Einmalzahlungen“:
+    - „Neue Zulage“: „Je Monat“ (in angebrochenen Monaten anteilig nach Kalendertagen) oder „Je
+      Stunde (auf den Stundenlohn)“ (Betrag × Ist-Stunden), mit „Gültig ab“ und optional „Gültig
+      bis“. Laufende Zulagen mit „Beenden“ abschließen.
+    - „Neue Einmalzahlung“, z. B. Weihnachtsgeld, mit „Auszahlung am“.
+    - Optional eine „Lohnart“ für den Export ans Lohnbüro.
+    - Nur Admins sehen die Beträge; im Audit-Log steht jede Änderung ohne Betrag. Abgeschlossene
+      Monate lassen sich nicht mehr ändern.
   - „Dokumente“: verschlüsselt abgelegt; mit „Für den Mitarbeiter in Mein Bereich sichtbar“
     und „Vertraulich“
   - „Checklisten“
@@ -152,17 +176,47 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   - Reiter: Handlungsbedarf (BEM, Probezeit, Befristung, Austritt), Fehlzeiten, Urlaub,
     Überstunden, Lohnkosten (nur Admin)
   - jeweils „CSV exportieren“
-- **„Lohn-Export“:** Monat und Standort wählen, CSV für das Lohnbüro.
-- **„Zuschläge“:** Regeln für Nacht, Sonntag, Feiertag und eigene Regeln
+- **„Lohn-Export“:** Monat und Standort wählen, CSV für das Lohnbüro. Zieht ein Admin den
+  Export, kommt je Zulage bzw. Einmalzahlung eine Spalte mit dem Betrag im Zeitraum dazu (z. B.
+  „Zulage Fahrtkosten (€)“, „Einmalzahlung Weihnachtsgeld (€)“). Bei HR fehlen diese Spalten.
+- **„DATEV LODAS“** (auf der Seite „Lohn-Export“, nur Admins): Importdatei mit den
+  Bewegungsdaten des gewählten Monats für das Lohnbüro (LODAS: ASCII-Import).
+  - Einmalig „Beraternummer“ (4–7 Ziffern), „Mandantennummer“ (1–5 Ziffern) und „Lohnart
+    Ist-Stunden“ eintragen und „Speichern“; darunter je Zuschlag eine Lohnart. Lohnarten für
+    Zulagen und Einmalzahlungen stehen beim Mitarbeiter unter „Vertrag & Vergütung“.
+  - Übertragen werden: Ist-Stunden von Mitarbeitern mit Vergütung „Stundenlohn“,
+    Zuschlagsstunden und Zulagen/Einmalzahlungen als Betrag, jeweils nur mit Lohnart.
+    Urlaub und Krankheit stehen nicht in der Datei.
+  - Die Personalnummer muss rein aus Ziffern bestehen (wie in LODAS).
+  - „Vorschau“ zeigt die Buchungen und Hinweise (z. B. fehlende Lohnart, offene Tage),
+    „DATEV-Datei herunterladen“ speichert die Datei.
+  - Vor der ersten echten Abrechnung den Aufbau mit dem Lohnbüro per Testimport abstimmen.
+- **„Zuschläge“:** Lohnarten für den DATEV-Export trägt man auf der Seite „Lohn-Export“ ein.
+  Regeln für Nacht, Sonntag, Feiertag und eigene Regeln
   („Standardregeln anlegen“, „Neue Regel“).
 
 ## 8. Arbeitszeit und Organisation
 
-- **„Pausenregeln“:** Staffel „Ab Arbeitsminuten“ / „Pausenabzug (Minuten)“ mit
-  „Änderungen gültig ab“.
+- **„Pausenregeln“:** alle Änderungen mit „Änderungen gültig ab“; Tage davor rechnen mit den
+  bisherigen Regeln.
+  - „Gesetzliche Pausenstaffel“: „Ab Arbeitsminuten“ / „Pausenabzug (Minuten)“. Gestempelte
+    Pausen zählen mit, nur was fehlt, wird abgezogen. Gilt immer als Untergrenze.
+  - „Feste Pausen des Betriebs“ für alle Mitarbeiter, auch ohne Pausenstempelung:
+    - „Feste Uhrzeit“ („Pause von“ / „Pause bis“, z. B. 12:00–12:30, auch mehrere): abgezogen,
+      soweit der Mitarbeiter in dieser Zeit da war. Wer um 12:15 geht, bekommt 15 Minuten
+      abgezogen; wer vor 12:00 geht, keine. Gestempelte Pausen in dieser Zeit zählen nicht doppelt.
+    - „Feste Minuten“ („Ab Arbeitsminuten“ / „Pause (Minuten)“): ab dieser Arbeitszeit mindestens
+      so viel Pause; gestempelte Pausen zählen mit.
+  - Ein Arbeitszeitmodell oder eine Schichtvorlage mit eigener Pause ersetzt die festen Pausen
+    des Betriebs für diesen Mitarbeiter.
+  - Die automatische Pause („Pausen automatisch stempeln“) bucht nur, was feste Pausenzeiten
+    nicht schon abdecken.
 - **Schichtplanung:**
   - einschalten unter „Einstellungen“ → „Allgemein“
-  - „Schichtvorlagen“: Beginn, Ende, Tages-/Wochen-/Monatssoll, Pausenregelung, Standort
+  - „Schichtvorlagen“: Beginn, Ende, Tages-/Wochen-/Monatssoll, Pausenregelung, Standort.
+    „Pausenregelung“: „Flexibel (Pause stempeln, optional feste Minuten)“ mit „Feste Pause
+    (Minuten, optional)“ oder „Feste Pausenzeit (wird automatisch abgezogen)“ mit „Pause von“ /
+    „Pause bis“. Eine geänderte Pause gilt ab „Neue Pause gilt ab“.
   - „Schichtplan-Kalender“: Schichten per Ziehen zuweisen, „PDF exportieren“
 - **„Feiertage“:** je Standort automatisch importiert; eigene Feiertage mit „Feiertag
   hinzufügen“.
@@ -184,6 +238,12 @@ für bestehende Firmen nichts ändert.
 - **Allgemein:**
   - „Tarif“
   - „Konto kündigen“, siehe Abschnitt 11
+  - „Einstellungen übertragen“: „Exportieren“ speichert fachliche Einstellungen, Pausenregeln,
+    Abwesenheitsarten und Zuschläge als Datei. „Datei importieren“ (z. B. in einer neuen Firma)
+    zeigt erst eine Vorschau, „Übernehmen“ wendet sie an. Einstellungen werden überschrieben,
+    Pausenregeln, Abwesenheitsarten und Zuschläge nur ergänzt; kollidierende Pausenregeln werden
+    übersprungen und angezeigt. Nicht übertragen werden Mailserver, Tablet-Admin-PIN,
+    „Gleitzeitkonten führen ab“ und die DATEV-Berater-/Mandantennummer.
   - „Gleitzeitkonten führen ab“: Datum. Leer heißt ab der ersten Stempelung; eine Änderung
     rechnet alle Konten neu.
   - „Standard-Jahresurlaub“, „Standard-Bundesland“
@@ -201,7 +261,10 @@ für bestehende Firmen nichts ändert.
     ohne Stempelung geht also ins Minus.
   - „Maximale Schichtlänge (Stunden)“
   - „Kernarbeitszeit & Gleitzeit“: Kernzeit, „Pünktlichkeit prüfen“ mit Toleranz,
-    Gleitzeit-Rahmen. Das erzeugt nur Hinweise und kürzt keine Stunden.
+    Gleitzeit-Rahmen. Das erzeugt nur Hinweise und kürzt keine Stunden. Mit „Kernzeit je
+    Wochentag unterschiedlich“ gilt je Tag eine eigene Kernzeit (z. B. freitags 09:00–12:00) oder
+    gar keine; speichern mit „Kernzeiten übernehmen“. „Keine Kernzeit“ entfernt auch die Zeiten je
+    Tag.
 - **Abwesenheiten & Urlaub:** Abwesenheitsarten, „Mitarbeiter dürfen Urlaub/Abwesenheiten
   beantragen“, „Urlaubsübertrag ins neue Jahr“.
 - **Kiosk:**

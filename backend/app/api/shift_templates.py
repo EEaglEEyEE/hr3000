@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import EmployeeDefaultShift, Location, ShiftPlanEntry, ShiftTemplate
+from app.models import BreakMode, EmployeeDefaultShift, Location, ShiftPlanEntry, ShiftTemplate
+from app.schemas.break_rule import check_window
 from app.services.period_service import ensure_open_from
 from app.services.timesheet_service import invalidate_balance
 from app.schemas.shift_template import (
@@ -82,7 +83,15 @@ async def update_shift_template(
     target_changes = (payload.target_minutes is not None and payload.target_minutes != template.target_minutes) or (
         payload.target_period is not None and payload.target_period != template.target_period
     )
-    if target_changes:
+    # Pausenänderungen wirken (wie ein geändertes Soll) erst ab Stichtag – vergangene und
+    # abgeschlossene Tage rechnen mit der bisherigen Pause.
+    break_changes = (
+        (payload.break_mode is not None and payload.break_mode != template.break_mode)
+        or (payload.fixed_break_start is not None and payload.fixed_break_start != template.fixed_break_start)
+        or (payload.fixed_break_end is not None and payload.fixed_break_end != template.fixed_break_end)
+        or (payload.min_break_minutes is not None and payload.min_break_minutes != (template.min_break_minutes or 0))
+    )
+    if target_changes or break_changes:
         template = await _version_for_target_change(db, actor, template, payload.valid_from or date.today())
 
     if payload.name is not None:
@@ -99,6 +108,11 @@ async def update_shift_template(
         template.fixed_break_end = payload.fixed_break_end
     if payload.min_break_minutes is not None:
         template.min_break_minutes = payload.min_break_minutes
+    if template.break_mode == BreakMode.FIXED:
+        try:
+            check_window(template.fixed_break_start, template.fixed_break_end)
+        except ValueError as exc:
+            raise AppError(422, "INVALID_BREAK_WINDOW", str(exc)) from exc
     if payload.target_minutes is not None:
         template.target_minutes = payload.target_minutes
     if payload.target_period is not None:

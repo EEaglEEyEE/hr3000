@@ -1663,6 +1663,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payroll-export/datev/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Datev Export
+         * @description Vorschau der Buchungen und Hinweise (was nicht übertragen werden kann) vor dem Download.
+         */
+        get: operations["preview_datev_export_payroll_export_datev_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payroll-export/datev": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Datev Export
+         * @description ASCII-Importdatei für DATEV LODAS (Bewegungsdaten des Monats), siehe
+         *     app/services/datev_export_service.py.
+         */
+        get: operations["download_datev_export_payroll_export_datev_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migration/employee-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Employee Values
+         * @description Werte aus dem Altsystem für bestehende Mitarbeiter (über die Personalnummer). Ohne apply nur
+         *     Vorschau. Fehlerhafte Zeilen werden übersprungen und gemeldet, gültige trotzdem übernommen.
+         */
+        post: operations["import_employee_values_migration_employee_values_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migration/settings-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Tenant Settings */
+        get: operations["export_tenant_settings_migration_settings_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/migration/settings-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Tenant Settings
+         * @description Übernimmt eine exportierte Datei: Einstellungen werden überschrieben, Pausenregeln,
+         *     Abwesenheitsarten und Zuschläge nur ergänzt (vorhandene bleiben unverändert). Ohne apply nur
+         *     Vorschau.
+         */
+        post: operations["import_tenant_settings_migration_settings_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees/{employee_id}/data-export": {
         parameters: {
             query?: never;
@@ -1853,6 +1954,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/pay-components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Pay Components */
+        get: operations["list_pay_components_employees__employee_id__pay_components_get"];
+        put?: never;
+        /** Create Pay Component */
+        post: operations["create_pay_component_employees__employee_id__pay_components_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/pay-components/{component_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Pay Component */
+        delete: operations["delete_pay_component_employees__employee_id__pay_components__component_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Pay Component */
+        patch: operations["update_pay_component_employees__employee_id__pay_components__component_id__patch"];
         trace?: never;
     };
     "/employees/{employee_id}/documents": {
@@ -2801,6 +2938,11 @@ export interface components {
          * @enum {string}
          */
         AdjustmentKind: "OPENING_BALANCE" | "PAYOUT" | "CORRECTION";
+        /**
+         * AllowanceUnit
+         * @enum {string}
+         */
+        AllowanceUnit: "PER_MONTH" | "PER_HOUR";
         /** AttentionItem */
         AttentionItem: {
             /** Employee Id */
@@ -2886,6 +3028,23 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_import_employee_values_migration_employee_values_post */
+        Body_import_employee_values_migration_employee_values_post: {
+            /** File */
+            file: string;
+            /**
+             * Cutover
+             * Format: date
+             * @description Stichtag der Übernahme
+             */
+            cutover: string;
+            /**
+             * Apply
+             * @description false = nur Vorschau
+             * @default false
+             */
+            apply: boolean;
+        };
         /** Body_upload_document_employees__employee_id__documents_post */
         Body_upload_document_employees__employee_id__documents_post: {
             /** File */
@@ -2930,21 +3089,37 @@ export interface components {
         BreakMode: "FIXED" | "FLEXIBLE";
         /** BreakRuleCreateRequest */
         BreakRuleCreateRequest: {
+            /** @default LEGAL */
+            kind: components["schemas"]["BreakRuleKind"];
             /** Min Work Minutes */
-            min_work_minutes: number;
+            min_work_minutes?: number | null;
             /** Deduct Minutes */
-            deduct_minutes: number;
+            deduct_minutes?: number | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
             /** Valid From */
             valid_from?: string | null;
         };
+        /**
+         * BreakRuleKind
+         * @enum {string}
+         */
+        BreakRuleKind: "LEGAL" | "FIXED_MINUTES" | "FIXED_WINDOW";
         /** BreakRuleResponse */
         BreakRuleResponse: {
             /** Id */
             id: number;
+            kind: components["schemas"]["BreakRuleKind"];
             /** Min Work Minutes */
             min_work_minutes: number;
             /** Deduct Minutes */
             deduct_minutes: number;
+            /** Start Time */
+            start_time: string | null;
+            /** End Time */
+            end_time: string | null;
             /**
              * Valid From
              * Format: date
@@ -2959,6 +3134,10 @@ export interface components {
             min_work_minutes?: number | null;
             /** Deduct Minutes */
             deduct_minutes?: number | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
             /** Valid From */
             valid_from?: string | null;
         };
@@ -3192,6 +3371,19 @@ export interface components {
              */
             clear_fixed_term_end: boolean;
         };
+        /** CoreTimeDay */
+        CoreTimeDay: {
+            /**
+             * Start
+             * Format: time
+             */
+            start: string;
+            /**
+             * End
+             * Format: time
+             */
+            end: string;
+        };
         /** CorrectionItem */
         CorrectionItem: {
             punch_type: components["schemas"]["PunchType"];
@@ -3399,6 +3591,28 @@ export interface components {
             absent: components["schemas"]["DashboardPerson"][];
             /** Visible Employees */
             visible_employees: number;
+        };
+        /** DatevLineResponse */
+        DatevLineResponse: {
+            /** Personnel Number */
+            personnel_number: string;
+            /** Name */
+            name: string;
+            /** Wage Type */
+            wage_type: string;
+            /** Key */
+            key: string;
+            /** Value */
+            value: number;
+            /** Label */
+            label: string;
+        };
+        /** DatevPreviewResponse */
+        DatevPreviewResponse: {
+            /** Lines */
+            lines: components["schemas"]["DatevLineResponse"][];
+            /** Warnings */
+            warnings: string[];
         };
         /** DayReviewRequest */
         DayReviewRequest: {
@@ -3664,6 +3878,8 @@ export interface components {
             core_time_start?: string | null;
             /** Core Time End */
             core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
         };
         /** EmployeeDefaultShiftCreateRequest */
         EmployeeDefaultShiftCreateRequest: {
@@ -3810,6 +4026,8 @@ export interface components {
             core_time_start?: string | null;
             /** Core Time End */
             core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
             /** Anonymized At */
             anonymized_at: string | null;
         };
@@ -3873,6 +4091,8 @@ export interface components {
             core_time_start?: string | null;
             /** Core Time End */
             core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
         };
         /** FeaturesResponse */
         FeaturesResponse: {
@@ -4206,6 +4426,28 @@ export interface components {
              */
             clear_bundesland: boolean;
         };
+        /** MigrationImportResult */
+        MigrationImportResult: {
+            /** Applied */
+            applied: boolean;
+            /** Rows */
+            rows: components["schemas"]["MigrationPreviewRow"][];
+            /** Errors */
+            errors: components["schemas"]["BulkImportRowError"][];
+        };
+        /** MigrationPreviewRow */
+        MigrationPreviewRow: {
+            /** Row */
+            row: number;
+            /** Employee Id */
+            employee_id: number;
+            /** Employee Number */
+            employee_number: string;
+            /** Name */
+            name: string;
+            /** Changes */
+            changes: string[];
+        };
         /** MonthlyCapRow */
         MonthlyCapRow: {
             /** Employee Id */
@@ -4370,6 +4612,75 @@ export interface components {
             email: string;
         };
         /**
+         * PayComponentCreateRequest
+         * @description Zulage (wiederkehrend, je Monat oder je Ist-Stunde, gültig ab/bis) oder Einmalzahlung
+         *     (zu einem Datum, z.B. Weihnachtsgeld).
+         */
+        PayComponentCreateRequest: {
+            kind: components["schemas"]["PayComponentKind"];
+            /** Name */
+            name: string;
+            /** Amount */
+            amount: number;
+            unit?: components["schemas"]["AllowanceUnit"] | null;
+            /** Valid From */
+            valid_from?: string | null;
+            /** Valid To */
+            valid_to?: string | null;
+            /** Pay Date */
+            pay_date?: string | null;
+            /** Wage Type */
+            wage_type?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * PayComponentKind
+         * @enum {string}
+         */
+        PayComponentKind: "ALLOWANCE" | "ONE_TIME";
+        /** PayComponentResponse */
+        PayComponentResponse: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            kind: components["schemas"]["PayComponentKind"];
+            /** Name */
+            name: string;
+            /** Amount */
+            amount: number;
+            unit: components["schemas"]["AllowanceUnit"] | null;
+            /** Valid From */
+            valid_from: string | null;
+            /** Valid To */
+            valid_to: string | null;
+            /** Pay Date */
+            pay_date: string | null;
+            /** Wage Type */
+            wage_type: string | null;
+            /** Note */
+            note: string | null;
+        };
+        /**
+         * PayComponentUpdateRequest
+         * @description Zulage beenden/verlängern (valid_to, clear_valid_to = wieder unbefristet), Lohnart oder
+         *     Notiz ändern. Betrag/Art ändern = beenden und neu anlegen (nachvollziehbare Historie).
+         */
+        PayComponentUpdateRequest: {
+            /** Valid To */
+            valid_to?: string | null;
+            /**
+             * Clear Valid To
+             * @default false
+             */
+            clear_valid_to: boolean;
+            /** Wage Type */
+            wage_type?: string | null;
+            /** Note */
+            note?: string | null;
+        };
+        /**
          * PayType
          * @enum {string}
          */
@@ -4505,6 +4816,18 @@ export interface components {
             /** Deletion Due On */
             deletion_due_on?: string | null;
         };
+        /** PortableBreakRule */
+        PortableBreakRule: {
+            kind: components["schemas"]["BreakRuleKind"];
+            /** Min Work Minutes */
+            min_work_minutes: number;
+            /** Deduct Minutes */
+            deduct_minutes: number;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
+        };
         /** PunchCorrectionRequest */
         PunchCorrectionRequest: {
             punch_type?: components["schemas"]["PunchType"] | null;
@@ -4570,6 +4893,15 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** SettingsImportResult */
+        SettingsImportResult: {
+            /** Applied */
+            applied: boolean;
+            /** Changes */
+            changes: string[];
+            /** Skipped */
+            skipped: string[];
         };
         /** SettingsResponse */
         SettingsResponse: {
@@ -4639,10 +4971,18 @@ export interface components {
              * @default true
              */
             report_days_without_punches: boolean;
+            /** Datev Consultant Number */
+            datev_consultant_number?: string | null;
+            /** Datev Client Number */
+            datev_client_number?: string | null;
+            /** Datev Hours Wage Type */
+            datev_hours_wage_type?: string | null;
             /** Core Time Start */
             core_time_start?: string | null;
             /** Core Time End */
             core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
             /**
              * Punctuality Check
              * @default false
@@ -4772,6 +5112,12 @@ export interface components {
             disabled_day_flags?: string[] | null;
             /** Report Days Without Punches */
             report_days_without_punches?: boolean | null;
+            /** Datev Consultant Number */
+            datev_consultant_number?: string | null;
+            /** Datev Client Number */
+            datev_client_number?: string | null;
+            /** Datev Hours Wage Type */
+            datev_hours_wage_type?: string | null;
             /** Max Shift Span Hours */
             max_shift_span_hours?: number | null;
             /** Core Time Start */
@@ -4783,6 +5129,8 @@ export interface components {
              * @default false
              */
             clear_core_time: boolean;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
             /** Punctuality Check */
             punctuality_check?: boolean | null;
             /** Late Tolerance Minutes */
@@ -5111,6 +5459,8 @@ export interface components {
              * @default true
              */
             active: boolean;
+            /** Wage Type */
+            wage_type?: string | null;
         };
         /** SurchargeRuleResponse */
         SurchargeRuleResponse: {
@@ -5131,6 +5481,8 @@ export interface components {
             exclusive_group: string | null;
             /** Active */
             active: boolean;
+            /** Wage Type */
+            wage_type?: string | null;
         };
         /** SurchargeRuleUpdateRequest */
         SurchargeRuleUpdateRequest: {
@@ -5153,6 +5505,8 @@ export interface components {
             clear_exclusive_group: boolean;
             /** Active */
             active?: boolean | null;
+            /** Wage Type */
+            wage_type?: string | null;
         };
         /**
          * TargetPeriod
@@ -5451,6 +5805,37 @@ export interface components {
             deletion_due_on?: string | null;
         };
         /**
+         * TenantSettingsFile
+         * @description Datei "Einstellungen exportieren": fachliche Einstellungen, aktuelle Pausenregeln,
+         *     Abwesenheitsarten und Zuschlagsregeln. Beim Import wird alles erneut validiert.
+         */
+        TenantSettingsFile: {
+            /**
+             * Format
+             * @default hr3000-settings
+             * @constant
+             */
+            format: "hr3000-settings";
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            /** Exported At */
+            exported_at?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: unknown;
+            };
+            /** Break Rules */
+            break_rules?: components["schemas"]["PortableBreakRule"][];
+            /** Absence Types */
+            absence_types?: components["schemas"]["AbsenceTypeCreateRequest"][];
+            /** Surcharge Rules */
+            surcharge_rules?: components["schemas"]["SurchargeRuleCreateRequest"][];
+        };
+        /**
          * TenantStatus
          * @enum {string}
          */
@@ -5616,6 +6001,12 @@ export interface components {
             on_demand: boolean;
             /** Monthly Cap Hours */
             monthly_cap_hours?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
         };
         /** WorkTimeModelResponse */
         WorkTimeModelResponse: {
@@ -5654,6 +6045,12 @@ export interface components {
             monthly_cap_minutes?: number | null;
             /** Monthly Minutes */
             monthly_minutes?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
             /** Valid From */
             valid_from: string | null;
         };
@@ -5679,6 +6076,12 @@ export interface components {
             on_demand: boolean;
             /** Monthly Cap Hours */
             monthly_cap_hours?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
             /**
              * Valid From
              * Format: date
@@ -5730,6 +6133,12 @@ export interface components {
             monthly_cap_minutes?: number | null;
             /** Monthly Minutes */
             monthly_minutes?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
         };
     };
     responses: never;
@@ -9130,6 +9539,159 @@ export interface operations {
             };
         };
     };
+    preview_datev_export_payroll_export_datev_preview_get: {
+        parameters: {
+            query: {
+                employee_ids?: number[];
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatevPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_datev_export_payroll_export_datev_get: {
+        parameters: {
+            query: {
+                employee_ids?: number[];
+                month: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_employee_values_migration_employee_values_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_employee_values_migration_employee_values_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_tenant_settings_migration_settings_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettingsFile"];
+                };
+            };
+        };
+    };
+    import_tenant_settings_migration_settings_import_post: {
+        parameters: {
+            query?: {
+                /** @description false = nur Vorschau */
+                apply?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantSettingsFile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsImportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_employee_data_employees__employee_id__data_export_get: {
         parameters: {
             query?: never;
@@ -9574,6 +10136,138 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pay_components_employees__employee_id__pay_components_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_pay_component_employees__employee_id__pay_components_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayComponentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_pay_component_employees__employee_id__pay_components__component_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                component_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_pay_component_employees__employee_id__pay_components__component_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                component_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayComponentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayComponentResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

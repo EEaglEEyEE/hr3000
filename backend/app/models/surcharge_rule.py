@@ -33,4 +33,6 @@ class SurchargeRule(Base):
     weekdays_mask: Mapped[int] = mapped_column(Integer, default=127)
     exclusive_group: Mapped[str | None] = mapped_column(String(50), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Lohnart für den DATEV-Export (Zuschlagsstunden); leer = nicht übertragen
+    wage_type: Mapped[str | None] = mapped_column(String(6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

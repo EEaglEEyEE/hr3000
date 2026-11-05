@@ -50,7 +50,12 @@ async def _get_employee_in_tenant(db: AsyncSession, employee_id: int, tenant_id:
 
 
 async def _ensure_model_template(
-    db: AsyncSession, tenant_id: int, name: str, minutes: int, period: TargetPeriod = TargetPeriod.WEEKLY
+    db: AsyncSession,
+    tenant_id: int,
+    name: str,
+    minutes: int,
+    period: TargetPeriod = TargetPeriod.WEEKLY,
+    payload: WorkTimeModelInput | None = None,
 ) -> ShiftTemplate:
     """Findet bzw. legt die zeitlose Wochen- bzw. Monatsstunden-Vorlage an. Trägt eine manuell
     angelegte Vorlage bereits diesen Namen, wird mit Zusatz "[Modell]" ausgewichen
@@ -70,10 +75,15 @@ async def _ensure_model_template(
     if free_name in taken:
         raise AppError(409, "TEMPLATE_NAME_CONFLICT", "Es existiert bereits eine Vorlage mit diesem Namen.")
 
+    window = payload is not None and payload.break_start is not None
     template = ShiftTemplate(
         tenant_id=tenant_id,
         name=free_name,
-        break_mode=BreakMode.FLEXIBLE,
+        # Eigene Pause des Modells (Name trägt sie mit, siehe WorkTimeModelInput.break_label).
+        break_mode=BreakMode.FIXED if window else BreakMode.FLEXIBLE,
+        fixed_break_start=payload.break_start if window else None,
+        fixed_break_end=payload.break_end if window else None,
+        min_break_minutes=payload.break_minutes if payload is not None else None,
         target_minutes=minutes,
         target_period=period,
         is_work_time_model=True,
@@ -122,6 +132,17 @@ async def _build_response(db: AsyncSession, employee_id: int) -> WorkTimeModelRe
 
 
 def _describe(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
+    """Soll und eigene Pause einer Modell-Fassung."""
+    fixed = template.break_mode == BreakMode.FIXED and template.fixed_break_start is not None
+    return {
+        **_describe_target(default, template),
+        "break_minutes": template.min_break_minutes or None,
+        "break_start": template.fixed_break_start if fixed else None,
+        "break_end": template.fixed_break_end if fixed else None,
+    }
+
+
+def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
     """Soll einer Modell-Fassung: Wochen-/Tagesminuten, Arbeitstage, Minuten je Wochentag."""
     weekdays = _mask_to_weekdays(default.weekdays_mask)
     per_day = default.day_minutes_list
@@ -165,8 +186,12 @@ def _describe(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
 
 async def _template_for(db: AsyncSession, tenant_id: int, payload: WorkTimeModelInput) -> tuple[ShiftTemplate, str]:
     """Vorlage zum Modell und Soll-Angabe fürs Audit-Log (z.B. "40 h/Woche", "108.5 h/Monat")."""
+    suffix = payload.break_label
     if payload.on_demand:
-        return await _ensure_model_template(db, tenant_id, "Nach Aufwand (ohne Soll)", 0), "0 h/Woche"
+        template = await _ensure_model_template(
+            db, tenant_id, f"Nach Aufwand (ohne Soll){suffix}", 0, payload=payload
+        )
+        return template, "0 h/Woche"
     if payload.exceeds_daily_maximum:
         raise AppError(
             400,
@@ -178,16 +203,20 @@ async def _template_for(db: AsyncSession, tenant_id: int, payload: WorkTimeModel
         monthly_minutes = payload.monthly_minutes
         label = f"{monthly_minutes / 60:g} h/Monat"
         template = await _ensure_model_template(
-            db, tenant_id, f"Arbeitszeitmodell {label}", monthly_minutes, TargetPeriod.MONTHLY
+            db, tenant_id, f"Arbeitszeitmodell {label}{suffix}", monthly_minutes, TargetPeriod.MONTHLY, payload
         )
         return template, label
     weekly_minutes = round(payload.weekly_hours * 60)
     label = f"{weekly_minutes / 60:g} h/Woche"
-    name = f"{'Flexibel' if payload.flexible else 'Arbeitszeitmodell'} {label}"
-    return await _ensure_model_template(db, tenant_id, name, weekly_minutes), label
+    name = f"{'Flexibel' if payload.flexible else 'Arbeitszeitmodell'} {label}{suffix}"
+    return await _ensure_model_template(db, tenant_id, name, weekly_minutes, payload=payload), label
 
 
 def _days_label(payload: WorkTimeModelInput) -> str:
+    return _days_only_label(payload) + payload.break_label
+
+
+def _days_only_label(payload: WorkTimeModelInput) -> str:
     if payload.on_demand:
         cap = f", Monatsgrenze {payload.monthly_cap_hours:g} h" if payload.monthly_cap_hours else ""
         return f"nach Aufwand ohne Soll{cap}"

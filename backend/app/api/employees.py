@@ -17,6 +17,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import AuditAction, Employee, EmployeeLocationPeriod, HrRole, Location, Team
 from app.schemas.work_time_model import WorkTimeModelInput, WorkTimeModelSetRequest
+from app.schemas.core_time import serialize_core_time_days
 from app.schemas.employee import (
     BulkImportResult,
     BulkImportRowError,
@@ -194,6 +195,7 @@ async def create_employee(
         core_time_mode=payload.core_time_mode,
         core_time_start=payload.core_time_start if payload.core_time_mode == "CUSTOM" else None,
         core_time_end=payload.core_time_end if payload.core_time_mode == "CUSTOM" else None,
+        core_time_days=serialize_core_time_days(payload.core_time_days) if payload.core_time_mode == "CUSTOM" else None,
     )
     db.add(employee)
     try:
@@ -613,6 +615,7 @@ async def update_employee(
         custom = payload.core_time_mode == "CUSTOM"
         employee.core_time_start = payload.core_time_start if custom else None
         employee.core_time_end = payload.core_time_end if custom else None
+        employee.core_time_days = serialize_core_time_days(payload.core_time_days) if custom else None
     if (employee.hire_date, employee.termination_date) != balance_relevant or payload.core_time_mode is not None:
         # Auch die Kernzeit wirkt auf den Tages-Cache ("Zu klären": zu spät/zu früh).
         await invalidate_balance(db, employee.id, None)

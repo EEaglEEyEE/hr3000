@@ -74,3 +74,18 @@ export function useEmployeeSurchargesQuery(employeeId: number | null, from: stri
       ),
   })
 }
+
+/** Lohnart einer Zuschlagsregel für den DATEV-Export ("" = entfernen). */
+export function useSetSurchargeWageTypeMutation() {
+  const invalidate = useInvalidateRules()
+  return useMutation({
+    mutationFn: async ({ id, wageType }: { id: number; wageType: string }) =>
+      unwrap(
+        await apiClient.PATCH('/surcharge-rules/{rule_id}', {
+          params: { path: { rule_id: id } },
+          body: { wage_type: wageType, clear_exclusive_group: false },
+        }),
+      ),
+    onSuccess: invalidate,
+  })
+}
