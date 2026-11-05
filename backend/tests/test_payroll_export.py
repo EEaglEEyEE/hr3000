@@ -105,8 +105,9 @@ async def test_payroll_export_aggregates_target_actual_and_open_days(
     assert row["Soll (Std.)"] == "0,00"
     assert row["Ist (Std.)"] == "8,00"
     assert row["Saldo (Std.)"] == "8,00"
-    # Do 4 der 5 Tage ohne Stempelung -> OPEN_MISSING_PUNCH.
-    assert row["Offene/fehlerhafte Tage"] == "4"
+    # Die 4 Tage ohne Stempelung haben kein Soll (kein Modell) -> nichts fehlt, nicht offen
+    # (wie unter "Zu klären" und im Monatsbericht; früher zählten sie hier – auch am Wochenende).
+    assert row["Offene/fehlerhafte Tage"] == "0"
     assert row["Urlaubstage"] == "0"
 
 

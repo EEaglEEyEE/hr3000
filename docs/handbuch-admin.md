@@ -67,6 +67,7 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 - **Zu klären:**
   - Hier landen Tage mit fehlenden oder widersprüchlichen Stempelungen und die Sonderfälle,
     die in den Einstellungen eingeschaltet sind:
+    - Arbeitstage ganz ohne Stempelung („Stempelung fehlt“)
     - außerplanmäßig gestempelt
     - gestempelt trotz Abwesenheit
     - Arbeit an einem Feiertag
@@ -102,9 +103,15 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   - „Abwesenheiten“: „Urlaubsanspruch“ und „Neue Abwesenheit“ mit Art, Von, Bis und Umfang
     („Ganzer Tag“ / „Halber Tag“ / „Stunden“)
   - „Arbeitszeitmodell“, jeweils mit „Gültig ab“ und Verlauf:
-    - „Gleichmäßig verteilt“
+    - „Gleichmäßig verteilt“: Wochenstunden auf feste Arbeitstage verteilt
+    - „Monatsstunden (fest)“: jeden Monat dasselbe Soll (z. B. 108,5 Std.), egal wie viele
+      Arbeitstage der Monat hat. Das Soll wird gleichmäßig auf die Arbeitstage des Monats
+      verteilt, das Tagessoll schwankt daher leicht. Feiertage und Abwesenheiten werden mit dem
+      Tagessoll des jeweiligen Monats gutgeschrieben.
     - „Stunden je Wochentag (Teilzeit)“
-    - „Flexibel ohne feste Tage“
+    - „Flexibel ohne feste Tage“: Wochenstunden ohne feste Arbeitstage, abgerechnet je Woche.
+      Passt für Teilzeit, die mal an 2, mal an 3 Tagen arbeitet: Tage ohne Stempelung sind nie
+      „zu klären“.
     - „Nach Aufwand (Aushilfe)“
   - „Vertrag“, für Admins „Vertrag & Vergütung“
   - „Dokumente“: verschlüsselt abgelegt; mit „Für den Mitarbeiter in Mein Bereich sichtbar“
@@ -187,7 +194,11 @@ für bestehende Firmen nichts ändert.
 - **Mitarbeiter & Regeln:**
   - „Standardwerte für neue Mitarbeiter“
   - „Urlaubsanspruch für Teilzeit anteilig berechnen“
-  - welche Sonderfälle unter „Zu klären“ erscheinen (8 einzeln abschaltbare Häkchen)
+  - welche Sonderfälle unter „Zu klären“ erscheinen (9 einzeln abschaltbare Häkchen). Das
+    Häkchen „Arbeitstage ganz ohne Stempelung“ gilt auch für den Monatsbericht und den
+    Lohn-Export: Ist es aus, gelten nur unvollständig gestempelte Tage als offen, und im
+    Monatsbericht steht kein „Stempelung fehlt“ mehr. Das Soll zählt trotzdem, ein Arbeitstag
+    ohne Stempelung geht also ins Minus.
   - „Maximale Schichtlänge (Stunden)“
   - „Kernarbeitszeit & Gleitzeit“: Kernzeit, „Pünktlichkeit prüfen“ mit Toleranz,
     Gleitzeit-Rahmen. Das erzeugt nur Hinweise und kürzt keine Stunden.

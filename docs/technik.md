@@ -61,6 +61,12 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 - **„Zu klären“:** `GET /timesheet/open-days`.
   - Zuerst rechnet es veraltete Tage nach (`_refresh_stale_day_cache`).
   - Sonderfälle sind `DayFlag`s, je Mandant abschaltbar (`disabled_day_flags`).
+  - Arbeitstage ganz ohne Stempelung: Schalter `AppSettings.report_days_without_punches`.
+    Ausgewertet über `missing_punch_reported` (Monatsbericht, Lohn-Export) und beim Füllen des
+    Tages-Caches in `rebuild_balance` (Zu klären, Übersicht Monatsabschluss).
+- **Monatssoll:** Arbeitszeitmodell mit `monthly_hours` → Vorlage mit
+  `TargetPeriod.MONTHLY`; `shift_planning_service._resolve_target_minutes` verteilt es auf die
+  Arbeitstage des Kalendermonats (Rest auf die ersten Tage, Summe exakt).
   - „Erledigt“ ist ein `DayReview` und ändert die Berechnung nicht.
 - **Abwesenheiten:** Kategorien (`AbsenceType`), halbe Tage (`Absence.half_day`), Stunden
   (`Absence.duration_minutes`), Urlaubskonto in `services/leave_service.py`.

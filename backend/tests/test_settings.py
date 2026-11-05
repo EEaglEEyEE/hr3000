@@ -44,6 +44,7 @@ async def test_settings_default_to_pin_not_required(
         "vacation_carry_over_max_days": None,
         "vacation_carry_over_expiry": None,
         "disabled_day_flags": [],
+        "report_days_without_punches": True,
         "max_shift_span_hours": 16,
         "kiosk_admin_pin_set": False,
         "rfid_required": False,

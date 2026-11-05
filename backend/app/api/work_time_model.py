@@ -49,8 +49,10 @@ async def _get_employee_in_tenant(db: AsyncSession, employee_id: int, tenant_id:
     return employee
 
 
-async def _ensure_model_template(db: AsyncSession, tenant_id: int, name: str, weekly_minutes: int) -> ShiftTemplate:
-    """Findet bzw. legt die zeitlose Wochenstunden-Vorlage an. Trägt eine manuell
+async def _ensure_model_template(
+    db: AsyncSession, tenant_id: int, name: str, minutes: int, period: TargetPeriod = TargetPeriod.WEEKLY
+) -> ShiftTemplate:
+    """Findet bzw. legt die zeitlose Wochen- bzw. Monatsstunden-Vorlage an. Trägt eine manuell
     angelegte Vorlage bereits diesen Namen, wird mit Zusatz "[Modell]" ausgewichen
     (statt am eindeutigen Namen zu scheitern)."""
     candidates = (
@@ -72,8 +74,8 @@ async def _ensure_model_template(db: AsyncSession, tenant_id: int, name: str, we
         tenant_id=tenant_id,
         name=free_name,
         break_mode=BreakMode.FLEXIBLE,
-        target_minutes=weekly_minutes,
-        target_period=TargetPeriod.WEEKLY,
+        target_minutes=minutes,
+        target_period=period,
         is_work_time_model=True,
     )
     db.add(template)
@@ -143,6 +145,9 @@ def _describe(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
             day_minutes=per_day,
             uneven=uneven,
         )
+    if template.target_period == TargetPeriod.MONTHLY:
+        # Tagessoll schwankt mit der Zahl der Arbeitstage im Monat – daher nur Monatswert und Tage.
+        return dict(weekly_minutes=None, daily_minutes=None, weekdays=weekdays, day_minutes=None, monthly_minutes=template.target_minutes)
     weekly_minutes = daily_minutes = None
     if template.target_period == TargetPeriod.WEEKLY:
         weekly_minutes = template.target_minutes
@@ -159,9 +164,9 @@ def _describe(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
 
 
 async def _template_for(db: AsyncSession, tenant_id: int, payload: WorkTimeModelInput) -> tuple[ShiftTemplate, str]:
+    """Vorlage zum Modell und Soll-Angabe fürs Audit-Log (z.B. "40 h/Woche", "108.5 h/Monat")."""
     if payload.on_demand:
-        return await _ensure_model_template(db, tenant_id, "Nach Aufwand (ohne Soll)", 0), "0"
-    weekly_minutes = round(payload.weekly_hours * 60)
+        return await _ensure_model_template(db, tenant_id, "Nach Aufwand (ohne Soll)", 0), "0 h/Woche"
     if payload.exceeds_daily_maximum:
         raise AppError(
             400,
@@ -169,9 +174,17 @@ async def _template_for(db: AsyncSession, tenant_id: int, payload: WorkTimeModel
             "Das ergibt mehr als 10 Stunden pro Arbeitstag und überschreitet die gesetzliche "
             "Höchstarbeitszeit (§3 ArbZG). Bitte mehr Arbeitstage wählen oder die Stunden senken.",
         )
-    hours_label = f"{weekly_minutes / 60:g}"
-    name = f"{'Flexibel' if payload.flexible else 'Arbeitszeitmodell'} {hours_label} h/Woche"
-    return await _ensure_model_template(db, tenant_id, name, weekly_minutes), hours_label
+    if payload.monthly_hours is not None:
+        monthly_minutes = payload.monthly_minutes
+        label = f"{monthly_minutes / 60:g} h/Monat"
+        template = await _ensure_model_template(
+            db, tenant_id, f"Arbeitszeitmodell {label}", monthly_minutes, TargetPeriod.MONTHLY
+        )
+        return template, label
+    weekly_minutes = round(payload.weekly_hours * 60)
+    label = f"{weekly_minutes / 60:g} h/Woche"
+    name = f"{'Flexibel' if payload.flexible else 'Arbeitszeitmodell'} {label}"
+    return await _ensure_model_template(db, tenant_id, name, weekly_minutes), label
 
 
 def _days_label(payload: WorkTimeModelInput) -> str:
@@ -213,7 +226,7 @@ async def set_work_time_model(
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     await ensure_open_from(db, employee_id, payload.valid_from)
 
-    template, hours_label = await _template_for(db, actor.tenant_id, payload)
+    template, soll_label = await _template_for(db, actor.tenant_id, payload)
 
     mask = (_weekdays_to_mask(payload.weekdays) or 0b1111111)
     # "Ab Stichtag" ersetzt alles ab diesem Tag (auch rückwirkend, solange der Monat offen ist):
@@ -252,7 +265,7 @@ async def set_work_time_model(
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
-        detail=f"{hours_label} h/Woche an {days} ab {payload.valid_from.isoformat()}",
+        detail=f"{soll_label} an {days} ab {payload.valid_from.isoformat()}",
     )
     await db.commit()
     return await _build_response(db, employee_id)
@@ -333,7 +346,7 @@ async def update_work_time_model_version(
     start = min(version.valid_from, payload.valid_from)
     await _ensure_unlocked(db, employee_id, start, version.valid_to)
 
-    template, hours_label = await _template_for(db, actor.tenant_id, payload)
+    template, soll_label = await _template_for(db, actor.tenant_id, payload)
     old_from = version.valid_from
     version.shift_template_id = template.id
     version.weekdays_mask = (_weekdays_to_mask(payload.weekdays) or 0b1111111)
@@ -354,7 +367,7 @@ async def update_work_time_model_version(
         entity_type="employee",
         entity_id=employee_id,
         detail=(
-            f"Fassung ab {old_from.isoformat()} geändert: {hours_label} h/Woche an {_days_label(payload)} "
+            f"Fassung ab {old_from.isoformat()} geändert: {soll_label} an {_days_label(payload)} "
             f"ab {payload.valid_from.isoformat()}"
         ),
     )

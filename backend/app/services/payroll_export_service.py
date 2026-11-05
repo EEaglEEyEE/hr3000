@@ -4,7 +4,14 @@ from datetime import date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AbsenceType, Employee, SummaryStatus
-from app.services.timesheet_service import absence_day_counts, calculate_day, employee_timezone, today_in
+from app.services.timesheet_service import (
+    absence_day_counts,
+    calculate_day,
+    employee_timezone,
+    missing_punch_reported,
+    reports_days_without_punches,
+    today_in,
+)
 
 
 @dataclass
@@ -34,6 +41,7 @@ async def summarize_payroll(
     db: AsyncSession, employee: Employee, date_from: date, date_to: date
 ) -> PayrollSummary:
     tz = await employee_timezone(db, employee)
+    report_no_punch_days = await reports_days_without_punches(db, employee.tenant_id)
     target_minutes = 0
     actual_minutes = 0
     days: dict[AbsenceType, float] = {category: 0.0 for category in AbsenceType}
@@ -52,7 +60,7 @@ async def summarize_payroll(
             days[category] += count
         if calculation.status == SummaryStatus.HOLIDAY:
             holiday_days += 1
-        elif calculation.status in (SummaryStatus.OPEN_MISSING_PUNCH, SummaryStatus.ERROR):
+        elif calculation.status == SummaryStatus.ERROR or missing_punch_reported(calculation, report_no_punch_days):
             open_or_error_days += 1
 
         current += timedelta(days=1)

@@ -143,6 +143,10 @@ async def update_settings(
         settings_row.disabled_day_flags = ",".join(sorted(set(payload.disabled_day_flags))) or None
         changed.append(f"disabled_day_flags={settings_row.disabled_day_flags}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
+    if payload.report_days_without_punches is not None:
+        settings_row.report_days_without_punches = payload.report_days_without_punches
+        changed.append(f"report_days_without_punches={payload.report_days_without_punches}")
+        await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
     punctuality_changed = False
     # Erst prüfen, dann übernehmen: Kernzeit muss im (neuen bzw. bestehenden) Gleitzeit-Rahmen liegen.
     new_core = (

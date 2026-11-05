@@ -29,6 +29,7 @@ from app.services.timesheet_service import (
     pair_punches_detail,
     calculate_day,
     employee_timezone,
+    missing_punch_reported,
     punch_blocks,
     punches_by_day,
     today_in,
@@ -251,6 +252,7 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
         ),
     )
     flexible_target = 0.0
+    report_no_punch_days = settings_row.report_days_without_punches
     # Laufender Monat: nur bis heute (Zukunft hat noch kein Ist und belastet das Soll nicht).
     last = min(last, today_in(tz))
     current = first
@@ -270,8 +272,8 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
             label = "Frei"
         elif calc.status == SummaryStatus.COMPLETE:
             label = ""
-        elif calc.status == SummaryStatus.OPEN_MISSING_PUNCH and not punches and not calc.target_minutes:
-            label = ""
+        elif calc.status == SummaryStatus.OPEN_MISSING_PUNCH and not missing_punch_reported(calc, report_no_punch_days):
+            label = ""  # ohne Tagessoll bzw. Tage ohne Stempelung abgeschaltet (Einstellungen)
         elif calc.status == SummaryStatus.OPEN_MISSING_PUNCH:
             label = "Stempelung fehlt"
         elif calc.status == SummaryStatus.ERROR:
@@ -286,7 +288,7 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
         # Von HR als erledigt markierte Tage blockieren den Abschluss nicht mehr.
         is_open = current not in reviewed_days and (
             calc.status in (SummaryStatus.ERROR, SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND)
-            or (calc.status == SummaryStatus.OPEN_MISSING_PUNCH and (bool(punches) or bool(calc.target_minutes)))
+            or missing_punch_reported(calc, report_no_punch_days)
             or bool(calc.flags)
         )
         if calc.flags:

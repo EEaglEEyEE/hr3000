@@ -63,6 +63,10 @@ class AppSettings(Base):
     disabled_day_flags: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Wie lange nach dem "Kommen" ein "Gehen" am Folgetag noch zur Schicht gehört (Nachtschicht)
     max_shift_span_hours: Mapped[int] = mapped_column(Integer, default=16)
+    # Arbeitstage mit Soll, an denen gar nicht gestempelt wurde, als "Stempelung fehlt" melden
+    # (unter "Zu klären", im Monatsbericht samt Sperre für den Abschluss, im Lohn-Export). Aus: nur
+    # unvollständig gestempelte Tage gelten als offen – das Soll zählt trotzdem (Minus im Konto).
+    report_days_without_punches: Mapped[bool] = mapped_column(Boolean, default=True)
     # --- Kernarbeitszeit / Gleitzeit (alles optional, Standard aus) ---
     # Kernzeit, in der Mitarbeiter anwesend sein sollen (z.B. 09:00–15:00); NULL = keine Kernzeit.
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)

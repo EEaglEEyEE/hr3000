@@ -491,6 +491,24 @@ MIN_BREAK_BLOCK_MINUTES = 15
 MAX_SHIFT_SPAN = timedelta(hours=16)
 
 
+async def reports_days_without_punches(db: AsyncSession, tenant_id: int) -> bool:
+    """Mandanten-Schalter: Arbeitstage ganz ohne Stempelung als "Stempelung fehlt" melden
+    (Standard an, siehe AppSettings.report_days_without_punches)."""
+    value = (
+        await db.execute(select(AppSettings.report_days_without_punches).where(AppSettings.tenant_id == tenant_id))
+    ).scalar_one_or_none()
+    return True if value is None else bool(value)
+
+
+def missing_punch_reported(calc: DayCalculation, report_days_without_punches: bool) -> bool:
+    """Gilt der Tag als "Stempelung fehlt"? Unvollständig gestempelt immer; ganz ohne Stempelung
+    nur an Tagen mit Soll und nur, wenn der Mandant solche Tage melden lässt. (Flexible Modelle und
+    Mitarbeiter ohne Modell haben kein Tagessoll – dort fehlt ohne Stempelung nie etwas.)"""
+    if calc.status != SummaryStatus.OPEN_MISSING_PUNCH:
+        return False
+    return calc.has_punches or (bool(calc.target_minutes) and report_days_without_punches)
+
+
 def _utcnow() -> datetime:
     """Aktuelle Zeit (UTC, naiv) – eigene Funktion, damit Tests den Zeitpunkt festlegen können."""
     return datetime.now(UTC).replace(tzinfo=None)
@@ -990,6 +1008,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
         ).scalars().all()
     }
 
+    report_no_punch_days = await reports_days_without_punches(db, locked.tenant_id)
     flex_target = 0.0  # Wochensoll-Anteile flexibler Tage der laufenden Woche
     flex_actual = 0
     day = first
@@ -997,9 +1016,10 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
         calc = await calculate_day(db, locked, day, tz)
         has_punch = day in punch_days
 
-        # Tages-Cache ("Zu klären"): Tage mit Stempelung sowie vergangene Tage mit Soll.
+        # Tages-Cache ("Zu klären"): Tage mit Stempelung sowie vergangene Tage mit Soll – Letztere nur,
+        # wenn der Mandant Arbeitstage ohne Stempelung meldet (sonst sind sie nie "zu klären").
         summary = summaries.get(day)
-        if has_punch or (calc.target_minutes and day < today):
+        if has_punch or (calc.target_minutes and day < today and report_no_punch_days):
             if summary is None:
                 summary = DailySummary(employee_id=locked.id, work_date=day)
                 db.add(summary)

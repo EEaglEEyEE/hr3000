@@ -178,6 +178,20 @@ export function RulesCard({ settings }: { settings: Settings }) {
       </label>
       <div className="flex flex-col gap-1">
         <span className="text-sm">Diese Sonderfälle unter „Zu klären“ anzeigen:</span>
+        <label className="flex items-center gap-2 pl-1 text-sm">
+          <input
+            type="checkbox"
+            checked={settings.report_days_without_punches}
+            onChange={(e) => void save({ report_days_without_punches: e.target.checked })}
+          />
+          Arbeitstage ganz ohne Stempelung („Stempelung fehlt“, auch im Monatsbericht und Lohn-Export)
+        </label>
+        {!settings.report_days_without_punches && (
+          <p className="pl-6 text-sm text-slate-500">
+            Nur unvollständig gestempelte Tage gelten als offen. Das Soll zählt trotzdem: Ein Arbeitstag ohne Stempelung
+            geht ins Minus. Für Teilzeit ohne feste Tage passt das Arbeitszeitmodell „Flexibel ohne feste Tage“.
+          </p>
+        )}
         {Object.entries(DAY_FLAG_LABELS).map(([flag, label]) => (
           <label key={flag} className="flex items-center gap-2 pl-1 text-sm">
             <input

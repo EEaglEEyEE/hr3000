@@ -4634,6 +4634,11 @@ export interface components {
              * @default []
              */
             disabled_day_flags: string[];
+            /**
+             * Report Days Without Punches
+             * @default true
+             */
+            report_days_without_punches: boolean;
             /** Core Time Start */
             core_time_start?: string | null;
             /** Core Time End */
@@ -4765,6 +4770,8 @@ export interface components {
             vacation_carry_over_expiry?: string | null;
             /** Disabled Day Flags */
             disabled_day_flags?: string[] | null;
+            /** Report Days Without Punches */
+            report_days_without_punches?: boolean | null;
             /** Max Shift Span Hours */
             max_shift_span_hours?: number | null;
             /** Core Time Start */
@@ -5583,12 +5590,16 @@ export interface components {
          * WorkTimeModelInput
          * @description Arbeitszeitmodell: entweder Wochenstunden gleichmäßig auf feste Arbeitstage verteilt
          *     (weekly_hours + weekdays) ODER Stunden je Wochentag (daily_hours, 7 Werte Mo..So, 0 = frei) –
-         *     z.B. für Teilzeit Mo/Di 8 Std., Mi 4 Std. Feiertage und genehmigte Abwesenheiten werden mit
-         *     dem Soll des jeweiligen Tages gutgeschrieben, Urlaubstage zählen nur an Arbeitstagen.
+         *     z.B. für Teilzeit Mo/Di 8 Std., Mi 4 Std. – ODER feste Monatsstunden (monthly_hours + weekdays):
+         *     jeden Monat dasselbe Soll, gleichmäßig auf die Arbeitstage des jeweiligen Monats verteilt.
+         *     Feiertage und genehmigte Abwesenheiten werden mit dem Soll des jeweiligen Tages
+         *     gutgeschrieben, Urlaubstage zählen nur an Arbeitstagen.
          */
         WorkTimeModelInput: {
             /** Weekly Hours */
             weekly_hours?: number | null;
+            /** Monthly Hours */
+            monthly_hours?: number | null;
             /** Weekdays */
             weekdays?: number[] | null;
             /** Daily Hours */
@@ -5641,6 +5652,8 @@ export interface components {
             on_demand: boolean;
             /** Monthly Cap Minutes */
             monthly_cap_minutes?: number | null;
+            /** Monthly Minutes */
+            monthly_minutes?: number | null;
             /** Valid From */
             valid_from: string | null;
         };
@@ -5648,6 +5661,8 @@ export interface components {
         WorkTimeModelSetRequest: {
             /** Weekly Hours */
             weekly_hours?: number | null;
+            /** Monthly Hours */
+            monthly_hours?: number | null;
             /** Weekdays */
             weekdays?: number[] | null;
             /** Daily Hours */
@@ -5713,6 +5728,8 @@ export interface components {
             on_demand: boolean;
             /** Monthly Cap Minutes */
             monthly_cap_minutes?: number | null;
+            /** Monthly Minutes */
+            monthly_minutes?: number | null;
         };
     };
     responses: never;

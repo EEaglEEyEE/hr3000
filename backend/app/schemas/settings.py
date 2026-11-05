@@ -33,6 +33,7 @@ class SettingsResponse(BaseModel):
     vacation_carry_over_max_days: float | None = None
     vacation_carry_over_expiry: str | None = None
     disabled_day_flags: list[str] = []
+    report_days_without_punches: bool = True
     core_time_start: time | None = None
     core_time_end: time | None = None
     punctuality_check: bool = False
@@ -94,6 +95,7 @@ class SettingsUpdateRequest(BaseModel):
     # "MM-TT" (z.B. "03-31"); leerer String = kein Verfall
     vacation_carry_over_expiry: str | None = Field(default=None, pattern=r"^((0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))?$")
     disabled_day_flags: list[str] | None = Field(default=None, max_length=10)
+    report_days_without_punches: bool | None = None
     max_shift_span_hours: int | None = Field(default=None, ge=8, le=24)
     # Kernzeit und Gleitzeit-Rahmen: jeweils beide Zeiten zusammen; clear_* = entfernen
     core_time_start: time | None = None

@@ -26,6 +26,18 @@ function formatHours(minutes: number): string {
   return (minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
+/** Wie viele der gewählten Wochentage hat der Kalendermonat von `day`? */
+function workdaysInMonth(day: Date, weekdays: number[]): number {
+  const year = day.getFullYear()
+  const month = day.getMonth()
+  const length = new Date(year, month + 1, 0).getDate()
+  let count = 0
+  for (let d = 1; d <= length; d++) {
+    if (weekdays.includes((new Date(year, month, d).getDay() + 6) % 7)) count++
+  }
+  return count
+}
+
 export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; canEdit: boolean }) {
   const modelQuery = useWorkTimeModelQuery(employeeId)
   const setModel = useSetWorkTimeModelMutation(employeeId)
@@ -41,7 +53,9 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   const [weekdays, setWeekdays] = useState<number[]>(WORKWEEK)
   // "even" = Wochenstunden gleichmäßig verteilt; "perDay" = Stunden je Wochentag (Teilzeit).
   // "flex" = Wochensoll ohne feste Tage; "onDemand" = nach Aufwand ohne Soll (Aushilfe).
-  const [mode, setMode] = useState<'even' | 'perDay' | 'flex' | 'onDemand'>('even')
+  // "monthly" = festes Monatssoll, auf die Arbeitstage des jeweiligen Monats verteilt.
+  const [mode, setMode] = useState<'even' | 'monthly' | 'perDay' | 'flex' | 'onDemand'>('even')
+  const [monthlyHours, setMonthlyHours] = useState('')
   const [capHours, setCapHours] = useState('')
   const [dailyHours, setDailyHours] = useState<string[]>(['8', '8', '8', '8', '8', '', ''])
   const [validFrom, setValidFrom] = useState(() => toIsoDate(new Date()))
@@ -54,13 +68,24 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   const hours = Number(weeklyHours.replace(',', '.'))
   const cap = capHours.trim() ? Number(capHours.replace(',', '.')) : null
   const capValid = cap === null || (Number.isFinite(cap) && cap > 0 && cap <= 400)
+  const monthly = Number(monthlyHours.replace(',', '.'))
   const hoursValid =
     mode === 'onDemand'
       ? capValid
       : mode === 'perDay'
         ? dailyValid
-        : Number.isFinite(hours) && hours > 0 && hours <= 60
+        : mode === 'monthly'
+          ? monthlyHours.trim() !== '' && Number.isFinite(monthly) && monthly > 0 && monthly <= 260
+          : Number.isFinite(hours) && hours > 0 && hours <= 60
   const dailyPreview = hoursValid && weekdays.length > 0 ? formatHours(Math.round((hours * 60) / weekdays.length)) : null
+  // Monatssoll: Tagessoll je nach Monat zwischen (Monat mit den meisten) und (Monat mit den wenigsten Arbeitstagen).
+  const monthlyPreview =
+    mode === 'monthly' && hoursValid && weekdays.length > 0
+      ? {
+          low: formatHours(Math.round((monthly * 60) / (4 * weekdays.length + Math.min(weekdays.length, 3)))),
+          high: formatHours(Math.round((monthly * 60) / (4 * weekdays.length))),
+        }
+      : null
 
   function toggleWeekday(day: number) {
     setWeekdays((current) =>
@@ -71,7 +96,9 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   // Formular immer mit dem aktuell gültigen Modell vorbelegen (einmal je geladenem Stand).
   const loadedFor = useRef<string | null>(null)
   useEffect(() => {
-    const key = model ? JSON.stringify([model.valid_from, model.weekly_minutes, model.day_minutes, model.on_demand, model.monthly_cap_minutes]) : null
+    const key = model
+      ? JSON.stringify([model.valid_from, model.weekly_minutes, model.monthly_minutes, model.day_minutes, model.on_demand, model.monthly_cap_minutes])
+      : null
     if (!model?.configured || key === loadedFor.current) return
     loadedFor.current = key
     loadCurrent()
@@ -91,10 +118,17 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
     uneven?: boolean
     on_demand?: boolean
     monthly_cap_minutes?: number | null
+    monthly_minutes?: number | null
   }) {
     if (source.on_demand) {
       setMode('onDemand')
       setCapHours(source.monthly_cap_minutes ? String(source.monthly_cap_minutes / 60).replace('.', ',') : '')
+      return
+    }
+    if (source.monthly_minutes != null) {
+      setMode('monthly')
+      setMonthlyHours(String(source.monthly_minutes / 60).replace('.', ','))
+      if (source.weekdays.length > 0) setWeekdays(source.weekdays)
       return
     }
     if (source.weekly_minutes === null) return
@@ -141,6 +175,8 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
         ? { on_demand: true, flexible: false, monthly_cap_hours: cap, valid_from: validFrom }
         : mode === 'perDay'
         ? { daily_hours: parsedDaily, flexible: false, on_demand: false, valid_from: validFrom }
+        : mode === 'monthly'
+        ? { monthly_hours: monthly, weekdays, flexible: false, on_demand: false, valid_from: validFrom }
         : mode === 'flex'
           ? { weekly_hours: hours, flexible: true, on_demand: false, valid_from: validFrom }
           : { weekly_hours: hours, weekdays, flexible: false, on_demand: false, valid_from: validFrom }
@@ -156,7 +192,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
       setError(
         err instanceof ApiError && err.status !== 422
           ? err.message
-          : 'Bitte Stunden (max. 10 je Tag, 60 je Woche), mindestens einen Arbeitstag und ein Datum angeben.',
+          : 'Bitte Stunden (max. 10 je Tag, 60 je Woche bzw. 260 je Monat), mindestens einen Arbeitstag und ein Datum angeben.',
       )
     }
   }
@@ -198,9 +234,12 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
               : 'Neues Arbeitszeitmodell ab Stichtag'}
           </p>
 
-          <div className="flex gap-2 text-sm">
+          <div className="flex flex-wrap gap-2 text-sm">
             <Button type="button" size="sm" variant={mode === 'even' ? 'default' : 'outline'} onClick={() => setMode('even')}>
               Gleichmäßig verteilt
+            </Button>
+            <Button type="button" size="sm" variant={mode === 'monthly' ? 'default' : 'outline'} onClick={() => setMode('monthly')}>
+              Monatsstunden (fest)
             </Button>
             <Button type="button" size="sm" variant={mode === 'perDay' ? 'default' : 'outline'} onClick={() => setMode('perDay')}>
               Stunden je Wochentag (Teilzeit)
@@ -271,18 +310,32 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
             </div>
           )}
 
-          {mode === 'even' && (
+          {(mode === 'even' || mode === 'monthly') && (
           <>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="weekly-hours">Wochenstunden</Label>
-            <Input
-              id="weekly-hours"
-              inputMode="decimal"
-              className="w-32"
-              value={weeklyHours}
-              onChange={(event) => setWeeklyHours(event.target.value)}
-            />
-          </div>
+          {mode === 'even' ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="weekly-hours">Wochenstunden</Label>
+              <Input
+                id="weekly-hours"
+                inputMode="decimal"
+                className="w-32"
+                value={weeklyHours}
+                onChange={(event) => setWeeklyHours(event.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="monthly-hours">Monatsstunden</Label>
+              <Input
+                id="monthly-hours"
+                inputMode="decimal"
+                className="w-32"
+                placeholder="z. B. 108,5"
+                value={monthlyHours}
+                onChange={(event) => setMonthlyHours(event.target.value)}
+              />
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label>Arbeitstage</Label>
@@ -304,10 +357,18 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
                 </button>
               ))}
             </div>
-            {dailyPreview && (
+            {mode === 'even' && dailyPreview && (
               <p className="text-sm text-slate-500">
                 = {dailyPreview} h pro Arbeitstag. Feiertage und genehmigte Abwesenheiten an Arbeitstagen werden
                 mit diesem Tagessoll gutgeschrieben.
+              </p>
+            )}
+            {mode === 'monthly' && (
+              <p className="text-sm text-slate-500">
+                Jeden Monat dasselbe Soll, egal wie viele Arbeitstage der Monat hat. Es wird gleichmäßig auf die Arbeitstage
+                des Monats verteilt
+                {monthlyPreview ? ` (je nach Monat ${monthlyPreview.low}–${monthlyPreview.high} h pro Arbeitstag)` : ''}.
+                Feiertage und genehmigte Abwesenheiten werden mit dem Tagessoll des jeweiligen Monats gutgeschrieben.
               </p>
             )}
           </div>
@@ -340,7 +401,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
                 setModel.isPending ||
                 updateVersion.isPending ||
                 !hoursValid ||
-                (mode === 'even' && weekdays.length === 0) ||
+                ((mode === 'even' || mode === 'monthly') && weekdays.length === 0) ||
                 !validFrom
               }
             >
@@ -350,7 +411,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
               <Button type="button" variant="outline" onClick={stopEditing}>
                 Bearbeitung abbrechen
               </Button>
-            ) : model?.configured && (model.weekly_minutes !== null || model.on_demand) && (
+            ) : model?.configured && (model.weekly_minutes !== null || model.monthly_minutes != null || model.on_demand) && (
               <Button type="button" variant="outline" onClick={loadCurrent}>
                 Zurücksetzen
               </Button>
@@ -397,6 +458,9 @@ function describeVersion(version: WorkTimeModelVersion): string {
   if (version.on_demand) {
     return `Nach Aufwand ohne Soll${version.monthly_cap_minutes ? `, Monatsgrenze ${formatHours(version.monthly_cap_minutes)} h` : ''}`
   }
+  if (version.monthly_minutes != null) {
+    return `${formatHours(version.monthly_minutes)} h/Monat an ${version.weekdays.map((d) => WEEKDAYS[d]).join(', ')}`
+  }
   const weekly = version.weekly_minutes !== null ? `${formatHours(version.weekly_minutes)} h/Woche` : ''
   if (version.flexible) return `${weekly}, flexibel ohne feste Tage`
   if (version.day_minutes && version.uneven) {
@@ -431,6 +495,41 @@ function CurrentModel({ model }: { model: WorkTimeModel }) {
             ? ` Monatsgrenze ${formatHours(model.monthly_cap_minutes)} Std. – ab 90 % erscheint ein Hinweis unter „Zu klären“.`
             : ' Keine Monatsgrenze hinterlegt.'}
         </p>
+      </div>
+    )
+  }
+  if (model.monthly_minutes != null) {
+    const days = workdaysInMonth(new Date(), model.weekdays)
+    return (
+      <div className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="text-2xl font-semibold text-slate-900">{formatHours(model.monthly_minutes)} Std.</span>
+          <span className="text-slate-500">pro Monat</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Monatsstunden (fest)</span>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {WEEKDAYS.map((label, day) => {
+            const workday = model.weekdays.includes(day)
+            return (
+              <div
+                key={label}
+                className={cn(
+                  'flex flex-col items-center rounded-md border py-1.5',
+                  workday ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-400',
+                )}
+              >
+                <span className="text-xs font-medium">{label}</span>
+                <span className="text-sm font-semibold">{workday ? 'Arbeitstag' : 'frei'}</span>
+              </div>
+            )
+          })}
+        </div>
+        {days > 0 && (
+          <p className="text-slate-500">
+            Diesen Monat {days} Arbeitstage = {formatHours(Math.round(model.monthly_minutes / days))} Std. pro Tag. Das Tagessoll
+            ändert sich mit der Zahl der Arbeitstage, die Monatssumme bleibt gleich.
+          </p>
+        )}
       </div>
     )
   }

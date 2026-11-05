@@ -5,6 +5,13 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 04.11.2026
 
+- **Monatsstunden im Arbeitszeitmodell:** Neue Art „Monatsstunden (fest)“: jeden Monat dasselbe
+  Soll (z. B. 108,5 Std.), egal ob der Monat 20 oder 23 Arbeitstage hat.
+- **Arbeitstage ohne Stempelung abschaltbar:** Unter „Einstellungen“ → „Mitarbeiter & Regeln“ lässt sich
+  „Arbeitstage ganz ohne Stempelung“ abschalten. Dann erscheinen unter „Zu klären“ nur noch
+  unvollständig gestempelte Tage, und im Monatsbericht steht kein „Stempelung fehlt“.
+- Der Lohn-Export zählt Tage ohne Tagessoll (flexibles Modell, kein Modell) nicht mehr als
+  offen.
 - **Kontakt:** Öffentliche Adresse ist jetzt support@hr3000.de (Impressum, Datenschutz, Website,
   README).
 - **Kündigen und Löschen:**
