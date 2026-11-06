@@ -233,6 +233,18 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 
 - **Eingaben:** Pydantic-Validierung an jedem Endpoint. Fehler kommen einheitlich als
   `{"detail": …, "code": …}`.
+- **Server-Auslastung (Super-Admin):** `services/server_metrics.py` liest CPU (`/proc/stat`, Differenz
+  zweier Messungen), Last (`/proc/loadavg`), Speicher (`MemTotal − MemAvailable`) und Datenträger
+  (`shutil.disk_usage`). `run_sampler` läuft als Task aus `main.lifespan` (ein Uvicorn-Prozess, also
+  ein Sammler) und speichert je `SERVER_METRICS_INTERVAL_SECONDS` eine Zeile in
+  `server_metric_samples` (Migration 0099, ohne Mandantenbezug, daher in
+  `tenant_lifecycle.PLATFORM_TABLES` von der Firmenlöschung ausgenommen); stündlich werden Zeilen älter als
+  `SERVER_METRICS_RETENTION_DAYS` gelöscht. `GET /platform/server-metrics?range=24h|7d|30d` (nur
+  `get_current_super_admin_principal`) mittelt in Python je Abschnitt (5 Min./1 Std./6 Std.) und
+  misst den aktuellen Stand live (CPU über 0,5 s). Ohne `/proc` (macOS) gibt es keine Werte.
+  Oberfläche: `ServerMetricsPage` mit `components/platform/MetricChart.tsx` (SVG, eine Kennzahl je
+  Grafik, Fadenkreuz-Tooltip auch per Pfeiltasten, Tabellenansicht; Linienfarbe `--series-1` in
+  `index.css`, hell/dunkel gegen die Kartenfläche geprüft).
 - **Rechte:** Rollen werden im Backend geprüft; das Frontend blendet nur aus. Mandantentrennung
   in jeder Abfrage, Vergütung nur mit „Vergütung & Lohn-Export“.
   - Webapp: eine Rechte-Tabelle in `hr-webapp/src/lib/access.ts` (`all`/`hr`/`payroll`/`admin` =

@@ -24,6 +24,7 @@ import { PeriodClosuresPage } from './pages/PeriodClosuresPage'
 import { ChecklistsPage } from './pages/ChecklistsPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { TenantsPage } from './pages/TenantsPage'
+import { ServerMetricsPage } from './pages/ServerMetricsPage'
 
 /** Frühere Menüpunkte, die jetzt Bereiche der Einstellungen sind (alte Links und Lesezeichen). */
 const MOVED_TO_SETTINGS: Record<string, string> = {
@@ -75,6 +76,7 @@ function App() {
               }
             >
               <Route index element={<TenantsPage />} />
+              <Route path="server" element={<ServerMetricsPage />} />
             </Route>
             <Route
               path="/"

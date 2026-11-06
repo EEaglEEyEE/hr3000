@@ -11,6 +11,7 @@ from app.config import settings
 from app.models import Base, EmployeeDocument, HrRole, HrUser, Tenant
 from app.services.auth_service import hash_password
 from app.services.tenant_lifecycle import (
+    PLATFORM_TABLES,
     cancellation_dates,
     purge_plan,
     purge_tenant,
@@ -89,7 +90,7 @@ async def _totals(db_session) -> dict[str, int]:
     return {
         t.name: await db_session.scalar(select(func.count()).select_from(t))
         for t in Base.metadata.sorted_tables
-        if t.name != "tenants"
+        if t.name not in PLATFORM_TABLES
     }
 
 
@@ -99,7 +100,9 @@ async def _totals(db_session) -> dict[str, int]:
 def test_every_table_is_covered():
     # Neue Tabelle ohne tenant_id und ohne Bezug zu einer Firmentabelle -> purge_plan scheitert.
     plan = purge_plan(1)
-    assert {s.table.name for s in plan} == {t.name for t in Base.metadata.sorted_tables} - {"tenants"}
+    assert {s.table.name for s in plan} == {t.name for t in Base.metadata.sorted_tables} - PLATFORM_TABLES
+    # Plattform-Tabellen bleiben eine kurze, bewusste Liste
+    assert PLATFORM_TABLES == {"tenants", "server_metric_samples"}
 
 
 async def test_purge_removes_everything_of_one_company_and_nothing_else(client, db_session):

@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -42,14 +44,17 @@ from app.api.team_calendar import router as team_calendar_router
 from app.api.teams import router as teams_router
 from app.api.timesheets import router as timesheets_router
 from app.api.tenants import router as tenants_router
+from app.api.server_metrics import router as server_metrics_router
 from app.api.tls import router as tls_router
 from app.api.public import router as public_router
 from app.api.work_time_model import router as work_time_model_router
 from app.api.ws import router as ws_router
+from app.config import settings
 from app.db import AsyncSessionLocal
 from app.errors import AppError
 from app.middleware.tenant import TenantResolutionMiddleware
 from app.services.holiday_import_service import ensure_holidays_imported_for_all_tenants
+from app.services.server_metrics import run_sampler
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +108,23 @@ async def lifespan(app: FastAPI):
             await ensure_holidays_imported_for_all_tenants(db)
     except Exception:
         logger.exception("Automatischer Feiertags-Import beim Start fehlgeschlagen.")
+    # Server-Auslastung für den Super-Admin jede Minute speichern (0 = aus), siehe
+    # app/services/server_metrics.py.
+    sampler = None
+    if settings.server_metrics_interval_seconds > 0:
+        sampler = asyncio.create_task(
+            run_sampler(
+                AsyncSessionLocal,
+                settings.server_metrics_interval_seconds,
+                settings.server_metrics_retention_days,
+                settings.server_metrics_disk_path,
+            )
+        )
     yield
+    if sampler is not None:
+        sampler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sampler
 
 
 app = FastAPI(title="HR3000 Backend", lifespan=lifespan)
@@ -111,6 +132,7 @@ app = FastAPI(title="HR3000 Backend", lifespan=lifespan)
 app.add_middleware(TenantResolutionMiddleware)
 
 app.include_router(tenants_router)
+app.include_router(server_metrics_router)
 app.include_router(auth_router)
 app.include_router(employees_router)
 app.include_router(locations_router)

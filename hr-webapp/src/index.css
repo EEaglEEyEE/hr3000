@@ -33,3 +33,12 @@ body {
     break-inside: avoid;
   }
 }
+
+/* Diagramme (Server-Auslastung): Linienfarbe je Darstellung, geprüft gegen die Kartenfläche
+ * (hell #ffffff, dunkel = invertiertes „white“). Texte tragen nie die Linienfarbe. */
+.metric-chart {
+  --series-1: #2a78d6;
+}
+.theme-inverted .metric-chart {
+  --series-1: #3987e5;
+}

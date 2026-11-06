@@ -90,12 +90,23 @@ def _scope_condition(table: Table, tenant_id: int, scoped: dict[str, Table]) -> 
     return or_(*(via(fk) for fk in fks))
 
 
+# Plattform-Tabellen ohne Firmendaten – bewusst nicht Teil der Löschung einer Firma. Nur Tabellen
+# eintragen, die nachweislich nichts über eine Firma oder ihre Mitarbeiter enthalten.
+PLATFORM_TABLES = {
+    "tenants",
+    "server_metric_samples",  # Auslastung des ganzen Servers (Super-Admin), ohne Firmenbezug
+}
+
+
 def purge_plan(tenant_id: int) -> list[_Scope]:
-    """Alle Tabellen (außer tenants) mit der Bedingung "gehört zu dieser Firma", abhängige zuerst."""
+    """Alle Tabellen (außer Plattform-Tabellen) mit der Bedingung "gehört zu dieser Firma",
+    abhängige zuerst."""
     tables = Base.metadata.sorted_tables
     scoped = {t.name: t for t in tables if "tenant_id" in t.c}
     return [
-        _Scope(t, _scope_condition(t, tenant_id, scoped)) for t in reversed(tables) if t.name != "tenants"
+        _Scope(t, _scope_condition(t, tenant_id, scoped))
+        for t in reversed(tables)
+        if t.name not in PLATFORM_TABLES
     ]
 
 

@@ -141,6 +141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/platform/server-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Server Metrics */
+        get: operations["get_server_metrics_platform_server_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/device/login": {
         parameters: {
             query?: never;
@@ -5224,6 +5241,70 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /**
+         * ServerMetricPointResponse
+         * @description Ein Abschnitt des Verlaufs (Beginn in UTC): Mittelwerte, CPU zusätzlich mit Höchstwert.
+         */
+        ServerMetricPointResponse: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Cpu Percent */
+            cpu_percent: number | null;
+            /** Cpu Max Percent */
+            cpu_max_percent: number | null;
+            /** Memory Percent */
+            memory_percent: number | null;
+            /** Disk Percent */
+            disk_percent: number | null;
+            /** Load 1 */
+            load_1: number | null;
+        };
+        /** ServerMetricsResponse */
+        ServerMetricsResponse: {
+            /**
+             * Range
+             * @enum {string}
+             */
+            range: "24h" | "7d" | "30d";
+            /** Bucket Minutes */
+            bucket_minutes: number;
+            /** Interval Seconds */
+            interval_seconds: number;
+            /** Retention Days */
+            retention_days: number;
+            current: components["schemas"]["ServerSnapshotResponse"] | null;
+            /** Points */
+            points: components["schemas"]["ServerMetricPointResponse"][];
+        };
+        /**
+         * ServerSnapshotResponse
+         * @description Aktueller Stand des ganzen Servers (Bytes, Prozent, Last je Minute).
+         */
+        ServerSnapshotResponse: {
+            /** Cpu Count */
+            cpu_count: number | null;
+            /** Cpu Percent */
+            cpu_percent: number | null;
+            /** Load 1 */
+            load_1: number | null;
+            /** Load 5 */
+            load_5: number | null;
+            /** Load 15 */
+            load_15: number | null;
+            /** Memory Used Bytes */
+            memory_used_bytes: number | null;
+            /** Memory Total Bytes */
+            memory_total_bytes: number | null;
+            /** Disk Used Bytes */
+            disk_used_bytes: number | null;
+            /** Disk Total Bytes */
+            disk_total_bytes: number | null;
+            /** Uptime Seconds */
+            uptime_seconds: number | null;
+        };
         /** SettingsImportResult */
         SettingsImportResult: {
             /** Applied */
@@ -6900,6 +6981,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TenantPurgeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_server_metrics_platform_server_metrics_get: {
+        parameters: {
+            query?: {
+                range?: "24h" | "7d" | "30d";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerMetricsResponse"];
                 };
             };
             /** @description Validation Error */

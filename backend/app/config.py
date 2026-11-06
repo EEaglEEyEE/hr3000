@@ -62,5 +62,12 @@ class Settings(BaseSettings):
     # Kostenloser Tarif: so viele aktive Mitarbeiter je Mandant (darüber nur mit Abo).
     free_employee_limit: int = 5
 
+    # Server-Auslastung für den Super-Admin (services/server_metrics.py): Messabstand in Sekunden
+    # (0 = aus), Aufbewahrung in Tagen und der Pfad, dessen Datenträger gemessen wird. Gemessen wird
+    # der ganze Server (/proc ist im Container nicht abgeschottet).
+    server_metrics_interval_seconds: int = 60
+    server_metrics_retention_days: int = 30
+    server_metrics_disk_path: str = "/"
+
 
 settings = Settings()

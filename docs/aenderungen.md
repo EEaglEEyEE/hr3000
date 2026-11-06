@@ -5,6 +5,9 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 06.11.2026
 
+- **Server-Auslastung für den Plattform-Betreiber:** Im Super-Admin gibt es die Seite „Server“ mit
+  CPU, Arbeitsspeicher, Datenträger und Last – aktuell und als Verlauf über 24 Stunden, 7 oder 30
+  Tage. Für Firmen ändert sich nichts.
 - **Betrieb:** Nach dem Einrichten der Testumgebung gingen am 06.11.2026 mittags Anfragen teilweise
   an die Testumgebung statt an die Produktion – Anmeldungen schlugen zeitweise fehl, Listen waren
   leer, Stempelungen am Tablet konnten mit einer Fehlermeldung abgelehnt werden. Es sind keine Daten
