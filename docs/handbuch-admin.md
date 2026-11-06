@@ -436,7 +436,12 @@ für bestehende Firmen nichts ändert.
 - Ein Android-Tablet mit Chrome reicht. Für Chips dient NFC oder ein USB- bzw.
   Bluetooth-Leser im Tastatur-Modus.
 - Bei Netzausfall puffert das Tablet die Stempelungen und sendet sie automatisch nach. Offene
-  Einträge zeigt die „Offline-Warteschlange“.
+  Einträge zeigt die „Offline-Warteschlange“. Auch bei Störungen des Servers bleiben sie dort und
+  werden erneut gesendet; als Fehler markiert werden nur echte Ablehnungen wie „PIN falsch“.
+- Ist der Server beim Start des Tablets nicht erreichbar oder lehnt er die Anmeldung ab, zeigt das
+  Tablet „Gerät einrichten“ mit einem Hinweis. Es bleibt aber gekoppelt und versucht es jede Minute
+  erneut – nach einer Störung ist es von selbst wieder da. Neu koppeln muss man nur, wenn das Tablet
+  in der HR-Webapp entfernt wurde.
 - Bildschirm aus nach Zeitfenster: Das Tablet hält den Bildschirm nur im eingestellten Fenster
   wach. Morgens weckt man es per Ein/Aus-Taste. Mit einer Geräteverwaltung (z. B. Endpoint
   Central): Bildschirm-Timeout 1 Minute, „Beim Laden wach bleiben“ aus.

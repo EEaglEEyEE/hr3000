@@ -5,6 +5,11 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 06.11.2026
 
+- **Tablets bleiben bei Störungen gekoppelt:** Konnte sich ein Tablet beim Start nicht anmelden
+  (Server nicht erreichbar oder Anmeldung abgelehnt), löschte es bisher seine Kopplung und musste
+  neu eingerichtet werden. Jetzt zeigt es einen Hinweis und versucht es jede Minute erneut. Auch
+  Stempelungen in der Offline-Warteschlange werden bei solchen Störungen nicht mehr als Fehler
+  markiert, sondern später erneut gesendet.
 - **Server-Auslastung für den Plattform-Betreiber:** Im Super-Admin gibt es die Seite „Server“ mit
   CPU, Arbeitsspeicher, Datenträger und Last – aktuell und als Verlauf über 24 Stunden, 7 oder 30
   Tage. Für Firmen ändert sich nichts.

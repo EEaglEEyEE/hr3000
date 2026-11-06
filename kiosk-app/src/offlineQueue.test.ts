@@ -70,6 +70,25 @@ describe('Offline-Warteschlange', () => {
     expect(getQueuedPunches()).toEqual([{ ...queued('a'), error: 'PIN falsch.' }])
   })
 
+  it('behandelt abgelehnte Tablet-Anmeldung und Serverfehler wie Netzwerkfehler (kein Fehler-Vermerk)', async () => {
+    for (const err of [
+      new ApiError(401, 'INVALID_DEVICE_TOKEN', 'Unbekanntes Gerät.'),
+      new ApiError(401, 'TOKEN_INVALID', 'Ungültiges Token.'),
+      new ApiError(503, undefined, 'Service Unavailable'),
+    ]) {
+      localStorage.clear()
+      enqueuePunch(queued('a'))
+      enqueuePunch(queued('b'))
+      const submit = vi.fn(async () => {
+        throw err
+      })
+      await flushQueue(submit, () => {})
+      // Abbruch beim ersten Eintrag, nichts markiert, Reihenfolge bleibt
+      expect(submit).toHaveBeenCalledTimes(1)
+      expect(getQueuedPunches()).toEqual([queued('a'), queued('b')])
+    }
+  })
+
   it('versucht markierte Einträge nicht erneut, bis sie verworfen werden', async () => {
     enqueuePunch(queued('a', { error: 'PIN falsch.' }))
     enqueuePunch(queued('b'))

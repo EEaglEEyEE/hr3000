@@ -23,7 +23,9 @@ import {
   clearStoredDeviceToken,
   getStoredDeviceToken,
   loginWithStoredToken,
+  resumeSession,
   storeDeviceToken,
+  type ResumeResult,
 } from './deviceAuth'
 import { getCachedEmployees, setCachedEmployees } from './employeeCache'
 import { describeNfcError, isNfcSupported, startNfcScan, type NfcScanSession } from './nfcScanner'
@@ -53,6 +55,16 @@ const LINK_TOKEN = (() => {
   return token || null
 })()
 const CONFIG_REFRESH_MS = 30_000
+/** Einrichtungsbildschirm mit gespeichertem Token: so oft erneut anmelden */
+const RESUME_RETRY_MS = 60_000
+
+function resumeMessage(kind: Exclude<ResumeResult['kind'], 'ok'>): string | undefined {
+  if (kind === 'rejected')
+    return 'Der Server hat die Anmeldung dieses Tablets abgelehnt. Es versucht es jede Minute erneut – wurde es in der HR-Webapp entfernt, bitte neu einrichten.'
+  if (kind === 'unreachable')
+    return 'Server nicht erreichbar – das Tablet meldet sich automatisch wieder an, sobald er erreichbar ist.'
+  return undefined
+}
 
 type Screen =
   | { kind: 'loading' }
@@ -135,29 +147,42 @@ export default function App() {
           if (!cancelled) setSetupError('Der QR-Code enthält kein gültiges Tablet-Token.')
         }
       }
-      const stored = getStoredDeviceToken()
-      if (!stored) {
-        setScreen({ kind: 'setup' })
+      // Token bleibt auch bei Fehlern erhalten (siehe resumeSession); der Einrichtungsbildschirm
+      // versucht es dann regelmäßig erneut.
+      const result = await resumeSession()
+      if (cancelled) return
+      if (result.kind === 'ok') {
+        setSession(result.session)
+        setScreen({ kind: 'grid' })
         return
       }
-      try {
-        const result = await loginWithStoredToken()
-        if (cancelled || result === null) return
-        setSession(result)
-        setScreen({ kind: 'grid' })
-      } catch {
-        clearStoredDeviceToken()
-        if (!cancelled) {
-          setSetupError('Gerät wurde abgemeldet, bitte erneut einrichten.')
-          setScreen({ kind: 'setup' })
-        }
-      }
+      setSetupError(resumeMessage(result.kind))
+      setScreen({ kind: 'setup' })
     }
     void bootstrap()
     return () => {
       cancelled = true
     }
   }, [])
+
+  // Einrichtungsbildschirm, obwohl ein Token gespeichert ist (Server war nicht erreichbar oder hat
+  // abgelehnt): jede Minute erneut anmelden – nach einer Störung ist das Tablet so von selbst zurück.
+  useEffect(() => {
+    if (screen.kind !== 'setup' || setupSubmitting || !getStoredDeviceToken()) return
+    let active = true
+    const interval = setInterval(() => {
+      void resumeSession().then((result) => {
+        if (!active || result.kind !== 'ok') return
+        setSession(result.session)
+        setSetupError(undefined)
+        setScreen({ kind: 'grid' })
+      })
+    }, RESUME_RETRY_MS)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [screen.kind, setupSubmitting])
 
   const loadEmployees = useCallback(async (activeSession: DeviceLoginResponse) => {
     setEmployeesLoading(true)
