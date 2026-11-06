@@ -9,28 +9,31 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "2"
 
+# Dienstnamen beginnen mit "staging-": Die Dienste hängen auch im Docker-Netz der Produktion (edge),
+# und Compose meldet jeden Dienstnamen dort als DNS-Namen an. Hießen sie wie in der Produktion
+# ("backend", "hr-webapp" …), verteilte Prod-Caddy Anfragen abwechselnd auf Prod und Testumgebung
+# (so am 06.11.2026 passiert). scripts/staging.sh bricht bei gleichen Namen ab.
 services:
-  backend:
+  staging-backend:
     logging: *default-logging
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@staging-mysql:3306/${MYSQL_DATABASE}
       DOCUMENTS_DIR: /app/data/documents
       DEMO_SEED_ALLOWED: "1"
     volumes:
       - documents_data:/app/data/documents
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
     depends_on:
-      mysql:
+      staging-mysql:
         condition: service_healthy
     networks:
       default: {}
-      edge:
-        aliases: [staging-backend]
+      edge: {}
     restart: unless-stopped
 
-  mysql:
+  staging-mysql:
     logging: *default-logging
     image: mysql:8.4
     environment:
@@ -48,22 +51,20 @@ services:
       retries: 20
     restart: unless-stopped
 
-  hr-webapp:
+  staging-hr-webapp:
     logging: *default-logging
     build: ./hr-webapp
     networks:
       default: {}
-      edge:
-        aliases: [staging-hr-webapp]
+      edge: {}
     restart: unless-stopped
 
-  kiosk-app:
+  staging-kiosk-app:
     logging: *default-logging
     build: ./kiosk-app
     networks:
       default: {}
-      edge:
-        aliases: [staging-kiosk-app]
+      edge: {}
     restart: unless-stopped
 
 networks:

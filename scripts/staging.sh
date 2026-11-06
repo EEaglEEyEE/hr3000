@@ -62,6 +62,16 @@ EOF
   )
 }
 
+# Die Dienste der Testumgebung hängen im Docker-Netz der Produktion. Gleiche Dienstnamen würden dort
+# einen zweiten "backend" usw. anmelden, und Prod-Caddy leitete Anfragen in die Testumgebung.
+check_names() {
+  local prod staging clash
+  prod=$(docker compose -f "$PROD/docker-compose.yml" --project-directory "$PROD" config --services | sort)
+  staging=$(compose config --services | sort)
+  clash=$(comm -12 <(echo "$prod") <(echo "$staging") | tr '\n' ' ')
+  [ -z "${clash// /}" ] || fail "Dienstnamen der Testumgebung gleichen denen der Produktion: $clash– Stand '$REF' zu alt?"
+}
+
 link_production() {
   # Die Produktion muss die Testumgebung kennen (Caddy-Weiterleitung, Zertifikatsfreigabe).
   if ! grep -q '^STAGING_BASE_DOMAIN=' "$PROD/.env"; then
@@ -74,7 +84,7 @@ link_production() {
 wait_healthy() {
   say "Warte auf das Backend"
   for _ in $(seq 1 60); do
-    if compose exec -T backend python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
+    if compose exec -T staging-backend python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/health')" 2>/dev/null; then
       echo "läuft"; return 0
     fi
     sleep 5
@@ -84,19 +94,21 @@ wait_healthy() {
 
 build_and_start() {
   say "Bauen und starten (Tests laufen im Build, dauert einige Minuten)"
-  compose up -d --build
+  # --remove-orphans: Container älterer Stände (früher "backend" usw.) verschwinden aus dem Prod-Netz
+  compose up -d --build --remove-orphans
   wait_healthy
 }
 
 seed() {
   say "Demo-Firma"
-  compose exec -T backend python -m app.tools.seed_demo
+  compose exec -T staging-backend python -m app.tools.seed_demo
 }
 
 case "${1:-}" in
   setup)
     checkout
     write_env
+    check_names
     link_production
     build_and_start
     seed
@@ -105,19 +117,21 @@ case "${1:-}" in
   deploy)
     [ -d "$DIR/.git" ] || fail "Noch nicht eingerichtet: bash scripts/staging.sh setup"
     checkout
+    check_names
     build_and_start
     echo "Ausgerollt: https://demo.$DOMAIN"
     ;;
   reset)
     [ -d "$DIR/.git" ] || fail "Noch nicht eingerichtet: bash scripts/staging.sh setup"
     say "Datenbank der Testumgebung leeren"
-    compose down -v
+    compose down -v --remove-orphans
+    check_names
     build_and_start
     seed
     ;;
   status) compose ps ;;
-  logs) compose logs --tail 100 backend ;;
-  stop) compose down ;;
+  logs) compose logs --tail 100 staging-backend ;;
+  stop) compose down --remove-orphans ;;
   *)
     sed -n '2,12p' "$0"
     exit 1

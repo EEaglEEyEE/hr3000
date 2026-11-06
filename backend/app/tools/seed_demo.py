@@ -6,7 +6,7 @@ docker-compose.staging.yml / scripts/staging.sh). Legt – falls noch nicht vorh
 letzten Wochen (inkl. offener Tage), Abwesenheiten, Vergütung und Zuschlagsregeln an. Ein
 zufälliges Passwort gilt für alle Demo-Logins; es erscheint nur im Terminal des Aufrufers:
 
-    docker compose -p hr3000-staging -f docker-compose.staging.yml exec backend python -m app.tools.seed_demo
+    docker compose -p hr3000-staging -f docker-compose.staging.yml exec staging-backend python -m app.tools.seed_demo
 """
 import asyncio
 import os

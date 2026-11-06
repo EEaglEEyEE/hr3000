@@ -5,6 +5,10 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 06.11.2026
 
+- **Betrieb:** Nach dem Einrichten der Testumgebung gingen am 06.11.2026 mittags Anfragen teilweise
+  an die Testumgebung statt an die Produktion – Anmeldungen schlugen zeitweise fehl, Listen waren
+  leer, Stempelungen am Tablet konnten mit einer Fehlermeldung abgelehnt werden. Es sind keine Daten
+  verloren gegangen. Behoben: Die Dienste der Testumgebung haben eigene Namen.
 - **Betrieb:** `scripts/rollout.sh` kann bis zu einem bestimmten Stand ausrollen
   (`rollout.sh <commit>`), ohne Angabe wie bisher den neuesten.
 - **Betrieb:** Sicherheitsupdates der Backend-Bibliotheken Pillow 13.0.0, brotli 1.2.1 und

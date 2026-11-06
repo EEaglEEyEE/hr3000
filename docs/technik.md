@@ -98,7 +98,9 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   `create_break_rule` (gültig ab heute), `create_absence_type`, `create_surcharge_rule`. Die
   Vorschau schreibt nichts.
 - **Testumgebung:** `docker-compose.staging.yml` (Projekt `hr3000-staging`, ohne Caddy, Container
-  im Prod-Netz unter `staging-*` erreichbar), `scripts/staging.sh`, Demo-Daten aus
+  im Prod-Netz unter `staging-*` erreichbar – die Dienstnamen selbst müssen mit `staging-` beginnen,
+  weil Compose jeden Dienstnamen in jedem Netz als DNS-Namen anmeldet; geprüft in
+  `tests/test_staging_compose.py` und `staging.sh check_names`), `scripts/staging.sh`, Demo-Daten aus
   `app/tools/seed_demo.py` (nur mit `DEMO_SEED_ALLOWED=1`). Prod-Caddy leitet Hosts unter
   `STAGING_BASE_DOMAIN` weiter; `api/tls.py` fragt für sie das Staging-Backend
   (`staging_tls_ask_url`).
