@@ -17,6 +17,9 @@ class AbsenceCreateRequest(BaseModel):
     # Genaue Dauer in Minuten (nur einzelner Tag, nicht zusammen mit half_day), max. 16 Std.
     duration_minutes: int | None = Field(default=None, ge=1, le=960)
     note: str | None = Field(default=None, max_length=400)
+    # Krankheit während eines Urlaubs (§ 9 BUrlG): die betroffenen Urlaubstage zurückgeben, d.h.
+    # den Urlaub um die Krankheitstage kürzen bzw. aufteilen. Ohne diese Angabe -> 409.
+    split_vacation: bool = False
 
     @model_validator(mode="after")
     def _type_given(self) -> "AbsenceCreateRequest":
@@ -39,11 +42,12 @@ class AbsenceUpdateRequest(BaseModel):
     # Stundenangabe entfernen (wieder ganzer Tag)
     clear_duration: bool = False
     note: str | None = Field(default=None, max_length=400)
+    split_vacation: bool = False
 
 
 class AbsenceDecideRequest(BaseModel):
     approve: bool
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=300)
 
 
 class AbsenceResponse(BaseModel):

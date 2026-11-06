@@ -1,12 +1,29 @@
-"""Kernzeit je Wochentag: in den Einstellungen und als eigene Kernzeit je Mitarbeiter, z.B. freitags
+"""Kernzeit je Wochentag: in den Einstellungen und als eigene Kernzeit im Arbeitszeitmodell, z.B. freitags
 kürzer oder an einzelnen Tagen ohne Kernzeit. Wirkt nur auf die Hinweise "zu spät"/"zu früh"."""
 import uuid
+from datetime import date
+
+import pytest
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, HrRole, HrUser, Location
 from app.services.auth_service import hash_password
+
+@pytest.fixture(autouse=True)
+def _rules_changed_before_test_days(monkeypatch):
+    """Pünktlichkeits-Hinweise gelten erst ab der letzten Regeländerung ("heute") – die Testtage
+    liegen im Oktober 2026, also gilt "heute" hier als 01.10.2026."""
+    import app.api.settings as settings_api
+
+    class _Date(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 10, 1)
+
+    monkeypatch.setattr(settings_api, "date", _Date)
+
 
 FIVE_DAYS = {"start": "09:00", "end": "15:00"}
 FRIDAY_SHORT = [FIVE_DAYS, FIVE_DAYS, FIVE_DAYS, FIVE_DAYS, {"start": "09:00", "end": "12:00"}, None, None]
@@ -57,7 +74,7 @@ async def test_tenant_core_time_per_weekday(client: AsyncClient, db_session: Asy
     r = await client.patch(
         "/settings",
         headers=admin,
-        json={"core_time_start": "09:00", "core_time_end": "15:00", "punctuality_check": True, "late_tolerance_minutes": 0, "core_time_days": FRIDAY_SHORT},
+        json={"core_time_start": "09:00", "core_time_end": "15:00", "disabled_day_flags": [], "late_tolerance_minutes": 0, "core_time_days": FRIDAY_SHORT},
     )
     assert r.status_code == 200, r.text
     days = r.json()["core_time_days"]
@@ -109,10 +126,12 @@ async def test_core_time_days_validation(client: AsyncClient, db_session: AsyncS
 async def test_employee_custom_core_time_per_weekday(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, admin = await _setup(db_session, client)
     await client.patch(
-        "/settings", headers=admin, json={"core_time_start": "08:00", "core_time_end": "16:00", "punctuality_check": True, "late_tolerance_minutes": 0}
+        "/settings", headers=admin, json={"core_time_start": "08:00", "core_time_end": "16:00", "disabled_day_flags": [], "late_tolerance_minutes": 0}
     )
     own = [FIVE_DAYS, None, FIVE_DAYS, FIVE_DAYS, FIVE_DAYS, None, None]  # dienstags keine Kernzeit
-    r = await client.patch(f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "CUSTOM", "core_time_days": own})
+    url = f"/employees/{employee.id}/work-time-model"
+    model = {"weekly_hours": 30, "weekdays": [0, 1, 2, 3, 4], "valid_from": "2026-10-01"}
+    r = await client.put(url, headers=admin, json={**model, "core_time_mode": "CUSTOM", "core_time_days": own})
     assert r.status_code == 200, r.text
     assert r.json()["core_time_days"][1] is None and r.json()["core_time_days"][0] == {"start": "09:00:00", "end": "15:00:00"}
 
@@ -123,9 +142,12 @@ async def test_employee_custom_core_time_per_weekday(client: AsyncClient, db_ses
     assert flags["2026-10-05"] == [] and flags["2026-10-06"] == []
     assert "LATE_ARRIVAL" in flags["2026-10-07"]
 
+    # neue Fassung ohne Angabe: Kernzeit bleibt wie bisher
+    r = await client.put(url, headers=admin, json={**model, "weekly_hours": 32, "valid_from": "2026-11-01"})
+    assert r.json()["core_time_mode"] == "CUSTOM" and r.json()["core_time_days"][1] is None
     # zurück auf "Wie in den Einstellungen": Tageszeiten weg
-    r = await client.patch(f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "TENANT"})
+    r = await client.put(url, headers=admin, json={**model, "core_time_mode": "TENANT"})
     assert r.json()["core_time_days"] is None
     # eigene Kernzeit ohne Zeiten und ohne Tage: abgelehnt
-    r = await client.patch(f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "CUSTOM"})
+    r = await client.put(url, headers=admin, json={**model, "core_time_mode": "CUSTOM"})
     assert r.status_code == 422

@@ -54,6 +54,7 @@ async def create_shift_template(
         fixed_break_start=payload.fixed_break_start,
         fixed_break_end=payload.fixed_break_end,
         min_break_minutes=payload.min_break_minutes,
+        min_break_after_minutes=payload.min_break_after_minutes,
         target_minutes=payload.target_minutes,
         target_period=payload.target_period,
         location_id=payload.location_id,
@@ -90,9 +91,12 @@ async def update_shift_template(
         or (payload.fixed_break_start is not None and payload.fixed_break_start != template.fixed_break_start)
         or (payload.fixed_break_end is not None and payload.fixed_break_end != template.fixed_break_end)
         or (payload.min_break_minutes is not None and payload.min_break_minutes != (template.min_break_minutes or 0))
+        or (payload.min_break_after_minutes is not None and payload.min_break_after_minutes != (template.min_break_after_minutes or 0))
     )
     if target_changes or break_changes:
-        template = await _version_for_target_change(db, actor, template, payload.valid_from or date.today())
+        template = await _version_for_target_change(
+            db, actor, template, payload.valid_from or date.today(), target_changes, break_changes
+        )
 
     if payload.name is not None:
         template.name = payload.name
@@ -108,6 +112,8 @@ async def update_shift_template(
         template.fixed_break_end = payload.fixed_break_end
     if payload.min_break_minutes is not None:
         template.min_break_minutes = payload.min_break_minutes
+    if payload.min_break_after_minutes is not None:
+        template.min_break_after_minutes = payload.min_break_after_minutes
     if template.break_mode == BreakMode.FIXED:
         try:
             check_window(template.fixed_break_start, template.fixed_break_end)
@@ -135,18 +141,32 @@ async def update_shift_template(
     return ShiftTemplateResponse.model_validate(template)
 
 
-async def _version_for_target_change(db: AsyncSession, actor: Actor, template: ShiftTemplate, effective: date) -> ShiftTemplate:
-    """Soll-Änderung ab Stichtag: Wird die Vorlage schon vor dem Stichtag als Standard-Schicht
-    genutzt, bleibt die bisherige Fassung (archiviert, umbenannt) für die Vergangenheit zugeordnet
-    und eine neue Fassung mit gleichem Namen übernimmt ab dem Stichtag. Sonst wird direkt geändert."""
+async def _version_for_target_change(
+    db: AsyncSession, actor: Actor, template: ShiftTemplate, effective: date, target_changes: bool, break_changes: bool
+) -> ShiftTemplate:
+    """Soll-/Pausenänderung ab Stichtag: Wird die Vorlage schon vor dem Stichtag dafür genutzt (als
+    Fassung der Arbeitszeit ohne eigenes Soll bzw. ohne eigene Pause oder an einem Tag im
+    Schichtplan-Kalender), bleibt die bisherige Fassung (archiviert, umbenannt) für die Vergangenheit
+    zugeordnet und eine neue Fassung mit gleichem Namen übernimmt ab dem Stichtag. Sonst wird direkt
+    geändert. Arbeitszeitmodelle mit eigenem Soll und eigener Pause nutzen nur die Uhrzeiten – sie
+    wechseln einfach auf die neue Fassung der Vorlage."""
     defaults = (
         await db.execute(select(EmployeeDefaultShift).where(EmployeeDefaultShift.shift_template_id == template.id))
     ).scalars().all()
-    affected = [d for d in defaults if d.valid_to is None or d.valid_to >= effective]
-    for employee_id in {d.employee_id for d in affected}:
+    inheriting = [
+        d for d in defaults
+        if (target_changes and d.target_minutes is None) or (break_changes and d.break_mode is None)
+    ]
+    times_only = [d for d in defaults if d not in inheriting]
+    planned = (
+        await db.execute(select(ShiftPlanEntry).where(ShiftPlanEntry.shift_template_id == template.id))
+    ).scalars().all()
+    affected_defaults = [d for d in inheriting if d.valid_to is None or d.valid_to >= effective]
+    affected = {d.employee_id for d in affected_defaults} | {e.employee_id for e in planned if e.date >= effective}
+    for employee_id in affected:
         await ensure_open_from(db, employee_id, effective)
         await invalidate_balance(db, employee_id, effective)
-    if not any(d.valid_from < effective for d in defaults):
+    if not any(d.valid_from < effective for d in inheriting) and not any(e.date < effective for e in planned):
         return template
 
     new_template = ShiftTemplate(
@@ -158,10 +178,10 @@ async def _version_for_target_change(db: AsyncSession, actor: Actor, template: S
         fixed_break_start=template.fixed_break_start,
         fixed_break_end=template.fixed_break_end,
         min_break_minutes=template.min_break_minutes,
+        min_break_after_minutes=template.min_break_after_minutes,
         target_minutes=template.target_minutes,
         target_period=template.target_period,
         location_id=template.location_id,
-        is_work_time_model=template.is_work_time_model,
     )
     template.archived = True
     template.name = f"{template.name} (bis {(effective - timedelta(days=1)).strftime('%d.%m.%Y')})"[:100]
@@ -169,20 +189,15 @@ async def _version_for_target_change(db: AsyncSession, actor: Actor, template: S
     db.add(new_template)
     await db.flush()
 
-    for default in affected:
+    for default in affected_defaults:
         if default.valid_from >= effective:
             default.shift_template_id = new_template.id
             continue
-        db.add(
-            EmployeeDefaultShift(
-                employee_id=default.employee_id,
-                shift_template_id=new_template.id,
-                valid_from=effective,
-                valid_to=default.valid_to,
-                weekdays_mask=default.weekdays_mask,
-            )
-        )
+        # Alle Angaben der Fassung mitnehmen (Stunden je Tag, flexibel, nach Aufwand, Kernzeit, …).
+        db.add(default.copy(shift_template_id=new_template.id, valid_from=effective))
         default.valid_to = effective - timedelta(days=1)
+    for default in times_only:
+        default.shift_template_id = new_template.id
     # Künftige Tagesausnahmen zeigen auf die neue Fassung (ihr eigenes Soll bleiben sie behalten).
     entries = (
         await db.execute(

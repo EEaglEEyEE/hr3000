@@ -30,7 +30,7 @@
       <tr>
         <td>{{ row.name }}</td>
         {% for cell in row.cells %}
-          {% if not cell.plan_exists and cell.is_workday %}
+          {% if not cell.plan_exists and cell.is_workday and not cell.template_name %}
             <td class="cell-empty">–</td>
           {% elif not cell.is_workday %}
             <td class="cell-off">Frei</td>

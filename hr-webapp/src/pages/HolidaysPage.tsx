@@ -9,6 +9,7 @@ import {
 } from '../api/queries/holidays'
 import { useLocationsQuery } from '../api/queries/locations'
 import { useSettingsQuery, type Bundesland } from '../api/queries/settings'
+import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../api/client'
 import { formatDate } from '../lib/format'
 import { BUNDESLAND_LABELS } from '../lib/labels'
@@ -37,7 +38,8 @@ export function HolidaysPage() {
   const createHoliday = useCreateHolidayMutation()
   const deleteHoliday = useDeleteHolidayMutation()
   const importHolidays = useImportHolidaysMutation()
-  const settingsQuery = useSettingsQuery()
+  const { isAdmin } = useAuth()
+  const settingsQuery = useSettingsQuery(isAdmin)
 
   const [date, setDate] = useState('')
   const [name, setName] = useState('')

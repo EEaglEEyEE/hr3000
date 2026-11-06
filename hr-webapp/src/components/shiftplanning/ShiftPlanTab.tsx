@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
-import { useDefaultShiftsQuery, useDeleteDefaultShiftMutation } from '../../api/queries/employeeDefaultShifts'
+import { Trash2 } from 'lucide-react'
 import {
   useDeleteShiftPlanEntryMutation,
   useShiftPlanEntriesQuery,
   useUpsertShiftPlanEntryMutation,
 } from '../../api/queries/shiftPlanEntries'
 import { useShiftTemplatesQuery } from '../../api/queries/shiftTemplates'
+import { useWorkTimeModelQuery } from '../../api/queries/workTimeModel'
 import { ApiError } from '../../api/client'
 import { daysFromNowIsoDate, formatDate, todayIsoDate } from '../../lib/format'
 import { Badge } from '../ui/badge'
@@ -15,25 +15,18 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
-import { DefaultShiftFormDialog } from './DefaultShiftFormDialog'
+import { WorkTimeModelSummary } from '../workTimeModel/WorkTimeModelTab'
 
-const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
-
-function maskToLabel(mask: number): string {
-  return WEEKDAY_LABELS.filter((_, index) => mask & (1 << index)).join(', ')
-}
-
+/** Schichtplan eines Mitarbeiters: regelmäßige Arbeitszeit (aus dem Arbeitszeitmodell, nur lesend)
+ *  und Ausnahmen für einzelne Tage. */
 export function ShiftPlanTab({ employeeId, readOnly = false }: { employeeId: number; readOnly?: boolean }) {
-  const defaultShiftsQuery = useDefaultShiftsQuery(employeeId)
-  const deleteDefaultShift = useDeleteDefaultShiftMutation(employeeId)
-  const [dialogOpen, setDialogOpen] = useState(false)
-
+  const modelQuery = useWorkTimeModelQuery(employeeId)
   const rangeFrom = todayIsoDate()
   const rangeTo = daysFromNowIsoDate(30)
   const entriesQuery = useShiftPlanEntriesQuery(employeeId, rangeFrom, rangeTo)
   const deleteEntry = useDeleteShiftPlanEntryMutation(employeeId)
   const upsertEntry = useUpsertShiftPlanEntryMutation(employeeId)
-  const templatesQuery = useShiftTemplatesQuery({ includeWorkTimeModels: true })
+  const templatesQuery = useShiftTemplatesQuery({ enabled: !readOnly })
   const templates = templatesQuery.data ?? []
 
   const [exceptionDate, setExceptionDate] = useState(rangeFrom)
@@ -68,72 +61,14 @@ export function ShiftPlanTab({ employeeId, readOnly = false }: { employeeId: num
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-800">Standard-Schicht</h2>
-          {!readOnly && (
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Neue Standard-Schicht
-            </Button>
-          )}
-        </div>
-
-        {defaultShiftsQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
-        {defaultShiftsQuery.isError && (
-          <p className="text-red-600">Standard-Schichten konnten nicht geladen werden.</p>
-        )}
-
-        {defaultShiftsQuery.data && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Von</TableHead>
-                <TableHead>Bis</TableHead>
-                <TableHead>Vorlage</TableHead>
-                <TableHead>Wochentage</TableHead>
-                {!readOnly && <TableHead />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {defaultShiftsQuery.data.map((defaultShift) => (
-                <TableRow key={defaultShift.id}>
-                  <TableCell>{formatDate(defaultShift.valid_from)}</TableCell>
-                  <TableCell>
-                    {defaultShift.valid_to ? (
-                      formatDate(defaultShift.valid_to)
-                    ) : (
-                      <Badge variant="success">Aktuell</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{templateById.get(defaultShift.shift_template_id)?.name ?? '–'}</TableCell>
-                  <TableCell>{maskToLabel(defaultShift.weekdays_mask)}</TableCell>
-                  {!readOnly && (
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteDefaultShift.mutate(defaultShift.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-              {defaultShiftsQuery.data.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={readOnly ? 4 : 5} className="text-center text-slate-500">
-                    Keine Standard-Schicht hinterlegt.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        )}
-
+      <div className="flex max-w-3xl flex-col gap-2">
+        <h2 className="text-sm font-semibold text-slate-800">Regelmäßige Arbeitszeit</h2>
+        <WorkTimeModelSummary model={modelQuery.data} loading={modelQuery.isLoading} />
         {!readOnly && (
-          <DefaultShiftFormDialog open={dialogOpen} onOpenChange={setDialogOpen} employeeId={employeeId} />
+          <p className="text-sm text-slate-600">
+            Arbeitstage, Soll und feste Uhrzeiten (Schichtvorlage) stehen im Arbeitszeitmodell – ändern im Reiter
+            „Arbeitszeitmodell“.
+          </p>
         )}
       </div>
 
@@ -142,8 +77,9 @@ export function ShiftPlanTab({ employeeId, readOnly = false }: { employeeId: num
           Ausnahmen (nächste 30 Tage)
         </h2>
         <p className="text-sm text-slate-600">
-          Überschreibt für einen einzelnen Tag die Standard-Schicht – z.B. ein zusätzlicher freier
-          Tag oder eine abweichende Schicht.
+          Überschreibt für einen einzelnen Tag die regelmäßige Arbeitszeit – z.B. ein zusätzlicher freier
+          Tag oder eine abweichende Schicht. Ohne Tagessoll (flexibel, nach Aufwand) liefert eine Schicht nur
+          die Uhrzeiten.
         </p>
 
         {entriesQuery.data && (
@@ -223,9 +159,7 @@ export function ShiftPlanTab({ employeeId, readOnly = false }: { employeeId: num
                     <SelectValue placeholder="Vorlage wählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {templates
-                      .filter((template) => !template.is_work_time_model)
-                      .map((template) => (
+                    {templates.map((template) => (
                       <SelectItem key={template.id} value={String(template.id)}>
                         {template.name}
                       </SelectItem>

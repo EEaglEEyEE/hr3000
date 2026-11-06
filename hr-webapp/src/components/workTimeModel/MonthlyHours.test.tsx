@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { settings } from '../../test/fixtures'
 import { loginAs, mockApi, renderWithProviders, type ApiCall, type ApiInit } from '../../test/utils'
-import { RulesCard } from '../settings/DefaultsSettingsCard'
+import { OpenDayChecksCard } from '../settings/DefaultsSettingsCard'
 import { WorkTimeModelTab } from './WorkTimeModelTab'
 
 const monthlyModel = {
@@ -74,14 +74,14 @@ describe('Einstellungen: Arbeitstage ohne Stempelung', () => {
         return current
       },
     })
-    const { unmount } = renderWithProviders(<RulesCard settings={current} />)
+    const { unmount } = renderWithProviders(<OpenDayChecksCard settings={current} />)
     const box = screen.getByRole('checkbox', { name: /Arbeitstage ganz ohne Stempelung/ })
     expect(box).toBeChecked()
     expect(screen.queryByText(/Nur unvollständig gestempelte Tage/)).not.toBeInTheDocument()
     await userEvent.click(box)
     await waitFor(() => expect(lastBody(calls, 'PATCH')).toMatchObject({ report_days_without_punches: false }))
     unmount()
-    renderWithProviders(<RulesCard settings={current} />)
+    renderWithProviders(<OpenDayChecksCard settings={current} />)
     expect(screen.getByText(/Nur unvollständig gestempelte Tage/)).toBeInTheDocument()
   })
 })

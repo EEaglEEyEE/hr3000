@@ -28,9 +28,8 @@ export function ShiftPlanCalendarPage() {
   const weekDates = Array.from({ length: 7 }, (_, index) => addDaysIsoDate(weekStart, index))
   const templates = templatesQuery.data ?? []
   const templateById = new Map(templates.map((template) => [template.id, template]))
-  // Wochen-/Monatssoll-Vorlagen sind nur als Standard-Schicht zuweisbar
-  // (siehe ShiftTemplateFormDialog), nicht als einzelner Ausnahme-Tag –
-  // die Palette bietet daher nur Tagessoll-Vorlagen zum Ziehen an.
+  // Ältere Vorlagen mit Wochen-/Monatssoll passen nicht auf einen einzelnen Tag
+  // (siehe ShiftTemplateFormDialog) – die Palette bietet nur Tagessoll-Vorlagen an.
   const dailyTemplates = templates.filter((template) => template.target_period === 'DAILY')
   const employees = [...(employeesQuery.data ?? [])].sort((a, b) => a.last_name.localeCompare(b.last_name))
 

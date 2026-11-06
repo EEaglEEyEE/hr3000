@@ -1,7 +1,7 @@
 import enum
-from datetime import datetime, time
+from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Time, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Time, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -18,7 +18,11 @@ class SurchargeKind(str, enum.Enum):
 class SurchargeRule(Base):
     """Zuschlagsregel eines Mandanten. Reine Zeitauswertung (Stunden je Regel) – die
     steuerliche/tarifliche Bewertung bleibt bei der Lohnbuchhaltung. Regeln mit
-    derselben exclusive_group werden nicht addiert: je Minute gilt nur die höchste."""
+    derselben exclusive_group werden nicht addiert: je Minute gilt nur die höchste.
+
+    Mit Verlauf: eine Änderung an Satz, Zeitfenster oder Wochentagen ab einem Tag legt eine neue
+    Fassung an (valid_from), die bisherige endet am Vortag (valid_to); family_id verbindet die
+    Fassungen (leer = erste Fassung, family = id)."""
 
     __tablename__ = "surcharge_rules"
 
@@ -35,4 +39,15 @@ class SurchargeRule(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Lohnart für den DATEV-Export (Zuschlagsstunden); leer = nicht übertragen
     wage_type: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    # Gültigkeit dieser Fassung (leer = seit jeher bzw. offen)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    family_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    @property
+    def family(self) -> int:
+        return self.family_id or self.id
+
+    def valid_on(self, day: date) -> bool:
+        return (self.valid_from is None or self.valid_from <= day) and (self.valid_to is None or self.valid_to >= day)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

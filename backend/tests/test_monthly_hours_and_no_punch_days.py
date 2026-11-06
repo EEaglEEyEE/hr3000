@@ -53,7 +53,7 @@ async def test_monthly_hours_same_target_in_short_and_long_month(client: AsyncCl
     assert body["monthly_minutes"] == 6510
     assert body["weekly_minutes"] is None and body["daily_minutes"] is None
     assert body["weekdays"] == [0, 1, 2, 3, 4]
-    assert body["template_name"] == "Arbeitszeitmodell 108.5 h/Monat"
+    assert body["shift_template_name"] is None and body["target_from_template"] is False
 
     # Februar 2026: 20 Arbeitstage, März 2026: 22 Arbeitstage – das Soll ist beide Male 108,5 Std.
     february = await _month_targets(client, admin, employee.id, "2026-02-01", "2026-02-28")

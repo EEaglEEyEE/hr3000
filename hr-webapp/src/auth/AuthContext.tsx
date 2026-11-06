@@ -28,6 +28,9 @@ interface AuthContextValue {
   /** ADMIN, HR oder SUPER_ADMIN – im Gegensatz zu SUPERVISOR nicht auf eigene
    * Teams beschränkt (darf z.B. Arbeitszeitmodelle ändern). */
   isFullHr: boolean
+  /** Berechtigung „Vergütung & Lohn-Export“: Admins immer, HR mit Freigabe (Token-Claim payroll).
+   * Nur für die Anzeige – das Backend prüft selbst. */
+  canPayroll: boolean
   /** HrUser.role === SUPER_ADMIN – plattformweit, keinem Mandanten
    * zugeordnet. Nur über den Super-Admin-Hostname erreichbar. */
   isSuperAdmin: boolean
@@ -82,6 +85,15 @@ function deriveIsFullHr(principalType: PrincipalType | null): boolean {
   return roleClaim === 'ADMIN' || roleClaim === 'HR' || roleClaim === 'SUPER_ADMIN'
 }
 
+function deriveCanPayroll(principalType: PrincipalType | null): boolean {
+  const token = getAccessToken()
+  if (!token) return false
+  const payload = decodeJwtPayload(token)
+  if (!payload) return false
+  const roleClaim = principalType === 'hr' ? payload.role : payload.hr_role
+  return payload.payroll === true || roleClaim === 'ADMIN'
+}
+
 function deriveIsSuperAdmin(principalType: PrincipalType | null): boolean {
   const token = getAccessToken()
   if (!token) return false
@@ -99,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hasHrAccess, setHasHrAccess] = useState(() => deriveHasHrAccess(getPrincipalType()))
   const [isAdmin, setIsAdmin] = useState(() => deriveIsAdmin(getPrincipalType()))
   const [isFullHr, setIsFullHr] = useState(() => deriveIsFullHr(getPrincipalType()))
+  const [canPayroll, setCanPayroll] = useState(() => deriveCanPayroll(getPrincipalType()))
   const [isSuperAdmin, setIsSuperAdmin] = useState(() => deriveIsSuperAdmin(getPrincipalType()))
 
   useEffect(() => {
@@ -111,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasHrAccess(false)
       setIsAdmin(false)
       setIsFullHr(false)
+      setCanPayroll(false)
       setIsSuperAdmin(false)
     }
     window.addEventListener('auth:logout', handleLogout)
@@ -127,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHasHrAccess(true)
       setIsAdmin(deriveIsAdmin('hr'))
       setIsFullHr(deriveIsFullHr('hr'))
+      setCanPayroll(deriveCanPayroll('hr'))
       setIsSuperAdmin(deriveIsSuperAdmin('hr'))
       return
     } catch (error) {
@@ -144,12 +159,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setHasHrAccess(deriveHasHrAccess('employee'))
     setIsAdmin(deriveIsAdmin('employee'))
     setIsFullHr(deriveIsFullHr('employee'))
+    setCanPayroll(deriveCanPayroll('employee'))
     setIsSuperAdmin(false)
   }
 
   function updateTokens(accessToken: string, refreshToken: string) {
     const current = getPrincipalType()
-    if (current) setTokens(accessToken, refreshToken, current)
+    if (current) {
+      setTokens(accessToken, refreshToken, current)
+      setCanPayroll(deriveCanPayroll(current))
+    }
   }
 
   function logout() {
@@ -160,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setHasHrAccess(false)
     setIsAdmin(false)
     setIsFullHr(false)
+    setCanPayroll(false)
     setIsSuperAdmin(false)
   }
 
@@ -172,6 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasHrAccess,
         isAdmin,
         isFullHr,
+        canPayroll,
         isSuperAdmin,
         login,
         logout,

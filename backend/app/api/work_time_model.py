@@ -2,11 +2,9 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_or_self
-from app.api.employee_default_shifts import create_default_shift
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
@@ -17,7 +15,7 @@ from app.models import (
     ShiftTemplate,
     TargetPeriod,
 )
-from app.schemas.employee_default_shift import EmployeeDefaultShiftCreateRequest
+from app.schemas.core_time import serialize_core_time_days
 from app.schemas.work_time_model import (
     WorkTimeModelInput,
     WorkTimeModelResponse,
@@ -25,6 +23,11 @@ from app.schemas.work_time_model import (
     WorkTimeModelVersion,
 )
 from app.services.audit_service import log_action
+from app.services.shift_planning_service import (
+    check_max_daily_working_time,
+    check_rest_period_for_default,
+    version_target,
+)
 from app.services.team_scope_service import ensure_employee_visible
 from app.services.period_service import ensure_open_from, ensure_range_open
 from app.services.timesheet_service import invalidate_balance
@@ -32,6 +35,7 @@ from app.services.timesheet_service import invalidate_balance
 router = APIRouter(tags=["work_time_model"])
 
 _WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+_ALL_DAYS = 0b1111111
 
 
 def _mask_to_weekdays(mask: int) -> list[int]:
@@ -49,53 +53,85 @@ async def _get_employee_in_tenant(db: AsyncSession, employee_id: int, tenant_id:
     return employee
 
 
-async def _ensure_model_template(
-    db: AsyncSession,
-    tenant_id: int,
-    name: str,
-    minutes: int,
-    period: TargetPeriod = TargetPeriod.WEEKLY,
-    payload: WorkTimeModelInput | None = None,
-) -> ShiftTemplate:
-    """Findet bzw. legt die zeitlose Wochen- bzw. Monatsstunden-Vorlage an. Trägt eine manuell
-    angelegte Vorlage bereits diesen Namen, wird mit Zusatz "[Modell]" ausgewichen
-    (statt am eindeutigen Namen zu scheitern)."""
-    candidates = (
-        await db.execute(
-            select(ShiftTemplate).where(
-                ShiftTemplate.tenant_id == tenant_id, ShiftTemplate.name.in_([name, f"{name} [Modell]"])
-            )
+def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
+    """Soll, Arbeitstage und Pause einer Fassung aus der Eingabe – und die Soll-Angabe fürs
+    Audit-Log (z.B. "40 h/Woche", "108.5 h/Monat")."""
+    if payload.exceeds_daily_maximum:
+        raise AppError(
+            400,
+            "MAX_DAILY_WORKING_TIME_EXCEEDED",
+            "Das ergibt mehr als 10 Stunden pro Arbeitstag und überschreitet die gesetzliche "
+            "Höchstarbeitszeit (§3 ArbZG). Bitte mehr Arbeitstage wählen oder die Stunden senken.",
         )
-    ).scalars().all()
-    for template in candidates:
-        if template.is_work_time_model:
-            return template
-    taken = {template.name for template in candidates}
-    free_name = name if name not in taken else f"{name} [Modell]"
-    if free_name in taken:
-        raise AppError(409, "TEMPLATE_NAME_CONFLICT", "Es existiert bereits eine Vorlage mit diesem Namen.")
-
-    window = payload is not None and payload.break_start is not None
-    template = ShiftTemplate(
-        tenant_id=tenant_id,
-        name=free_name,
-        # Eigene Pause des Modells (Name trägt sie mit, siehe WorkTimeModelInput.break_label).
-        break_mode=BreakMode.FIXED if window else BreakMode.FLEXIBLE,
-        fixed_break_start=payload.break_start if window else None,
-        fixed_break_end=payload.break_end if window else None,
-        min_break_minutes=payload.break_minutes if payload is not None else None,
+    if payload.on_demand:
+        minutes, period, label = 0, TargetPeriod.WEEKLY, "0 h/Woche"
+    elif payload.monthly_hours is not None:
+        minutes, period = payload.monthly_minutes, TargetPeriod.MONTHLY
+        label = f"{minutes / 60:g} h/Monat"
+    else:
+        minutes, period = round(payload.weekly_hours * 60), TargetPeriod.WEEKLY
+        label = f"{minutes / 60:g} h/Woche"
+    window = payload.break_start is not None
+    fields = dict(
+        weekdays_mask=_weekdays_to_mask(payload.weekdays or []) or _ALL_DAYS,
+        day_minutes=",".join(str(m) for m in payload.day_minutes) if payload.day_minutes else None,
+        flexible=payload.flexible,
+        on_demand=payload.on_demand,
+        monthly_cap_minutes=payload.monthly_cap_minutes,
         target_minutes=minutes,
         target_period=period,
-        is_work_time_model=True,
+        # Eigene Pause (leer = Pause der Schichtvorlage bzw. Pausenregeln)
+        break_mode=BreakMode.FIXED if window else BreakMode.FLEXIBLE if payload.break_minutes else None,
+        fixed_break_start=payload.break_start if window else None,
+        fixed_break_end=payload.break_end if window else None,
+        min_break_minutes=payload.break_minutes,
+        min_break_after_minutes=payload.break_after_minutes if payload.break_minutes else 0,
     )
-    db.add(template)
-    try:
-        await db.commit()
-    except IntegrityError as exc:  # paralleler Request hat dieselbe Vorlage soeben angelegt
-        await db.rollback()
-        raise AppError(409, "TEMPLATE_NAME_CONFLICT", "Bitte erneut versuchen.") from exc
-    await db.refresh(template)
+    return fields, label
+
+
+def _core_time_fields(payload: WorkTimeModelInput, inherit_from: EmployeeDefaultShift | None) -> dict:
+    """Kernzeit der Fassung: wie angegeben, ohne Angabe wie die bisherige Fassung."""
+    if payload.core_time_mode is None:
+        if inherit_from is None:
+            return dict(core_time_mode="TENANT", core_time_start=None, core_time_end=None, core_time_days=None)
+        return dict(
+            core_time_mode=inherit_from.core_time_mode or "TENANT",
+            core_time_start=inherit_from.core_time_start,
+            core_time_end=inherit_from.core_time_end,
+            core_time_days=inherit_from.core_time_days,
+        )
+    custom = payload.core_time_mode == "CUSTOM"
+    days = custom and payload.core_time_days is not None
+    return dict(
+        core_time_mode=payload.core_time_mode,
+        core_time_start=payload.core_time_start if custom and not days else None,
+        core_time_end=payload.core_time_end if custom and not days else None,
+        core_time_days=serialize_core_time_days(payload.core_time_days) if days else None,
+    )
+
+
+async def _times_template(
+    db: AsyncSession, tenant_id: int, template_id: int | None, current_id: int | None = None
+) -> ShiftTemplate | None:
+    """Schichtvorlage für die Uhrzeiten. Archivierte Fassungen einer Vorlage nur, wenn die Fassung
+    der Arbeitszeit sie schon hat (nachträgliche Änderung einer alten Fassung)."""
+    if template_id is None:
+        return None
+    template = await db.get(ShiftTemplate, template_id)
+    if template is None or template.tenant_id != tenant_id or (template.archived and template_id != current_id):
+        raise AppError(404, "SHIFT_TEMPLATE_NOT_FOUND", "Schichtvorlage nicht gefunden.")
     return template
+
+
+async def _check_shift_times(
+    db: AsyncSession, employee_id: int, template: ShiftTemplate | None, mask: int, valid_from: date, valid_to: date | None
+) -> None:
+    """ArbZG-Prüfung der Uhrzeiten (Höchstarbeitszeit, Ruhezeit) – nur mit Schichtvorlage."""
+    if template is None:
+        return
+    check_max_daily_working_time(template.start_time, template.end_time)
+    await check_rest_period_for_default(db, employee_id, template, mask, valid_from, valid_to)
 
 
 async def _build_response(db: AsyncSession, employee_id: int) -> WorkTimeModelResponse:
@@ -108,42 +144,46 @@ async def _build_response(db: AsyncSession, employee_id: int) -> WorkTimeModelRe
     )
     active = [d for d in result.scalars().all() if d.valid_to is None or d.valid_to >= today]
     if not active:
-        return WorkTimeModelResponse(
-            employee_id=employee_id,
-            configured=False,
-            is_work_time_model=False,
-            template_name=None,
-            weekly_minutes=None,
-            daily_minutes=None,
-            weekdays=[],
-            valid_from=None,
-        )
+        return WorkTimeModelResponse(employee_id=employee_id, configured=False, valid_from=None)
 
-    default = active[0]
-    template = await db.get(ShiftTemplate, default.shift_template_id)
+    version = active[0]
     return WorkTimeModelResponse(
         employee_id=employee_id,
         configured=True,
-        is_work_time_model=template.is_work_time_model,
-        template_name=template.name,
-        valid_from=default.valid_from,
-        **_describe(default, template),
+        valid_from=version.valid_from,
+        **(await _describe(db, version)),
     )
 
 
-def _describe(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
-    """Soll und eigene Pause einer Modell-Fassung."""
-    fixed = template.break_mode == BreakMode.FIXED and template.fixed_break_start is not None
+async def _describe(db: AsyncSession, version: EmployeeDefaultShift) -> dict:
+    """Soll, Pause, Uhrzeiten und Kernzeit einer Fassung."""
+    template = await db.get(ShiftTemplate, version.shift_template_id) if version.shift_template_id is not None else None
+    own_break = version.break_mode is not None
+    source = version if own_break else template
+    fixed = source is not None and source.break_mode == BreakMode.FIXED and source.fixed_break_start is not None
+    minutes = None if fixed or source is None else (source.min_break_minutes or None)
+    custom = version.core_time_mode == "CUSTOM"
     return {
-        **_describe_target(default, template),
-        "break_minutes": template.min_break_minutes or None,
-        "break_start": template.fixed_break_start if fixed else None,
-        "break_end": template.fixed_break_end if fixed else None,
+        **_describe_target(version, template),
+        "target_from_template": version.target_minutes is None and template is not None,
+        "break_minutes": minutes,
+        "break_after_minutes": (source.min_break_after_minutes or 0) if minutes else 0,
+        "break_start": source.fixed_break_start if fixed else None,
+        "break_end": source.fixed_break_end if fixed else None,
+        "break_from_template": not own_break and (fixed or minutes is not None),
+        "shift_template_id": version.shift_template_id,
+        "shift_template_name": template.name if template else None,
+        "shift_start": template.start_time if template else None,
+        "shift_end": template.end_time if template else None,
+        "core_time_mode": version.core_time_mode or "TENANT",
+        "core_time_start": version.core_time_start if custom else None,
+        "core_time_end": version.core_time_end if custom else None,
+        "core_time_days": version.core_time_days if custom else None,
     }
 
 
-def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate) -> dict:
-    """Soll einer Modell-Fassung: Wochen-/Tagesminuten, Arbeitstage, Minuten je Wochentag."""
+def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate | None) -> dict:
+    """Soll einer Fassung: Wochen-/Tagesminuten, Arbeitstage, Minuten je Wochentag."""
     weekdays = _mask_to_weekdays(default.weekdays_mask)
     per_day = default.day_minutes_list
     if default.on_demand:
@@ -155,8 +195,9 @@ def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate) -> 
             on_demand=True,
             monthly_cap_minutes=default.monthly_cap_minutes,
         )
+    total, period = version_target(default, template)
     if default.flexible:
-        return dict(weekly_minutes=template.target_minutes, daily_minutes=None, weekdays=[], day_minutes=None, flexible=True)
+        return dict(weekly_minutes=total, daily_minutes=None, weekdays=[], day_minutes=None, flexible=True)
     if per_day is not None:
         uneven = len(set(m for m in per_day if m > 0)) > 1
         return dict(
@@ -166,16 +207,15 @@ def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate) -> 
             day_minutes=per_day,
             uneven=uneven,
         )
-    if template.target_period == TargetPeriod.MONTHLY:
+    if period == TargetPeriod.MONTHLY:
         # Tagessoll schwankt mit der Zahl der Arbeitstage im Monat – daher nur Monatswert und Tage.
-        return dict(weekly_minutes=None, daily_minutes=None, weekdays=weekdays, day_minutes=None, monthly_minutes=template.target_minutes)
-    weekly_minutes = daily_minutes = None
-    if template.target_period == TargetPeriod.WEEKLY:
-        weekly_minutes = template.target_minutes
+        return dict(weekly_minutes=None, daily_minutes=None, weekdays=weekdays, day_minutes=None, monthly_minutes=total)
+    if period == TargetPeriod.WEEKLY:
+        weekly_minutes = total
         daily_minutes = round(weekly_minutes / len(weekdays)) if weekdays else None
-    elif template.target_period == TargetPeriod.DAILY:
-        daily_minutes = template.target_minutes
-        weekly_minutes = template.target_minutes * len(weekdays)
+    else:
+        daily_minutes = total
+        weekly_minutes = total * len(weekdays)
     return dict(
         weekly_minutes=weekly_minutes,
         daily_minutes=daily_minutes,
@@ -184,36 +224,10 @@ def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate) -> 
     )
 
 
-async def _template_for(db: AsyncSession, tenant_id: int, payload: WorkTimeModelInput) -> tuple[ShiftTemplate, str]:
-    """Vorlage zum Modell und Soll-Angabe fürs Audit-Log (z.B. "40 h/Woche", "108.5 h/Monat")."""
-    suffix = payload.break_label
-    if payload.on_demand:
-        template = await _ensure_model_template(
-            db, tenant_id, f"Nach Aufwand (ohne Soll){suffix}", 0, payload=payload
-        )
-        return template, "0 h/Woche"
-    if payload.exceeds_daily_maximum:
-        raise AppError(
-            400,
-            "MAX_DAILY_WORKING_TIME_EXCEEDED",
-            "Das ergibt mehr als 10 Stunden pro Arbeitstag und überschreitet die gesetzliche "
-            "Höchstarbeitszeit (§3 ArbZG). Bitte mehr Arbeitstage wählen oder die Stunden senken.",
-        )
-    if payload.monthly_hours is not None:
-        monthly_minutes = payload.monthly_minutes
-        label = f"{monthly_minutes / 60:g} h/Monat"
-        template = await _ensure_model_template(
-            db, tenant_id, f"Arbeitszeitmodell {label}{suffix}", monthly_minutes, TargetPeriod.MONTHLY, payload
-        )
-        return template, label
-    weekly_minutes = round(payload.weekly_hours * 60)
-    label = f"{weekly_minutes / 60:g} h/Woche"
-    name = f"{'Flexibel' if payload.flexible else 'Arbeitszeitmodell'} {label}{suffix}"
-    return await _ensure_model_template(db, tenant_id, name, weekly_minutes, payload=payload), label
-
-
-def _days_label(payload: WorkTimeModelInput) -> str:
-    return _days_only_label(payload) + payload.break_label
+def _days_label(payload: WorkTimeModelInput, template: ShiftTemplate | None = None) -> str:
+    shift = f", Schicht {template.name}" if template is not None else ""
+    core = {"CUSTOM": ", eigene Kernzeit", "NONE": ", ohne Pünktlichkeitsprüfung", "TENANT": ", Kernzeit wie Einstellungen"}
+    return _days_only_label(payload) + payload.break_label + shift + core.get(payload.core_time_mode or "", "")
 
 
 def _days_only_label(payload: WorkTimeModelInput) -> str:
@@ -248,44 +262,37 @@ async def set_work_time_model(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> WorkTimeModelResponse:
-    """Setzt das Arbeitszeitmodell ab einem Stichtag (Effective-Dating wie bei
-    Standard-Schichten): legt bei Bedarf eine zeitlose Wochenstunden-Vorlage an
-    (ShiftTemplate.is_work_time_model) und ordnet sie dem Mitarbeiter als neue
-    Standard-Zuordnung zu – die bisherige läuft zum Vortag aus."""
+    """Setzt das Arbeitszeitmodell ab einem Stichtag (Effective-Dating): neue Fassung mit Soll,
+    Pause, Kernzeit und optional einer Schichtvorlage für die Uhrzeiten – die bisherige Fassung
+    läuft zum Vortag aus, spätere entfallen."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     await ensure_open_from(db, employee_id, payload.valid_from)
+    fields, soll_label = _contract(payload)
+    template = await _times_template(db, actor.tenant_id, payload.shift_template_id)
 
-    template, soll_label = await _template_for(db, actor.tenant_id, payload)
-
-    mask = (_weekdays_to_mask(payload.weekdays) or 0b1111111)
+    rows = await _versions(db, employee_id)
+    # Kernzeit ohne Angabe: wie die Fassung, die bisher an diesem Tag galt.
+    inherit = next((v for v in reversed(rows) if v.valid_from <= payload.valid_from), None)
+    fields.update(_core_time_fields(payload, inherit))
     # "Ab Stichtag" ersetzt alles ab diesem Tag (auch rückwirkend, solange der Monat offen ist):
-    # spätere Zuordnungen entfallen, eine laufende endet am Vortag.
-    rows = (
-        await db.execute(select(EmployeeDefaultShift).where(EmployeeDefaultShift.employee_id == employee_id))
-    ).scalars().all()
+    # spätere Fassungen entfallen, eine laufende endet am Vortag.
     for row in rows:
         if row.valid_from >= payload.valid_from:
             await db.delete(row)
         elif row.valid_to is None or row.valid_to >= payload.valid_from:
             row.valid_to = payload.valid_from - timedelta(days=1)
     await db.flush()
-    await create_default_shift(
-        employee_id,
-        EmployeeDefaultShiftCreateRequest(
-            shift_template_id=template.id,
+    await _check_shift_times(db, employee_id, template, fields["weekdays_mask"], payload.valid_from, None)
+    db.add(
+        EmployeeDefaultShift(
+            employee_id=employee_id,
+            shift_template_id=template.id if template else None,
             valid_from=payload.valid_from,
             valid_to=None,
-            weekdays_mask=mask,
-            day_minutes=payload.day_minutes,
-            flexible=payload.flexible,
-            on_demand=payload.on_demand,
-            monthly_cap_minutes=payload.monthly_cap_minutes,
-        ),
-        actor,
-        db,
+            **fields,
+        )
     )
-
-    days = _days_label(payload)
+    await invalidate_balance(db, employee_id, payload.valid_from)
     log_action(
         db,
         tenant_id=actor.tenant_id,
@@ -294,7 +301,7 @@ async def set_work_time_model(
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
-        detail=f"{soll_label} an {days} ab {payload.valid_from.isoformat()}",
+        detail=f"{soll_label} an {_days_label(payload, template)} ab {payload.valid_from.isoformat()}",
     )
     await db.commit()
     return await _build_response(db, employee_id)
@@ -331,20 +338,10 @@ async def get_work_time_model_history(
         await ensure_employee_visible(db, actor, employee)
     elif actor.employee is None or actor.employee.id != employee_id:
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
-    result = []
-    for version in reversed(await _versions(db, employee_id)):
-        template = await db.get(ShiftTemplate, version.shift_template_id)
-        result.append(
-            WorkTimeModelVersion(
-                id=version.id,
-                valid_from=version.valid_from,
-                valid_to=version.valid_to,
-                template_name=template.name,
-                is_work_time_model=template.is_work_time_model,
-                **_describe(version, template),
-            )
-        )
-    return result
+    return [
+        WorkTimeModelVersion(id=version.id, valid_from=version.valid_from, valid_to=version.valid_to, **(await _describe(db, version)))
+        for version in reversed(await _versions(db, employee_id))
+    ]
 
 
 @router.put(
@@ -357,16 +354,14 @@ async def update_work_time_model_version(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkTimeModelVersion]:
-    """Ändert eine bestehende Fassung nachträglich (Stunden, Tage, Beginn). Ein verschobener
-    Beginn passt das Ende der vorherigen Fassung an; das Ende bleibt (Beginn der nächsten)."""
+    """Ändert eine bestehende Fassung nachträglich (Stunden, Tage, Pause, Schicht, Kernzeit, Beginn).
+    Ein verschobener Beginn passt das Ende der vorherigen Fassung an; das Ende bleibt (Beginn der
+    nächsten). Eine ältere Standard-Schicht bekommt dabei ihr Soll fest übernommen."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     versions = await _versions(db, employee_id)
     version = next((v for v in versions if v.id == version_id), None)
     if version is None:
         raise AppError(404, "VERSION_NOT_FOUND", "Fassung nicht gefunden.")
-    template_old = await db.get(ShiftTemplate, version.shift_template_id)
-    if not template_old.is_work_time_model:
-        raise AppError(400, "SHIFT_TEMPLATE_VERSION", "Diese Fassung ist eine Schichtvorlage – bitte unter Schichtplanung ändern.")
     previous = next((v for v in reversed(versions) if v.valid_from < version.valid_from), None)
     if previous is not None and payload.valid_from <= previous.valid_from:
         raise AppError(400, "INVALID_RANGE", "Der Beginn muss nach dem Beginn der vorherigen Fassung liegen.")
@@ -375,17 +370,18 @@ async def update_work_time_model_version(
     start = min(version.valid_from, payload.valid_from)
     await _ensure_unlocked(db, employee_id, start, version.valid_to)
 
-    template, soll_label = await _template_for(db, actor.tenant_id, payload)
+    fields, soll_label = _contract(payload)
+    fields.update(_core_time_fields(payload, version))
+    template = await _times_template(db, actor.tenant_id, payload.shift_template_id, version.shift_template_id)
     old_from = version.valid_from
-    version.shift_template_id = template.id
-    version.weekdays_mask = (_weekdays_to_mask(payload.weekdays) or 0b1111111)
-    version.day_minutes = ",".join(str(m) for m in payload.day_minutes) if payload.day_minutes else None
-    version.flexible = payload.flexible
-    version.on_demand = payload.on_demand
-    version.monthly_cap_minutes = payload.monthly_cap_minutes
+    for key, value in fields.items():
+        setattr(version, key, value)
+    version.shift_template_id = template.id if template else None
     version.valid_from = payload.valid_from
     if previous is not None:
         previous.valid_to = payload.valid_from - timedelta(days=1)
+    await db.flush()
+    await _check_shift_times(db, employee_id, template, version.weekdays_mask, version.valid_from, version.valid_to)
     await invalidate_balance(db, employee_id, start)
     log_action(
         db,
@@ -396,7 +392,7 @@ async def update_work_time_model_version(
         entity_type="employee",
         entity_id=employee_id,
         detail=(
-            f"Fassung ab {old_from.isoformat()} geändert: {soll_label} an {_days_label(payload)} "
+            f"Fassung ab {old_from.isoformat()} geändert: {soll_label} an {_days_label(payload, template)} "
             f"ab {payload.valid_from.isoformat()}"
         ),
     )

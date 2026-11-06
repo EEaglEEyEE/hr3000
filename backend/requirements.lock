@@ -1,4 +1,4 @@
-# Exakt gepinnte, getestete Versionen (Stand 13.10.2026, identisch in Produktion und lokalen Tests).
+# Exakt gepinnte, getestete Versionen (Stand 06.11.2026, identisch in Produktion und lokalen Tests).
 # Neu erzeugen: pip install -r requirements.txt in frischer venv, Tests laufen lassen, dann pip freeze > requirements.lock
 # Prüfen: pip-audit -r requirements.lock --no-deps --disable-pip
 aiosqlite==0.22.1
@@ -8,8 +8,8 @@ annotated-types==0.8.0
 anyio==4.15.1
 asyncmy==0.2.16
 bcrypt==5.0.0
-brotli==1.2.0
-certifi==2026.7.22
+brotli==1.2.1
+certifi==2026.10.18
 cffi==2.1.1
 click==8.5.0
 cryptography==50.0.2
@@ -31,7 +31,7 @@ Mako==1.4.3
 MarkupSafe==3.0.4
 opentelemetry-api==1.45.1
 packaging==26.3
-pillow==12.3.0
+pillow==13.0.0
 pluggy==1.6.0
 pycparser==3.11
 pydantic-settings==2.15.0

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   useCreateDefaultSurchargeRulesMutation,
@@ -7,8 +7,10 @@ import {
   useDeleteSurchargeRuleMutation,
   useSurchargeRulesQuery,
   useToggleSurchargeRuleMutation,
+  useUpdateSurchargeRuleMutation,
   type SurchargeRule,
 } from '../api/queries/surcharges'
+import { formatDate, todayIsoDate } from '../lib/format'
 import { Button } from '../components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
@@ -27,8 +29,16 @@ function describe(rule: SurchargeRule): string {
   return '–'
 }
 
+function validity(rule: SurchargeRule): string {
+  if (!rule.valid_from && !rule.valid_to) return 'immer'
+  if (rule.valid_from && rule.valid_to) return `${formatDate(rule.valid_from)} – ${formatDate(rule.valid_to)}`
+  return rule.valid_from ? `ab ${formatDate(rule.valid_from)}` : `bis ${formatDate(rule.valid_to!)}`
+}
+
 export function SurchargeRulesPage() {
-  const rulesQuery = useSurchargeRulesQuery()
+  const [showHistory, setShowHistory] = useState(false)
+  const rulesQuery = useSurchargeRulesQuery({ includeHistory: showHistory })
+  const [editing, setEditing] = useState<SurchargeRule | null>(null)
   const createDefaults = useCreateDefaultSurchargeRulesMutation()
   const toggle = useToggleSurchargeRuleMutation()
   const remove = useDeleteSurchargeRuleMutation()
@@ -66,8 +76,13 @@ export function SurchargeRulesPage() {
         Die Regeln werten die tatsächlich gearbeitete Zeit aus (Stunden je Regel) und erscheinen im Monatsnachweis, im
         Lohn-Export und in den Auswertungen. Regeln derselben „Gruppe“ werden nicht addiert – je Minute zählt nur der höchste
         Satz (z. B. Sonntag + Feiertag). Die steuerliche bzw. tarifliche Bewertung bleibt bei der Lohnbuchhaltung; die
-        Standardregeln sind nur ein Vorschlag (orientiert an § 3b EStG) und müssen geprüft werden.
+        Standardregeln sind nur ein Vorschlag (orientiert an § 3b EStG) und müssen geprüft werden. Änderungen an Satz,
+        Zeitfenster oder Wochentagen gelten ab „Änderung gilt ab“ – zurückliegende Monate rechnen mit der bisherigen Fassung.
       </p>
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} />
+        Frühere Fassungen anzeigen
+      </label>
       {message && <p className="text-sm text-red-600">{message}</p>}
       <Table>
         <TableHeader>
@@ -77,6 +92,7 @@ export function SurchargeRulesPage() {
             <TableHead>Satz</TableHead>
             <TableHead>Zeitfenster</TableHead>
             <TableHead>Gruppe</TableHead>
+            <TableHead>Gültig</TableHead>
             <TableHead>Aktiv</TableHead>
             <TableHead />
           </TableRow>
@@ -89,6 +105,9 @@ export function SurchargeRulesPage() {
               <TableCell>{rule.percent.toLocaleString('de-DE')} %</TableCell>
               <TableCell>{describe(rule)}</TableCell>
               <TableCell>{rule.exclusive_group ?? '–'}</TableCell>
+              <TableCell className={rule.valid_to && rule.valid_to < todayIsoDate() ? 'text-slate-400' : undefined}>
+                {validity(rule)}
+              </TableCell>
               <TableCell>
                 <input
                   type="checkbox"
@@ -96,12 +115,18 @@ export function SurchargeRulesPage() {
                   onChange={(e) => void run(() => toggle.mutateAsync({ id: rule.id, active: e.target.checked }))}
                 />
               </TableCell>
-              <TableCell>
+              <TableCell className="whitespace-nowrap">
+                {(!rule.valid_to || rule.valid_to >= todayIsoDate()) && (
+                  <Button variant="ghost" size="icon" aria-label={`${rule.name} bearbeiten`} onClick={() => setEditing(rule)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
+                  aria-label={`${rule.name} löschen`}
                   onClick={() => {
-                    if (window.confirm(`Regel "${rule.name}" löschen?`)) void run(() => remove.mutateAsync(rule.id))
+                    if (window.confirm(`Regel "${rule.name}" (${validity(rule)}) löschen?`)) void run(() => remove.mutateAsync(rule.id))
                   }}
                 >
                   <Trash2 className="h-4 w-4 text-red-600" />
@@ -111,7 +136,7 @@ export function SurchargeRulesPage() {
           ))}
           {rules.length === 0 && !rulesQuery.isLoading && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-slate-500">
+              <TableCell colSpan={8} className="text-center text-slate-500">
                 Noch keine Zuschlagsregeln.
               </TableCell>
             </TableRow>
@@ -119,22 +144,42 @@ export function SurchargeRulesPage() {
         </TableBody>
       </Table>
       <RuleDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      {editing && <RuleDialog open rule={editing} onOpenChange={(open) => !open && setEditing(null)} />}
     </div>
   )
 }
 
-function RuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function RuleDialog({
+  open,
+  onOpenChange,
+  rule,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  rule?: SurchargeRule
+}) {
   const create = useCreateSurchargeRuleMutation()
-  const [name, setName] = useState('')
-  const [kind, setKind] = useState<SurchargeRule['kind']>('NIGHT')
-  const [percent, setPercent] = useState('25')
-  const [start, setStart] = useState('22:00')
-  const [end, setEnd] = useState('06:00')
-  const [weekdays, setWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
-  const [group, setGroup] = useState('')
+  const update = useUpdateSurchargeRuleMutation()
+  const [name, setName] = useState(rule?.name ?? '')
+  const [kind, setKind] = useState<SurchargeRule['kind']>(rule?.kind ?? 'NIGHT')
+  const [percent, setPercent] = useState(rule ? String(rule.percent).replace('.', ',') : '25')
+  const [start, setStart] = useState(rule?.start_time?.slice(0, 5) ?? '22:00')
+  const [end, setEnd] = useState(rule?.end_time?.slice(0, 5) ?? '06:00')
+  const [weekdays, setWeekdays] = useState<number[]>(rule?.weekdays ?? [0, 1, 2, 3, 4, 5, 6])
+  const [group, setGroup] = useState(rule?.exclusive_group ?? '')
+  // Neue Regel: leer = auch rückwirkend; Änderung: Standard heute (frühere Monate bleiben)
+  const [validFrom, setValidFrom] = useState(rule ? todayIsoDate() : '')
   const [error, setError] = useState<string | null>(null)
 
   const timed = kind === 'NIGHT' || kind === 'CUSTOM'
+  const parsedPercent = Number(percent.replace(',', '.'))
+  const calculationChanged =
+    rule !== undefined &&
+    (parsedPercent !== rule.percent ||
+      (timed &&
+        (`${start}:00` !== rule.start_time ||
+          `${end}:00` !== rule.end_time ||
+          [...weekdays].sort().join() !== [...rule.weekdays].sort().join())))
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -145,17 +190,32 @@ function RuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
       return
     }
     try {
-      await create.mutateAsync({
-        name: name.trim(),
-        kind,
-        percent: parsed,
-        start_time: timed ? `${start}:00` : null,
-        end_time: timed ? `${end}:00` : null,
-        weekdays: timed ? weekdays : [0, 1, 2, 3, 4, 5, 6],
-        exclusive_group: group.trim() || null,
-        active: true,
-      })
-      setName('')
+      if (rule) {
+        await update.mutateAsync({
+          id: rule.id,
+          payload: {
+            name: name.trim(),
+            percent: parsed,
+            ...(timed ? { start_time: `${start}:00`, end_time: `${end}:00`, weekdays } : {}),
+            ...(group.trim() ? { exclusive_group: group.trim() } : {}),
+            clear_exclusive_group: !group.trim(),
+            ...(calculationChanged && validFrom ? { valid_from: validFrom } : {}),
+          },
+        })
+      } else {
+        await create.mutateAsync({
+          name: name.trim(),
+          kind,
+          percent: parsed,
+          start_time: timed ? `${start}:00` : null,
+          end_time: timed ? `${end}:00` : null,
+          weekdays: timed ? weekdays : [0, 1, 2, 3, 4, 5, 6],
+          exclusive_group: group.trim() || null,
+          active: true,
+          valid_from: validFrom || null,
+        })
+        setName('')
+      }
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof ApiError && err.status !== 422 ? err.message : 'Bitte Angaben prüfen (Gruppe nur Buchstaben, Ziffern, _ und -).')
@@ -166,7 +226,7 @@ function RuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Neue Zuschlagsregel</DialogTitle>
+          <DialogTitle>{rule ? `Zuschlagsregel „${rule.name}“ bearbeiten` : 'Neue Zuschlagsregel'}</DialogTitle>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1.5">
@@ -176,7 +236,7 @@ function RuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label>Art</Label>
-              <Select value={kind} onValueChange={(value) => setKind(value as SurchargeRule['kind'])}>
+              <Select value={kind} disabled={rule !== undefined} onValueChange={(value) => setKind(value as SurchargeRule['kind'])}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -226,12 +286,23 @@ function RuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
             <Label htmlFor="rule_group">Gruppe (optional, nur der höchste Satz je Gruppe zählt)</Label>
             <Input id="rule_group" maxLength={50} placeholder="z. B. sonn_feiertag" value={group} onChange={(e) => setGroup(e.target.value)} />
           </div>
+          {(!rule || calculationChanged) && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rule_valid_from">{rule ? 'Änderung gilt ab' : 'Gilt ab (optional)'}</Label>
+              <Input id="rule_valid_from" type="date" value={validFrom} onChange={(e) => setValidFrom(e.target.value)} />
+              <p className="text-xs text-slate-500">
+                {rule
+                  ? 'Tage davor rechnen weiter mit dem bisherigen Satz bzw. Zeitfenster. Leer = bestehende Fassung rückwirkend korrigieren.'
+                  : 'Leer = gilt auch für zurückliegende Zeiträume.'}
+              </p>
+            </div>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Abbrechen
             </Button>
-            <Button type="submit" disabled={create.isPending || (timed && weekdays.length === 0)}>
+            <Button type="submit" disabled={create.isPending || update.isPending || (timed && weekdays.length === 0)}>
               Speichern
             </Button>
           </DialogFooter>

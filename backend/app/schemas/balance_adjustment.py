@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.balance_adjustment import AdjustmentKind
 
@@ -26,6 +26,14 @@ class BalanceAdjustmentCreateRequest(BaseModel):
         if len(value) < 3:
             raise ValueError("Bitte eine Begründung angeben.")
         return value
+
+    @model_validator(mode="after")
+    def _payout_reduces(self) -> "BalanceAdjustmentCreateRequest":
+        if self.kind == AdjustmentKind.PAYOUT and self.minutes > 0:
+            raise ValueError("Eine Auszahlung verringert das Konto – bitte einen negativen Wert angeben.")
+        if self.effective_date < date(2000, 1, 1):
+            raise ValueError("Das Datum ist zu weit in der Vergangenheit.")
+        return self
 
 
 class BalanceAdjustmentResponse(BaseModel):

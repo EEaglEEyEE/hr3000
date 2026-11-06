@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -92,6 +92,69 @@ async def _ensure_day_parts_fit(
         )
 
 
+async def _resolve_full_day_overlap(
+    db: AsyncSession,
+    employee_id: int,
+    date_from: date,
+    date_to: date,
+    category: AbsenceType,
+    split_vacation: bool,
+    exclude_id: int | None = None,
+) -> None:
+    """Ganztägige Abwesenheiten dürfen sich nicht überschneiden – sonst zählt ein Tag doppelt (z.B.
+    Urlaub verbraucht, obwohl krank). Ausnahme mit Rückfrage: Krankheit während eines Urlaubs
+    (§ 9 BUrlG). Mit split_vacation werden die Urlaubstage zurückgegeben: der Urlaub wird um die
+    Krankheitstage gekürzt bzw. in zwei Teile geteilt."""
+    stmt = select(Absence).where(
+        Absence.employee_id == employee_id,
+        Absence.date_from <= date_to,
+        Absence.date_to >= date_from,
+        Absence.approval_status != AbsenceApprovalStatus.REJECTED,
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Absence.id != exclude_id)
+    others = [a for a in (await db.execute(stmt)).scalars().all() if _is_full_day(a)]
+    if not others:
+        return
+    if category != AbsenceType.SICK or any(o.type != AbsenceType.VACATION for o in others):
+        raise AppError(409, "ABSENCE_OVERLAP", "In diesem Zeitraum ist bereits eine ganztägige Abwesenheit eingetragen.")
+    if not split_vacation:
+        ranges = ", ".join(f"{o.date_from:%d.%m.%Y}–{o.date_to:%d.%m.%Y}" for o in others)
+        raise AppError(
+            409,
+            "ABSENCE_OVERLAP_VACATION",
+            f"In diesem Zeitraum ist Urlaub eingetragen ({ranges}). Bei Krankheit im Urlaub werden die "
+            "Urlaubstage zurückgegeben (§ 9 BUrlG).",
+        )
+    for vacation in others:
+        note = (vacation.note + " · " if vacation.note else "") + f"wegen Krankheit {date_from:%d.%m.}–{date_to:%d.%m.%Y} gekürzt"
+        before = (vacation.date_from, date_from - timedelta(days=1)) if vacation.date_from < date_from else None
+        after = (date_to + timedelta(days=1), vacation.date_to) if vacation.date_to > date_to else None
+        if before is None and after is None:
+            await db.delete(vacation)
+            continue
+        first, second = (before, after) if before is not None else (after, None)
+        vacation.date_from, vacation.date_to = first
+        vacation.note = note[:400]
+        if second is not None:
+            db.add(
+                Absence(
+                    employee_id=vacation.employee_id,
+                    type=vacation.type,
+                    absence_type_id=vacation.absence_type_id,
+                    date_from=second[0],
+                    date_to=second[1],
+                    half_day=False,
+                    duration_minutes=None,
+                    created_by=vacation.created_by,
+                    created_by_employee_id=vacation.created_by_employee_id,
+                    note=note[:400],
+                    approval_status=vacation.approval_status,
+                )
+            )
+    await db.flush()
+
+
 def _ensure_duration_allowed(category: AbsenceType, duration_minutes: int | None) -> None:
     # Urlaub zählt in Tagen (Urlaubskonto) – dafür gibt es ganze und halbe Tage.
     if duration_minutes is not None and category == AbsenceType.VACATION:
@@ -175,6 +238,10 @@ async def create_absence(
 
     absence_type = await resolve_absence_type(db, actor.tenant_id, payload.absence_type_id, payload.type)
     _ensure_duration_allowed(absence_type.category, payload.duration_minutes)
+    if not payload.half_day and payload.duration_minutes is None:
+        await _resolve_full_day_overlap(
+            db, employee.id, payload.date_from, payload.date_to, absence_type.category, payload.split_vacation
+        )
     has_authority = await _has_authority_over_employee(db, actor, employee)
     settings_row = await get_or_create_settings(db, actor.tenant_id)
     if not has_authority and not settings_row.absence_requests_enabled:
@@ -183,10 +250,10 @@ async def create_absence(
         raise AppError(403, "ABSENCE_TYPE_NOT_REQUESTABLE", "Diese Abwesenheitsart kann nur HR eintragen.")
 
     approval_status = AbsenceApprovalStatus.APPROVED
-    needs_approval = absence_type.requires_approval or (
-        absence_type.category == AbsenceType.VACATION and settings_row.vacation_approval_required
-    )
-    if needs_approval and not has_authority:
+    needs_approval = absence_type.requires_approval
+    # Vier-Augen-Prinzip: Wer sonst genehmigen darf, bekommt eigene Anträge nicht direkt genehmigt.
+    own_request_needs_other = is_self and settings_row.absence_four_eyes
+    if needs_approval and (not has_authority or own_request_needs_other):
         approval_status = AbsenceApprovalStatus.PENDING
 
     absence = Absence(
@@ -228,6 +295,12 @@ async def decide_absence(
 
     if absence.approval_status != AbsenceApprovalStatus.PENDING:
         raise AppError(400, "NOT_PENDING", "Dieser Antrag wurde bereits entschieden.")
+    if (
+        actor.employee is not None
+        and actor.employee.id == absence.employee_id
+        and (await get_or_create_settings(db, actor.tenant_id)).absence_four_eyes
+    ):
+        raise AppError(403, "FOUR_EYES", "Eigene Anträge genehmigt jemand anderes (Vier-Augen-Prinzip).")
     await ensure_range_open(db, employee.id, absence.date_from, absence.date_to)
 
     absence.approval_status = (
@@ -303,6 +376,14 @@ async def update_absence(
     await _ensure_day_parts_fit(
         db, absence.employee_id, absence.date_from, absence.date_to, absence.half_day, absence.duration_minutes, absence.id
     )
+    if _is_full_day(absence):
+        try:
+            await _resolve_full_day_overlap(
+                db, absence.employee_id, absence.date_from, absence.date_to, absence.type, payload.split_vacation, absence.id
+            )
+        except AppError:
+            await db.rollback()
+            raise
     await invalidate_balance(db, absence.employee_id, min(old_from, absence.date_from))
 
     await db.commit()

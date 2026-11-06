@@ -160,11 +160,14 @@ async def test_fixed_minutes_rule(client: AsyncClient, db_session: AsyncSession)
         "/break-rules", headers=admin, json={"kind": "FIXED_MINUTES", "min_work_minutes": 0, "deduct_minutes": 20, "valid_from": "2026-01-01"}
     )
     assert r.status_code == 201, r.text
-    # dieselbe Schwelle wie die gesetzliche Staffel ist erlaubt (andere Art)
+    # "Feste Minuten" ist eine Staffelzeile: dieselbe Schwelle gibt es schon -> die Zeile anpassen
     r = await client.post(
         "/break-rules", headers=admin, json={"kind": "FIXED_MINUTES", "min_work_minutes": 360, "deduct_minutes": 40, "valid_from": "2026-01-01"}
     )
-    assert r.status_code == 201, r.text
+    assert r.status_code == 409 and r.json()["code"] == "THRESHOLD_TAKEN"
+    staffel = [rule for rule in (await client.get("/break-rules", headers=admin)).json() if rule["min_work_minutes"] == 360]
+    r = await client.patch(f"/break-rules/{staffel[0]['id']}", headers=admin, json={"deduct_minutes": 40, "valid_from": "2026-01-01"})
+    assert r.status_code == 200, r.text
     # 4 Std.: 20 Min. fest, ohne Stempelung
     await _punches(db_session, employee, ("COME", "08:00"), ("GO", "12:00"))
     assert await _day(db_session, employee) == (220, 20)
@@ -226,7 +229,7 @@ async def test_work_time_model_break_replaces_tenant_rules(client: AsyncClient, 
     )
     assert r.status_code == 200, r.text
     assert r.json()["break_minutes"] == 60 and r.json()["break_start"] is None
-    assert r.json()["template_name"] == "Arbeitszeitmodell 40 h/Woche, Pause 60 Min."
+    assert r.json()["break_from_template"] is False
     await _punches(db_session, employee, ("COME", "08:00"), ("GO", "17:00"))
     await _punches(db_session, employee, ("COME", "08:00"), ("GO", "17:00"), day=date(2026, 10, 7))
     # vor dem Modell: Pausenzeit des Mandanten (30 Min.); danach 60 Min. aus dem Modell

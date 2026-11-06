@@ -102,6 +102,8 @@ async def list_effective_shifts(
                 from_entry=plan.from_entry,
                 shift_template_id=plan.shift_template_id,
                 target_minutes=plan.target_minutes,
+                flexible=plan.flexible_weekly_minutes is not None,
+                on_demand=plan.on_demand,
             )
         )
         current += timedelta(days=1)
@@ -140,8 +142,8 @@ async def upsert_shift_plan_entry(
             raise AppError(
                 400,
                 "SHIFT_TEMPLATE_NOT_DAILY",
-                "Diese Schichtvorlage hat ein Wochen- oder Monatssoll und kann nur als "
-                "Standard-Schicht, nicht als einzelner Ausnahme-Tag zugewiesen werden.",
+                "Diese Schichtvorlage hat ein Wochen- oder Monatssoll und passt nicht auf einen "
+                "einzelnen Tag. Wochen- und Monatsstunden gehören ins Arbeitszeitmodell.",
             )
 
     target_minutes = payload.target_minutes

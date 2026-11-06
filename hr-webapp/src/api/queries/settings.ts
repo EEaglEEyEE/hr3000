@@ -6,9 +6,11 @@ export type Settings = components['schemas']['SettingsResponse']
 export type SettingsUpdateRequest = components['schemas']['SettingsUpdateRequest']
 export type Bundesland = components['schemas']['Bundesland']
 
-export function useSettingsQuery() {
+/** Einstellungen sind nur für Admins lesbar – enabled=false spart anderen Rollen den 403. */
+export function useSettingsQuery(enabled = true) {
   return useQuery({
     queryKey: ['settings'],
+    enabled,
     queryFn: async () => unwrap(await apiClient.GET('/settings')),
   })
 }
@@ -23,6 +25,8 @@ export function useUpdateSettingsMutation() {
           clear_core_time: false,
           clear_flex_frame: false,
           clear_kiosk_screen_hours: false,
+          clear_break_precise: false,
+          clear_break_capped: false,
           ...payload,
         } })),
     onSuccess: () => {

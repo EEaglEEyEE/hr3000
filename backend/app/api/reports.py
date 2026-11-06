@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import Actor, get_current_admin_principal, get_current_full_hr_principal
+from app.api.deps import Actor, get_current_full_hr_principal, get_current_payroll_principal
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
@@ -36,7 +36,8 @@ from app.services.absence_type_service import format_days
 from app.services.audit_service import log_action
 from app.services.holiday_service import location_scope
 from app.services.leave_service import is_leave_day, leave_balance
-from app.services.payroll_export_service import summarize_payroll
+from app.services.pay_component_service import pay_component_amounts
+from app.services.payroll_export_service import payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges
 from app.services.timesheet_service import balance_as_of
 
@@ -78,7 +79,8 @@ def _is_holiday(scopes: dict[date, list[set[int] | None]], day: date, location_i
 async def _planned_workdays(
     db: AsyncSession, employee: Employee, first: date, last: date, scopes: dict[date, list[set[int] | None]]
 ) -> int:
-    """Soll-Arbeitstage laut Arbeitszeitmodell (Teilzeit!) ohne Feiertage; ohne Modell Mo–Sa.
+    """Soll-Arbeitstage laut Arbeitszeitmodell (Teilzeit!) ohne Feiertage; ohne Modell und bei
+    flexiblem Modell Mo–Fr, nach Aufwand keine (ohne feste Tage gibt es keine Krankheitsquote).
     Schnelle Näherung ohne Tagesausnahmen des Schichtplans."""
     defaults = (
         await db.execute(
@@ -93,8 +95,8 @@ async def _planned_workdays(
         if not _is_holiday(scopes, day, employee.location_id):
             active = next((d for d in defaults if d.valid_from <= day and (d.valid_to is None or d.valid_to >= day)), None)
             if active is None:
-                count += day.weekday() != 6
-            else:
+                count += day.weekday() < 5
+            elif not active.on_demand:
                 per_day = active.day_minutes_list
                 if active.flexible:
                     count += day.weekday() < 5
@@ -314,12 +316,13 @@ def _segments(comps: list[Compensation], date_from: date, date_to: date) -> list
 async def labor_costs(
     date_from: date = Query(alias="from"),
     date_to: date = Query(alias="to"),
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> LaborCostResponse:
     """Brutto-Lohnkosten (ohne Arbeitgeberanteile) je Mitarbeiter – nur Administratoren, jeder Abruf
     wird protokolliert. Stundenlohn: bezahlte Stunden (inkl. Feiertag/Urlaub/Krank-Gutschrift) x Satz
-    plus Zuschläge; Monatsgehalt: anteilig nach Tagen, Zuschläge werden nicht bewertet."""
+    plus Zuschläge; Monatsgehalt: anteilig nach Tagen, Zuschläge werden nicht bewertet. Dazu Zulagen
+    und Einmalzahlungen im Zeitraum (gleicher Rechenkern wie der Lohn-Export)."""
     if date_to < date_from:
         raise AppError(400, "INVALID_RANGE", "'to' darf nicht vor 'from' liegen.")
     if (date_to - date_from).days > _MAX_COST_RANGE_DAYS:
@@ -349,9 +352,18 @@ async def labor_costs(
                 )
             ).scalars().all()
         )
-        actual_minutes = (await summarize_payroll(db, employee, date_from, date_to)).actual_minutes
+        period = await payroll_period(db, employee, date_from, date_to)
+        actual_minutes = period.summary().actual_minutes
+        allowance = float(sum(item.amount for item in await pay_component_amounts(db, employee, date_from, date_to, period)))
         if not comps:
-            rows.append(LaborCostRow(**_ref(employee), pay_type=None, rate=None, actual_minutes=actual_minutes, base_cost=None, surcharge_cost=None, total_cost=None, note="Keine Vergütung hinterlegt"))
+            total += allowance
+            rows.append(
+                LaborCostRow(
+                    **_ref(employee), pay_type=None, rate=None, actual_minutes=actual_minutes, base_cost=None, surcharge_cost=None,
+                    allowance_cost=round(allowance, 2), total_cost=round(allowance, 2) if allowance else None,
+                    note="Keine Vergütung hinterlegt",
+                )
+            )
             continue
 
         base = 0.0
@@ -365,7 +377,7 @@ async def labor_costs(
                 continue
             amount = float(comp.amount)
             if comp.pay_type == PayType.HOURLY:
-                minutes = (await summarize_payroll(db, employee, segment_start, segment_end)).actual_minutes
+                minutes = period.summary(segment_start, segment_end).actual_minutes
                 base += minutes / 60 * amount
                 equivalent = sum(t.equivalent_minutes for t in await compute_surcharges(db, employee, segment_start, segment_end, rules))
                 surcharge += equivalent / 60 * amount
@@ -384,12 +396,12 @@ async def labor_costs(
         if uncovered_days:
             notes.append(f"{uncovered_days} Tag(e) ohne hinterlegte Vergütung")
         latest = comps[-1]
-        row_total = round(base + surcharge, 2)
+        row_total = round(base + surcharge + allowance, 2)
         total += row_total
         rows.append(
             LaborCostRow(
                 **_ref(employee), pay_type=latest.pay_type, rate=float(latest.amount), actual_minutes=actual_minutes,
-                base_cost=round(base, 2), surcharge_cost=round(surcharge, 2), total_cost=row_total,
+                base_cost=round(base, 2), surcharge_cost=round(surcharge, 2), allowance_cost=round(allowance, 2), total_cost=row_total,
                 note="; ".join(notes) or None,
             )
         )

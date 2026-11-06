@@ -91,7 +91,7 @@ export function PunchCorrectionDialog({
             <Input
               id="reason"
               required
-              placeholder="z.B. Kiosk-Uhr war falsch gestellt"
+              placeholder="z. B. Tablet-Uhr war falsch gestellt"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />

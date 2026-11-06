@@ -1,3 +1,4 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { components } from './schema'
 import { apiClient, unwrap } from './client'
 import { getAccessToken } from '../auth/tokenStore'
@@ -76,4 +77,34 @@ function saveBlob(blob: Blob, filename: string): void {
   link.click()
   link.remove()
   URL.revokeObjectURL(url)
+}
+
+export type PayrollMonthStatus = components['schemas']['PayrollMonthStatus']
+
+/** Monatsabschluss der Gewählten und bisherige Exporte dieses Monats (Hinweis vor dem Export). */
+export function usePayrollMonthStatusQuery(month: string, employeeIds: number[]) {
+  return useQuery({
+    queryKey: ['payroll-export-status', month, employeeIds],
+    queryFn: async () =>
+      unwrap(await apiClient.GET('/payroll-export/status', { params: { query: { month, employee_ids: employeeIds } } })),
+    enabled: employeeIds.length > 0,
+  })
+}
+
+export type DatevSettings = components['schemas']['DatevSettings']
+
+/** Berater-/Mandantennummer für DATEV (Berechtigung „Vergütung & Lohn-Export“). */
+export function useDatevSettingsQuery() {
+  return useQuery({
+    queryKey: ['datev-settings'],
+    queryFn: async () => unwrap(await apiClient.GET('/payroll-export/datev/settings')),
+  })
+}
+
+export function useUpdateDatevSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: DatevSettings) => unwrap(await apiClient.PUT('/payroll-export/datev/settings', { body: payload })),
+    onSuccess: (data) => queryClient.setQueryData(['datev-settings'], data),
+  })
 }

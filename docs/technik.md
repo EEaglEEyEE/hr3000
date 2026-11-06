@@ -51,7 +51,8 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 
 - **Tagesberechnung:** `services/timesheet_service.py`
   - `calculate_day` berechnet Soll und Ist; `_pair_punches` macht aus den Stempelungen Paare.
-  - „Jetzt“ kommt aus `_utcnow()`, in Tests über das Fixture `at_time`.
+  - „Jetzt“ kommt aus `_utcnow()`, in Tests über das Fixture `at_time`. Auch „heute“ (`today_in`,
+    `utc_today` für mandantenweite Listen) leitet sich davon ab – nicht `date.today()` verwenden.
   - Ein offenes Kommen gilt nach der maximalen Schichtlänge als vergessenes Gehen.
 - **Gleitzeitkonto:**
   - `daily_summaries` ist nur ein Cache; `Employee.balance_through` markiert, bis wann er
@@ -64,13 +65,28 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Arbeitstage ganz ohne Stempelung: Schalter `AppSettings.report_days_without_punches`.
     Ausgewertet über `missing_punch_reported` (Monatsbericht, Lohn-Export) und beim Füllen des
     Tages-Caches in `rebuild_balance` (Zu klären, Übersicht Monatsabschluss).
-  - „Erledigt“ ist ein `DayReview` und ändert die Berechnung nicht.
+  - „Erledigt“ ist ein `DayReview` und ändert die Berechnung nicht. Es speichert einen
+    Fingerabdruck des Tages (`day_fingerprint`: Status|Soll|Ist|Hinweise, Migration 0096); weicht
+    der aktuelle Stand ab, gilt der Tag wieder als offen (`review_valid`; ältere Einträge ohne
+    Fingerabdruck gelten weiter).
+  - Eine Regel „Tag offen“ (`timesheet_service.needs_review`) für `GET /timesheet/open-days`, die
+    Abschluss-Übersicht (`GET /period-closures`), den Monatsbericht (`build_month_report`) und den
+    Rechenkern der Abrechnung (`PayrollDay.open`).
 - **Zulagen/Einmalzahlungen:** `PayComponent` (`ALLOWANCE` mit `PER_MONTH`/`PER_HOUR` und
-  Gültigkeit, `ONE_TIME` mit `pay_date`, optionale `wage_type`), Endpunkte unter
+  Gültigkeit, `ONE_TIME` mit `pay_date`) mit Art `PayComponentType` (Katalog je Mandant: `kind`,
+  `name`, `wage_type`, `active`; Name/Lohnart stehen nur dort, Migration 0092). Anlegen mit
+  `type_id` oder `type_name` (früher `name`, als Alias weiter angenommen: Art finden bzw. anlegen).
+  Endpunkte unter
   `/employees/{id}/pay-components` (nur Admin, Audit wie Vergütung ohne Beträge, Sperre über
   `ensure_*_open`). Beträge je Zeitraum in `services/pay_component_service.py` (Monatsbetrag
-  anteilig nach Kalendertagen, Stundenbetrag × Ist aus `summarize_payroll`, Cent kaufmännisch
+  anteilig nach Kalendertagen, Stundenbetrag × Ist im Gültigkeitsteil, Cent kaufmännisch
   gerundet). Lohn-Export: Spalten nur bei `actor.is_admin_level`.
+- **Rechenkern Abrechnung:** `services/payroll_export_service.payroll_period` rechnet je Mitarbeiter
+  jeden Tag einmal (`calculate_day`, gestempelte Zeit, `DayCalculation.credit_parts` = Gutschrift je
+  Zeitart, Feiertag als `PUBLIC_HOLIDAY`) und sammelt Auszahlungen (`AdjustmentKind.PAYOUT`).
+  `PayrollPeriod.summary(start, end)` liefert Summen auch für Teilzeiträume (Stundenlohn-Abschnitte,
+  Gültigkeit von Zulagen) ohne neue Rechnung. Genutzt von CSV-Lohn-Export, DATEV-Export,
+  `pay_component_amounts` und der Lohnkosten-Auswertung (inkl. Zulagen).
 - **Migration (Werte aus dem Altsystem):** `POST /migration/employee-values` (multipart: Datei,
   `cutover`, `apply`), `services/migration_import_service.py` parst ohne DB, `api/migration.py`
   prüft Sichtbarkeit, Sperren und doppelten `OPENING_BALANCE` zum Stichtag und übernimmt
@@ -81,44 +97,120 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   Felder: `PORTABLE_SETTINGS` in `api/migration.py`; Import über `update_settings`,
   `create_break_rule` (gültig ab heute), `create_absence_type`, `create_surcharge_rule`. Die
   Vorschau schreibt nichts.
-- **DATEV LODAS:** `services/datev_export_service.py` baut aus Ist-Stunden (nur Zeiträume mit
-  `Compensation.pay_type = HOURLY`), Zuschlagsstunden (`SurchargeRule.wage_type`) und
-  `PayComponent`s die Bewegungsdaten (`u_lod_bwd_buchung_standard`, Bearbeitungsschlüssel 01 =
-  Stunden, 02 = Betrag) samt Hinweisen. Endpunkte `GET /payroll-export/datev` (Datei, cp1252,
-  CRLF) und `/payroll-export/datev/preview` (JSON), nur Admin; Berater-/Mandantennummer und
-  Lohnart Ist-Stunden in `AppSettings.datev_*`. Grundlage: LODAS-Schnittstellenhandbuch;
-  Fehlzeiten bewusst nicht enthalten.
+- **Testumgebung:** `docker-compose.staging.yml` (Projekt `hr3000-staging`, ohne Caddy, Container
+  im Prod-Netz unter `staging-*` erreichbar), `scripts/staging.sh`, Demo-Daten aus
+  `app/tools/seed_demo.py` (nur mit `DEMO_SEED_ALLOWED=1`). Prod-Caddy leitet Hosts unter
+  `STAGING_BASE_DOMAIN` weiter; `api/tls.py` fragt für sie das Staging-Backend
+  (`staging_tls_ask_url`).
+- **Berechtigung „Vergütung & Lohn-Export“:** `Actor.has_payroll_access` (Admin immer; volle HR mit
+  `HrUser.payroll_access` bzw. `Employee.hr_payroll_access`, Migration 0094), Dependency
+  `get_current_payroll_principal` für Vergütung, Zulagen, Lohnkosten, DATEV (inkl. `GET/PUT
+  /payroll-export/datev/settings`), Lohnarten und `PUT /surcharge-rules/{id}/wage-type`; Beträge im
+  CSV-Export und DATEV-Einträge im Export-Status ebenso. Vergabe über `PATCH
+  /employees/{id}/hr-role` (`payroll_access`, nur bei HR; andere Rollen setzen es zurück). Token-Claim
+  `payroll` nur für die Anzeige (`AuthContext.canPayroll`).
+- **Zuschlagsregeln mit Verlauf:** `SurchargeRule.valid_from/valid_to/family_id` (Migration 0095;
+  `family` = erste Fassung). `PATCH /surcharge-rules/{id}` mit `valid_from` und geändertem Satz,
+  Zeitfenster oder Wochentagen legt eine neue Fassung an (bisherige endet am Vortag,
+  `ensure_tenant_open_from`); ohne `valid_from` direkt in der Fassung. `compute_surcharges` wertet je
+  Tag nur gültige Fassungen aus; `merge_by_family` fasst für die CSV-Spalten zusammen (Name der
+  neuesten Fassung), Monatsbericht, Lohnkosten und DATEV rechnen je Fassung (Satz/Lohnart).
+  `GET /surcharge-rules?include_history=true` liefert auch abgelaufene Fassungen.
+- **Export-Protokoll:** `PayrollExportLog` (`payroll_export_logs`, Migration 0093: Art CSV/DATEV,
+  Zeitraum, Anzahl, wer, wann – ohne Inhalte), geschrieben beim CSV-Export und beim DATEV-Download.
+  `GET /payroll-export/status?month=` liefert Abschluss-Stand der Gewählten (`PeriodClosure`:
+  abgeschlossen / vorgelegt+bestätigt / offen) und die Exporte des Monats (DATEV nur für Admins).
+- **Lohnarten:** `WageTypeMapping` (`wage_type_mappings`: `item` = `WageTypeItem` WORKED,
+  VACATION, SICK, CHILD_SICK, SPECIAL_LEAVE, PUBLIC_HOLIDAY, WORK_TIME, OVERTIME_PAYOUT),
+  `services/wage_type_service.py`, `api/wage_types.py` (`/wage-types`, `/pay-component-types`, nur
+  Admin, Audit `SETTINGS_CHANGED`). Zuschläge behalten ihre Lohnart an `SurchargeRule.wage_type`.
+  „Einstellungen übertragen“ nimmt `wage_types` und `pay_component_types` mit; alte Dateien mit
+  `settings.datev_hours_wage_type` werden zu WORKED.
+- **DATEV LODAS:** `services/datev_export_service.py` baut aus dem Rechenkern die Bewegungsdaten
+  (`u_lod_bwd_buchung_standard`, Bearbeitungsschlüssel 01 = Stunden, 02 = Betrag): je Zeitart in
+  Stundenlohn-Abschnitten (`worked_minutes`, `credit_minutes` je Kategorie mit Lohnart; WORK_TIME
+  ohne eigene Lohnart zählt als WORKED), Auszahlungen (OVERTIME_PAYOUT), Zuschlagsstunden und
+  Zulagen; ohne Lohnart als Hinweis. Endpunkte `GET /payroll-export/datev` (Datei, cp1252, CRLF)
+  und `/payroll-export/datev/preview` (JSON), nur Admin; Berater-/Mandantennummer in
+  `AppSettings.datev_*`. Grundlage: LODAS-Schnittstellenhandbuch.
+- **Arbeitszeitmodell und Schicht:** Eine Fassung (`EmployeeDefaultShift`, effektiv-datiert, je
+  Mitarbeiter höchstens eine zur Zeit) trägt den Vertrag selbst: Arbeitstage (`weekdays_mask`,
+  `day_minutes`), Art (`flexible`, `on_demand` + `monthly_cap_minutes`), Soll
+  (`target_minutes` + `target_period`), eigene Pause (`break_mode`, `fixed_break_*`,
+  `min_break_minutes` ab `min_break_after_minutes`) und Kernzeit (`core_time_*`). Eine
+  Schichtvorlage (`shift_template_id`, optional) liefert nur die Uhrzeiten – Soll und Pause nur,
+  solange die Fassung keine eigenen hat (ältere Standard-Schichten, Antwortfeld
+  `target_from_template`). Seit Migration 0091 gibt es keine versteckten Modellvorlagen
+  (`is_work_time_model`) und keine Kernzeit am Mitarbeiter mehr.
+  - Auflösung je Tag: `shift_planning_service.resolve_effective_shift` → `EffectiveDayPlan`
+    (Tagesausnahme `ShiftPlanEntry` nur mit Schichtplanung, sonst Fassung, sonst „ohne Plan“);
+    `plan.version` ist immer die Fassung des Tages. Bei flexibel/nach Aufwand liefert eine
+    Tagesausnahme nur Uhrzeiten (kein Tagessoll).
+  - Schreiben: `PUT /employees/{id}/work-time-model` (neue Fassung ab Stichtag, ersetzt spätere)
+    und `PUT …/versions/{id}` (nachträglich); Kernzeit ohne Angabe = wie die bisherige Fassung.
+  - Beim Anlegen (`POST /employees`): `work_time_model` gilt ab Eintritt; ohne Angabe nimmt das
+    Backend das Standardmodell der Firma (`default_day_minutes`), außer bei `no_work_time_model`
+    (bewusst ohne Modell; beides zugleich = 422).
+    `POST/PATCH/DELETE /employees/{id}/default-shifts` (Soll aus der Vorlage) sind veraltet
+    (`deprecated`), die Oberfläche nutzt sie nicht mehr.
+  - Soll-/Pausenänderung einer Schichtvorlage ab Stichtag (`_version_for_target_change`) teilt nur
+    Fassungen, die Soll bzw. Pause von der Vorlage erben; Fassungen mit eigenem Soll und eigener
+    Pause wechseln nur auf die neue Vorlagen-Fassung.
 - **Kernzeit je Wochentag:** `core_time_days` (Text, 7 Einträge „HH:MM-HH:MM“ oder leer, Format
-  und Schema in `schemas/core_time.py`) an `AppSettings` und `Employee` (nur bei `CUSTOM`). NULL =
-  jeden Tag `core_time_start/-end`. Ausgewertet in `timesheet_service._punctuality_flags`; der
-  Gleitzeit-Rahmen wird je Tag geprüft (`CORE_TIME_OUTSIDE_FRAME`).
-- **Monatssoll:** Arbeitszeitmodell mit `monthly_hours` → Vorlage mit
-  `TargetPeriod.MONTHLY`; `shift_planning_service._resolve_target_minutes` verteilt es auf die
-  Arbeitstage des Kalendermonats (Rest auf die ersten Tage, Summe exakt).
+  und Schema in `schemas/core_time.py`) an `AppSettings` und an der Fassung (nur bei `CUSTOM`).
+  NULL = jeden Tag `core_time_start/-end`. Ausgewertet in `timesheet_service._punctuality_flags`
+  (Modus der Fassung: `TENANT`/leer, `CUSTOM`, `NONE`); der Gleitzeit-Rahmen wird je Tag geprüft
+  (`CORE_TIME_OUTSIDE_FRAME`).
+- **Monatssoll:** Fassung mit `TargetPeriod.MONTHLY`; `shift_planning_service._plan_from_version`
+  verteilt es auf die Arbeitstage des Kalendermonats (Rest auf die ersten Tage, Summe exakt).
+- **Urlaubs-/Fehltage ohne feste Tage:** `leave_service.is_leave_day` zählt ohne Arbeitszeitmodell,
+  bei flexibel und nach Aufwand Mo–Fr (wie der Anspruch, 5-Tage-Woche). Die Krankheitsquote
+  (`reports._planned_workdays`) zählt ohne Modell Mo–Fr und bei „nach Aufwand“ keine Soll-Tage.
 - **Pausen:** `timesheet_service.break_policy` liefert je Tag eine `BreakPolicy`.
-  - `BreakRule.kind`: `LEGAL` (gesetzliche Staffel, immer Untergrenze), `FIXED_MINUTES`
-    (Schwelle + Mindestminuten) und `FIXED_WINDOW` (feste Uhrzeit, Ortszeit, nicht über
-    Mitternacht). Alle effektiv-datiert.
-  - Eigene Pause der Vorlage des Tages ersetzt `FIXED_*` des Mandanten: `break_mode=FIXED` mit
-    `fixed_break_start/end` oder `min_break_minutes` (ab der ersten Minute). Arbeitszeitmodelle
-    legen dafür eigene Vorlagen an (Name mit Zusatz „, Pause …“). Pausenänderungen an
-    Schichtvorlagen versionieren wie Soll-Änderungen (`_version_for_target_change`).
-  - `pair_punches_detail`: Abzug = gestempelte Pausen + Anwesenheit in festen Pausenzeiten
-    (ohne Doppelzählung gestempelter Pausen) + Rest bis zur Mindestpause (Staffel bzw. feste
-    Minuten; Unterbrechungen zwischen Gehen und Kommen zählen mit). Feste Pausenzeiten gelten am
-    Arbeitstag und am Folgetag (Nachtschicht).
-  - `maybe_auto_insert_break` bucht nur den Rest, den feste Pausenzeiten nicht schon abdecken;
-    `surcharge_service.work_intervals` schneidet die festen Pausenzeiten an ihrer Uhrzeit heraus.
+  - `BreakRule.kind`: `LEGAL` = Pausenstaffel (früheres `FIXED_MINUTES` ist darin aufgegangen,
+    Migration 0090; die API nimmt es noch an und speichert `LEGAL`) und `FIXED_WINDOW` (feste
+    Uhrzeit, Ortszeit, nicht über Mitternacht). Alle effektiv-datiert.
+  - Eigene Pause des Tages (`_own_break`): die der Fassung, sonst die der Schichtvorlage (an
+    geplanten Schichttagen immer die der Schicht). `break_mode=FIXED` + `fixed_break_*` ersetzt die
+    Pausenzeiten des Mandanten; `min_break_minutes` ab `min_break_after_minutes` ist eine weitere
+    Staffelstufe. Pausenänderungen an Schichtvorlagen versionieren wie Soll-Änderungen.
+  - `BreakPolicy.shortfall` ist der einzige Rechenweg für den Fehlbetrag (Tagesberechnung,
+    `maybe_auto_insert_break`, `surcharge_service.work_intervals`). `precise`
+    (`AppSettings.break_precise_from`): Schwelle nach Arbeitszeit ohne Pausen, gestempelte Pausen
+    erst ab 15 Min.; `capped` (`break_capped_from`): Abzug höchstens bis zur Schwelle. Beide ab Datum.
+  - `AppSettings.legal_break_minimum`: Prüfung beim Ändern der Staffel (`staffel_covers_law`), kein
+    Rechenschritt.
+  - Feste Pausenzeiten gelten am Arbeitstag und am Folgetag (Nachtschicht).
+  - `refresh_auto_breaks` setzt automatische Pausen nach manuellen Änderungen neu.
+- **Pünktlichkeit:** kein eigener Schalter mehr – `LATE_ARRIVAL`/`EARLY_LEAVE`/`OUTSIDE_FLEX_FRAME`
+  über `disabled_day_flags` (neue Mandanten: zu spät/zu früh aus). `AppSettings.punctuality_from`
+  (bei jeder Regeländerung = heute) begrenzt die Hinweise auf Tage ab der Änderung.
 - **Abwesenheiten:** Kategorien (`AbsenceType`), halbe Tage (`Absence.half_day`), Stunden
   (`Absence.duration_minutes`), Urlaubskonto in `services/leave_service.py`.
+- **Urlaubsanspruch:** `EmploymentContract.annual_vacation_days` (leer = `default_annual_vacation_days`).
+  `leave_service.computed_entitlement` rechnet tagesgenau: Basis je Tag aus dem Vertragsabschnitt ×
+  Teilzeitfaktor (`prorate_part_time_vacation`) ÷ Tage im Jahr, mit `prorate_partial_year_vacation` nur
+  über die Beschäftigungstage plus gesetzlicher Untergrenze (`full_statutory_leave`, Wartezeit
+  `waiting_period_end`); `round_vacation` rundet nie ab; `None` bei „nach Aufwand“.
+  `LeaveEntitlement.entitled_manual` = Jahreswert fest (Migration 0098 setzt bestehende Zeilen fest,
+  `prorate_partial_year_vacation` für bestehende Mandanten aus); sonst gilt der berechnete Wert, die
+  Zeile hält dann nur Übertrag und den Stand beim Anlegen.
 - **Monatsabschluss:** gesperrte Monate; mitarbeiterbezogene Schreibvorgänge mit Datum rufen
-  `ensure_period_open` bzw. `ensure_range_open`.
+  `ensure_period_open` bzw. `ensure_range_open`. Zustände `SUBMITTED` → `CLOSED` (bzw. `DISPUTED` =
+  wieder offen); die Bestätigung des Mitarbeiters schließt ab (früher `CONFIRMED`, Migration 0097),
+  ohne Login schließt das Vorlegen direkt ab. `_submit` prüft offene Anträge des Monats
+  (`OPEN_REQUESTS_PRESENT`, übergehbar mit `ignore_open_requests`). Mandantenweite Einstellungen, die
+  rückwirkend rechnen (`balance_start_date`, `shift_planning_enabled`, `max_shift_span_hours`), prüfen
+  `ensure_tenant_open_from` ab dem frühesten betroffenen Tag.
 - **Tarife:** `TenantPlan` (FREE, PAID, UNLIMITED), Grenze `free_employee_limit` = 5,
   `services/plan_service.py`, sonst 402 `PLAN_LIMIT_REACHED`.
 - **Tablet:** Einstellungen holt sich die App alle 30 s über `GET /device/config`, z. B.
   Bildschirmzeiten mit Zeitzone des Standorts (`kiosk-app/src/screenHours.ts`).
   Stempelungen tragen einen Idempotency-Key, damit die Offline-Warteschlange nichts doppelt
-  bucht.
+  bucht. „Anmeldung am Tablet“ ist in der Webapp nur eine Auswahl (`KioskLoginCard`,
+  `kioskLoginMode`) über die weiter bestehenden Felder `require_pin_for_punch`,
+  `kiosk_rfid_enabled` und `rfid_required` (+ `kiosk_card_self_registration`,
+  `kiosk_pin_self_setup`); Backend und Tablets sind unverändert.
 
 - **Konten:**
   - Passwort selbst ändern: `POST /auth/change-password`. Andere Sitzungen enden über den
@@ -140,7 +232,18 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 - **Eingaben:** Pydantic-Validierung an jedem Endpoint. Fehler kommen einheitlich als
   `{"detail": …, "code": …}`.
 - **Rechte:** Rollen werden im Backend geprüft; das Frontend blendet nur aus. Mandantentrennung
-  in jeder Abfrage, Vergütung nur für Admins.
+  in jeder Abfrage, Vergütung nur mit „Vergütung & Lohn-Export“.
+  - Webapp: eine Rechte-Tabelle in `hr-webapp/src/lib/access.ts` (`all`/`hr`/`payroll`/`admin` =
+    `get_current_hr_principal`/`…_full_hr_…`/`…_payroll_…`/`…_admin_principal`). Menü
+    (`AppLayout`), Seitenschutz (`RequireAccess` in `App.tsx`) und die Bereiche der Einstellungen
+    (`SettingsPage`, je Bereich eine Stufe) lesen alle daraus. Neue Seite oder neuer Bereich: Stufe
+    passend zur Backend-Abhängigkeit eintragen.
+  - Einstellungen: `/einstellungen/:seite`; frühere eigene Seiten (Standorte, Teams, Feiertage,
+    Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten, Audit-Log) sind Bereiche dort,
+    die alten Pfade leiten um (`MOVED_TO_SETTINGS`), alte Reiter `?bereich=` ebenso.
+  - „Zu klären“: `/zu-klaeren/:reiter` (`tage`, `korrekturen`, `urlaubsantraege`, `monatsgrenzen`);
+    `/urlaubsantraege` leitet um. Die Zahl im Menü zählt offene Tage, überschrittene Monatsgrenzen,
+    offene Abwesenheitsanträge und (Admin/HR) Korrekturanträge.
 - **Zugangsdaten:**
   - Passwörter und PINs als bcrypt-Hash (höchstens 72 Byte).
   - Anmeldeversuche begrenzt.

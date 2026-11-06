@@ -140,8 +140,9 @@ async def test_closed_month_stays_unchanged(client: AsyncClient, db_session: Asy
     r = await client.post(url, headers=admin, json={"kind": "ALLOWANCE", "name": "Bonus", "amount": 20, "unit": "PER_MONTH", "valid_from": "2026-07-01"})
     assert r.status_code == 409
     allowance = await _create(client, admin, employee, kind="ALLOWANCE", name="Bonus", amount=20, unit="PER_MONTH", valid_from="2026-07-01", valid_to="2026-07-31")
-    # Verlängern in den abgeschlossenen August: gesperrt; Lohnart ändern geht
+    # Verlängern in den abgeschlossenen August: gesperrt; Lohnart (an der Art) ändern geht
     r = await client.patch(f"{url}/{allowance['id']}", headers=admin, json={"clear_valid_to": True})
     assert r.status_code == 409
-    r = await client.patch(f"{url}/{allowance['id']}", headers=admin, json={"wage_type": "2100"})
+    r = await client.patch(f"/pay-component-types/{allowance['type_id']}", headers=admin, json={"wage_type": "2100"})
     assert r.status_code == 200 and r.json()["wage_type"] == "2100"
+    assert (await client.get(url, headers=admin)).json()[0]["wage_type"] == "2100"

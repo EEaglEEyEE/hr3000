@@ -190,12 +190,12 @@ describe('Zu klären: Erledigt', () => {
     expect(screen.queryByText(/als erledigt markiert/)).not.toBeInTheDocument()
   })
 
-  it('Teamleader sehen keinen "Erledigt"-Knopf (entscheidet nur HR)', async () => {
+  it('Teamleader sehen weder "Erledigt" noch "Korrigieren" (entscheidet und korrigiert nur HR)', async () => {
     loginAs({ kind: 'hr', role: 'SUPERVISOR' })
     mockApi(routes())
     renderWithProviders(<OpenDaysPage />)
     await screen.findByText('19.10.2026')
     expect(screen.queryByRole('button', { name: 'Erledigt' })).not.toBeInTheDocument()
-    expect(screen.getAllByText('Korrigieren →')).toHaveLength(2)
+    expect(screen.queryByText('Korrigieren →')).not.toBeInTheDocument()
   })
 })

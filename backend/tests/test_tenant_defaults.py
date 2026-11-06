@@ -36,6 +36,16 @@ async def test_defaults_apply_to_new_employees(client: AsyncClient, db_session: 
     explicit = (await client.post("/employees", headers=headers, json={"location_id": location.id, "first_name": "C", "last_name": "D", "employee_number": "2", "auto_break_enabled": True})).json()
     assert explicit["auto_break_enabled"] is True
 
+    # Bewusst ohne Arbeitszeitmodell (z. B. reines HR-Konto): Standard greift nicht.
+    none = (await client.post("/employees", headers=headers, json={"location_id": location.id, "first_name": "E", "last_name": "F", "employee_number": "3", "no_work_time_model": True})).json()
+    assert (await client.get(f"/employees/{none['id']}/work-time-model", headers=headers)).json()["configured"] is False
+    # Nach Aufwand statt Standard
+    helper = (await client.post("/employees", headers=headers, json={"location_id": location.id, "first_name": "G", "last_name": "H", "employee_number": "4", "work_time_model": {"on_demand": True}})).json()
+    assert (await client.get(f"/employees/{helper['id']}/work-time-model", headers=headers)).json()["on_demand"] is True
+    # Beides zugleich ist widersprüchlich.
+    both = await client.post("/employees", headers=headers, json={"location_id": location.id, "first_name": "I", "last_name": "J", "employee_number": "5", "no_work_time_model": True, "work_time_model": {"on_demand": True}})
+    assert both.status_code == 422
+
     assert (await client.patch("/settings", headers=headers, json={"default_day_minutes": [700, 0, 0, 0, 0, 0, 0]})).status_code == 400
     assert (await client.patch("/settings", headers=headers, json={"default_day_minutes": []})).json()["default_day_minutes"] is None
 

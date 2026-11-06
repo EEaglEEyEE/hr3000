@@ -84,7 +84,7 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
             <Input
               id="device_name"
               required
-              placeholder="z.B. Kiosk Eingang"
+              placeholder="z. B. Tablet Eingang"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
@@ -112,7 +112,7 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="DEFAULT">Standard (Einstellungen → Kiosk)</SelectItem>
+                  <SelectItem value="DEFAULT">Standard (Einstellungen → „Anzeige am Tablet“)</SelectItem>
                   <SelectItem value="DARK">Dunkel</SelectItem>
                   <SelectItem value="LIGHT">Hell</SelectItem>
                 </SelectContent>
@@ -128,7 +128,7 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
                 value={screenMode}
                 onChange={(event) => setScreenMode(event.target.value as typeof screenMode)}
               >
-                <option value="DEFAULT">Wie Einstellungen (Einstellungen → Kiosk)</option>
+                <option value="DEFAULT">Wie Einstellungen („Anzeige am Tablet“)</option>
                 <option value="ALWAYS">Immer an</option>
                 <option value="CUSTOM">Eigene Zeiten</option>
               </select>

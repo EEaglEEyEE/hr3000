@@ -135,3 +135,16 @@ async def test_locked_month_and_future_cutover(client: AsyncClient, db_session: 
     assert "abgeschlossen" in body["errors"][0]["message"] or "gesperrt" in body["errors"][0]["message"].lower()
     r = await _upload(client, admin, "personalnummer;saldo_stunden\n102;5\n", apply=False, cutover="2099-01-01")
     assert r.json()["errors"][0]["message"] == "Ein Gleitzeit-Übertrag ist nur bis heute möglich."
+
+
+async def test_balance_start_before_cutover_is_rejected(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Rechnet das Konto schon vor dem Stichtag, würde der Übertrag doppelt zählen."""
+    _, admin = await _setup(db_session, client)
+    assert (await client.patch("/settings", headers=admin, json={"balance_start_date": "2026-09-01"})).status_code == 200
+    r = await _upload(client, admin, "personalnummer;saldo_stunden;urlaubsanspruch_tage\n100;5;\n101;;30\n", apply=False)
+    body = r.json()
+    assert "rechnet schon ab 01.09.2026" in body["errors"][0]["message"]
+    assert [row["employee_number"] for row in body["rows"]] == ["101"]  # ohne Saldo kein Problem
+    assert (await client.patch("/settings", headers=admin, json={"balance_start_date": "2026-10-01"})).status_code == 200
+    body = (await _upload(client, admin, "personalnummer;saldo_stunden\n100;5\n", apply=False)).json()
+    assert body["errors"] == [] and body["rows"][0]["employee_number"] == "100"

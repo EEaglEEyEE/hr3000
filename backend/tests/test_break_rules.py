@@ -23,6 +23,8 @@ async def test_admin_can_create_list_update_delete_break_rule(
 ) -> None:
     await _create_hr_user(db_session, HrRole.ADMIN)
     token = await _hr_token(client)
+    # Ohne Gesetzesschutz darf die Staffel auch ganz leer werden (z.B. Tarifvertrag).
+    assert (await client.patch("/settings", headers={"Authorization": f"Bearer {token}"}, json={"legal_break_minimum": False})).status_code == 200
 
     create_response = await client.post(
         "/break-rules",

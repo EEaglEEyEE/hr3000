@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { loginAs, mockApi, renderWithProviders, type ApiInit } from '../../test/utils'
 import { SettingsTransferCard } from './SettingsTransferCard'
 
-const exported = { format: 'hr3000-settings', version: 1, settings: { punctuality_check: true }, break_rules: [], absence_types: [], surcharge_rules: [] }
+const exported = { format: 'hr3000-settings', version: 1, settings: { legal_break_minimum: true }, break_rules: [], absence_types: [], surcharge_rules: [] }
 
 describe('Einstellungen übertragen', () => {
   it('zeigt die Vorschau und übernimmt', async () => {
@@ -13,7 +13,7 @@ describe('Einstellungen übertragen', () => {
     const calls = mockApi({
       'POST /migration/settings-import': (init: ApiInit) => ({
         applied: init.params?.query?.apply === true,
-        changes: ['Einstellung punctuality_check', 'Feste Pausenzeit 12:00–12:30'],
+        changes: ['Einstellung legal_break_minimum', 'Feste Pausenzeit 12:00–12:30'],
         skipped: ['Pausenregel ab 540 Min.: 45 Min.: kollidiert mit einer vorhandenen Regel'],
       }),
     })

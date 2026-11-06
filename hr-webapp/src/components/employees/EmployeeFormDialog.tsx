@@ -1,11 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
-  CoreTimeDaysEditor,
-  coreTimeDaysFromApi,
-  initialCoreTimeDays,
-  type CoreTimeDay,
-} from '../coreTime/CoreTimeDaysEditor'
-import {
   useCreateEmployeeMutation,
   useResetEmployeePasswordMutation,
   useUpdateEmployeeHrRoleMutation,
@@ -36,6 +30,23 @@ interface EmployeeFormDialogProps {
 
 const NO_HR_ROLE = 'NONE'
 const NO_TEAM = '__none__'
+const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+/** Arbeitszeitmodell beim Anlegen: Standard der Firma, Stunden je Wochentag, nach Aufwand oder keins. */
+type ModelChoice = 'DEFAULT' | 'DAYS' | 'ON_DEMAND' | 'NONE'
+
+/** Kurzform des Standardmodells, z. B. "Mo–Fr 8 Std." bzw. "Mo 8, Di 8, Mi 4 Std.". */
+function modelSummary(minutes: number[] | null | undefined): string | null {
+  if (!minutes?.some((m) => m > 0)) return null
+  const days = minutes.map((m, day) => ({ day, hours: m / 60 })).filter((d) => d.hours > 0)
+  const fmt = (h: number) => String(h).replace('.', ',')
+  const consecutive = days.every((d, i) => i === 0 || d.day === days[i - 1].day + 1)
+  if (consecutive && days.every((d) => d.hours === days[0].hours)) {
+    const range = days.length > 1 ? `${WEEKDAY_LABELS[days[0].day]}–${WEEKDAY_LABELS[days.at(-1)!.day]}` : WEEKDAY_LABELS[days[0].day]
+    return `${range} ${fmt(days[0].hours)} Std.`
+  }
+  return `${days.map((d) => `${WEEKDAY_LABELS[d.day]} ${fmt(d.hours)}`).join(', ')} Std.`
+}
 
 export function EmployeeFormDialog({
   open,
@@ -64,6 +75,8 @@ export function EmployeeFormDialog({
   const [locationValidFrom, setLocationValidFrom] = useState(todayIsoDate())
   // Nur beim Anlegen: optionales Arbeitszeitmodell (gilt ab Eintritt bzw. heute).
   const [modelDailyHours, setModelDailyHours] = useState<string[]>(['', '', '', '', '', '', ''])
+  const [modelChoice, setModelChoice] = useState<ModelChoice>('NONE')
+  const [modelTouched, setModelTouched] = useState(false)
   const [teamId, setTeamId] = useState<string>(NO_TEAM)
   const [active, setActive] = useState(true)
   const [loginEmail, setLoginEmail] = useState('')
@@ -76,12 +89,8 @@ export function EmployeeFormDialog({
   const [birthDate, setBirthDate] = useState('')
   const [showBirthdayInCalendar, setShowBirthdayInCalendar] = useState(true)
   const [autoBreakEnabled, setAutoBreakEnabled] = useState(true)
-  const [coreTimeMode, setCoreTimeMode] = useState<'TENANT' | 'CUSTOM' | 'NONE'>('TENANT')
-  const [coreStart, setCoreStart] = useState('')
-  const [coreEnd, setCoreEnd] = useState('')
-  // Eigene Kernzeit je Wochentag (null = jeden Tag dieselbe)
-  const [coreDays, setCoreDays] = useState<CoreTimeDay[] | null>(null)
   const [hrRole, setHrRole] = useState<string>(NO_HR_ROLE)
+  const [payrollAccess, setPayrollAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hrRoleError, setHrRoleError] = useState<string | null>(null)
 
@@ -96,6 +105,8 @@ export function EmployeeFormDialog({
     setModelDailyHours(
       (features?.default_day_minutes ?? Array(7).fill(0)).map((m: number) => (m > 0 ? String(m / 60).replace('.', ',') : '')),
     )
+    setModelChoice(modelSummary(features?.default_day_minutes) ? 'DEFAULT' : 'NONE')
+    setModelTouched(false)
     setTeamId(employee?.team_id ? String(employee.team_id) : NO_TEAM)
     setActive(employee?.active ?? true)
     setLoginEmail(employee?.login_email ?? '')
@@ -108,11 +119,8 @@ export function EmployeeFormDialog({
     setBirthDate(employee?.birth_date ?? '')
     setShowBirthdayInCalendar(employee?.show_birthday_in_calendar ?? features?.default_show_birthday ?? true)
     setAutoBreakEnabled(employee?.auto_break_enabled ?? features?.default_auto_break ?? true)
-    setCoreTimeMode((employee?.core_time_mode as 'TENANT' | 'CUSTOM' | 'NONE' | undefined) ?? 'TENANT')
-    setCoreStart(employee?.core_time_start?.slice(0, 5) ?? '')
-    setCoreEnd(employee?.core_time_end?.slice(0, 5) ?? '')
-    setCoreDays(coreTimeDaysFromApi(employee?.core_time_days))
     setHrRole(employee?.hr_role ?? NO_HR_ROLE)
+    setPayrollAccess(employee?.hr_payroll_access ?? false)
     setError(null)
     setHrRoleError(null)
     setResetNotice(null)
@@ -120,6 +128,38 @@ export function EmployeeFormDialog({
   }, [open, employee?.id])  // bewusst nicht an das employee-Objekt gebunden: ein Refetch (z.B. nach Rollenwechsel) darf ungespeicherte Eingaben nicht verwerfen
 
   const locationChanged = isEditMode && locationId !== '' && Number(locationId) !== employee.location_id
+  const defaultModel = modelSummary(features?.default_day_minutes)
+
+  // Die Firmen-Standards kommen evtl. erst nach dem Öffnen an – dann vorbelegen, solange nichts gewählt ist.
+  useEffect(() => {
+    if (isEditMode || modelTouched) return
+    setModelChoice(defaultModel ? 'DEFAULT' : 'NONE')
+    setModelDailyHours(
+      (features?.default_day_minutes ?? Array(7).fill(0)).map((m: number) => (m > 0 ? String(m / 60).replace('.', ',') : '')),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultModel])
+
+  /** Arbeitszeitmodell beim Anlegen; „Standard“ sendet nichts (das Backend nimmt den Standard). */
+  function modelPayload() {
+    switch (modelChoice) {
+      case 'DAYS':
+        return {
+          no_work_time_model: false,
+          work_time_model: {
+            daily_hours: modelDailyHours.map((h) => (h.trim() ? Number(h.replace(',', '.')) : 0)),
+            flexible: false,
+            on_demand: false,
+          },
+        }
+      case 'ON_DEMAND':
+        return { no_work_time_model: false, work_time_model: { on_demand: true, flexible: false } }
+      case 'NONE':
+        return { no_work_time_model: true }
+      default:
+        return { no_work_time_model: false }
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -133,12 +173,6 @@ export function EmployeeFormDialog({
       active,
       login_email: loginEmail || undefined,
       auto_break_enabled: autoBreakEnabled,
-      core_time_mode: coreTimeMode,
-      ...(coreTimeMode === 'CUSTOM'
-        ? coreDays
-          ? { core_time_days: coreDays }
-          : { core_time_start: coreStart, core_time_end: coreEnd, core_time_days: null }
-        : {}),
       // Leerer String entfernt die Karte beim Bearbeiten (None hieße "unverändert").
       nfc_uid: nfcUid.trim(),
       hire_date: hireDate || undefined,
@@ -153,16 +187,17 @@ export function EmployeeFormDialog({
       ...(password ? { password } : {}),
       ...(pin ? { pin } : resetPin ? { pin: '' } : {}),
       ...(isEditMode && locationChanged ? { location_valid_from: locationValidFrom } : {}),
-      ...(!isEditMode && modelDailyHours.some((h) => h.trim())
-        ? { work_time_model: { daily_hours: modelDailyHours.map((h) => (h.trim() ? Number(h.replace(',', '.')) : 0)), flexible: false, on_demand: false } }
-        : {}),
+    }
+    if (!isEditMode && modelChoice === 'DAYS' && !modelDailyHours.some((h) => Number(h.replace(',', '.')) > 0)) {
+      setError('Bitte mindestens einen Wochentag mit Stunden eintragen – oder ein anderes Arbeitszeitmodell wählen.')
+      return
     }
 
     try {
       if (isEditMode) {
         await updateEmployee.mutateAsync({ employeeId: employee.id, payload })
       } else {
-        await createEmployee.mutateAsync(payload)
+        await createEmployee.mutateAsync({ ...payload, ...modelPayload() })
       }
       onOpenChange(false)
     } catch (err) {
@@ -171,7 +206,7 @@ export function EmployeeFormDialog({
       } else if (err instanceof ApiError && err.code === 'LOGIN_EMAIL_TAKEN') {
         setError('Diese Login-E-Mail wird bereits verwendet.')
       } else if (err instanceof ApiError && err.code === 'NFC_UID_TAKEN') {
-        setError('Diese NFC-Karte ist bereits einem anderen Mitarbeiter zugeordnet.')
+        setError('Dieser Chip ist bereits einem anderen Mitarbeiter zugeordnet.')
       } else if (err instanceof ApiError && err.status !== 422) {
         setError(err.message)
       } else {
@@ -197,6 +232,18 @@ export function EmployeeFormDialog({
           ? err.message
           : 'Berechtigung konnte nicht geändert werden.',
       )
+    }
+  }
+
+  async function handlePayrollAccessChange(checked: boolean) {
+    if (!isEditMode || hrRole !== 'HR') return
+    setHrRoleError(null)
+    setPayrollAccess(checked)
+    try {
+      await updateHrRole.mutateAsync({ employeeId: employee.id, hrRole: 'HR', payrollAccess: checked })
+    } catch {
+      setPayrollAccess(!checked)
+      setHrRoleError('Berechtigung konnte nicht geändert werden.')
     }
   }
 
@@ -285,23 +332,42 @@ export function EmployeeFormDialog({
           )}
           {!isEditMode && (
             <div className="flex flex-col gap-1.5 rounded-md border border-slate-200 p-3">
-              <Label>Arbeitszeitmodell (optional): Stunden je Wochentag</Label>
-              <div className="grid grid-cols-7 gap-1">
-                {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((label, day) => (
-                  <div key={label} className="flex flex-col items-center gap-0.5">
-                    <span className="text-xs text-slate-500">{label}</span>
-                    <Input
-                      inputMode="decimal"
-                      className="w-full px-1 text-center"
-                      value={modelDailyHours[day]}
-                      onChange={(e) => setModelDailyHours((c) => c.map((v, i) => (i === day ? e.target.value : v)))}
-                    />
-                  </div>
-                ))}
-              </div>
+              <Label htmlFor="model_choice">Arbeitszeitmodell</Label>
+              <select
+                id="model_choice"
+                className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                value={modelChoice}
+                onChange={(e) => {
+                  setModelChoice(e.target.value as ModelChoice)
+                  setModelTouched(true)
+                }}
+              >
+                {defaultModel && <option value="DEFAULT">Standard aus den Einstellungen ({defaultModel})</option>}
+                <option value="DAYS">Stunden je Wochentag</option>
+                <option value="ON_DEMAND">Nach Aufwand (Aushilfe, ohne Soll)</option>
+                <option value="NONE">Kein Arbeitszeitmodell (ohne Soll, z. B. reines HR-Konto)</option>
+              </select>
+              {modelChoice === 'DAYS' && (
+                <div className="grid grid-cols-7 gap-1">
+                  {WEEKDAY_LABELS.map((label, day) => (
+                    <div key={label} className="flex flex-col items-center gap-0.5">
+                      <span className="text-xs text-slate-500">{label}</span>
+                      <Input
+                        inputMode="decimal"
+                        aria-label={`Stunden ${label}`}
+                        className="w-full px-1 text-center"
+                        value={modelDailyHours[day]}
+                        onChange={(e) => setModelDailyHours((c) => c.map((v, i) => (i === day ? e.target.value : v)))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-slate-500">
-                Z. B. Vollzeit 8 an Mo–Fr, Teilzeit Mo 8 / Di 8 / Mi 4. Gilt ab Eintrittsdatum (sonst ab heute); später im
-                Reiter „Arbeitszeitmodell“ änderbar.
+                {modelChoice === 'DAYS' && 'Z. B. Vollzeit 8 an Mo–Fr, Teilzeit Mo 8 / Di 8 / Mi 4. '}
+                {modelChoice === 'NONE' && 'Ohne Soll – Tage ohne Stempelung sind dann nicht „zu klären“. '}
+                Gilt ab Eintrittsdatum (sonst ab heute); Wochen- oder Monatsstunden, Pausen und Kernzeit im Reiter
+                „Arbeitszeit“.
               </p>
             </div>
           )}
@@ -321,9 +387,18 @@ export function EmployeeFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-slate-500">
-              Bestimmt, welche Teamleader diesen Mitarbeiter sehen dürfen (siehe Seite „Teams“).
+              Bestimmt, welche Teamleiter/innen diesen Mitarbeiter sehen dürfen (siehe Einstellungen → „Teams“).
             </p>
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="hire_date">Eintrittsdatum</Label>
+            <Input id="hire_date" type="date" value={hireDate} onChange={(event) => setHireDate(event.target.value)} />
+          </div>
+          <details className="rounded-md border border-slate-200 p-3" open={isEditMode}>
+            <summary className="cursor-pointer text-sm font-medium text-slate-700">
+              Weitere Angaben (Austritt, Geburtstag, Aktiv, Pausen)
+            </summary>
+            <div className="mt-3 flex flex-col gap-4">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -333,25 +408,14 @@ export function EmployeeFormDialog({
             />
             Aktiv
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="hire_date">Eintrittsdatum</Label>
-              <Input
-                id="hire_date"
-                type="date"
-                value={hireDate}
-                onChange={(event) => setHireDate(event.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="termination_date">Austrittsdatum</Label>
-              <Input
-                id="termination_date"
-                type="date"
-                value={terminationDate}
-                onChange={(event) => setTerminationDate(event.target.value)}
-              />
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="termination_date">Austrittsdatum</Label>
+            <Input
+              id="termination_date"
+              type="date"
+              value={terminationDate}
+              onChange={(event) => setTerminationDate(event.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="birth_date">Geburtsdatum</Label>
@@ -382,54 +446,16 @@ export function EmployeeFormDialog({
             />
             Pausen automatisch stempeln (nach Pausenregeln)
           </label>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="core_time_mode">Kernarbeitszeit / Pünktlichkeit</Label>
-            <select
-              id="core_time_mode"
-              className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
-              value={coreTimeMode}
-              onChange={(event) => setCoreTimeMode(event.target.value as 'TENANT' | 'CUSTOM' | 'NONE')}
-            >
-              <option value="TENANT">Wie in den Einstellungen</option>
-              <option value="CUSTOM">Eigene Kernzeit</option>
-              <option value="NONE">Keine Prüfung (z. B. Außendienst)</option>
-            </select>
-            {coreTimeMode === 'CUSTOM' && (
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={coreDays !== null}
-                  onChange={(e) => setCoreDays(e.target.checked ? initialCoreTimeDays(coreStart, coreEnd) : null)}
-                />
-                Je Wochentag unterschiedlich
-              </label>
-            )}
-            {coreTimeMode === 'CUSTOM' && coreDays && <CoreTimeDaysEditor days={coreDays} onChange={setCoreDays} />}
-            {coreTimeMode === 'CUSTOM' && !coreDays && (
-              <div className="flex items-center gap-2">
-                <Input
-                  type="time"
-                  aria-label="Eigene Kernzeit von"
-                  required
-                  className="w-28"
-                  value={coreStart}
-                  onChange={(event) => setCoreStart(event.target.value)}
-                />
-                <span className="text-sm text-slate-500">bis</span>
-                <Input
-                  type="time"
-                  aria-label="Eigene Kernzeit bis"
-                  required
-                  className="w-28"
-                  value={coreEnd}
-                  onChange={(event) => setCoreEnd(event.target.value)}
-                />
-              </div>
-            )}
-          </div>
+            </div>
+          </details>
           </div>
 
           <div className="flex flex-col gap-4">
+          <details className="flex flex-col rounded-md border border-slate-200 p-3" open={isEditMode}>
+            <summary className="cursor-pointer text-sm font-medium text-slate-700">
+              Login und Stempeln am Tablet (E-Mail, Passwort, PIN, Chip)
+            </summary>
+            <div className="mt-3 flex flex-col gap-4">
           <div className="rounded-md border border-slate-200 p-3">
             <p className="mb-3 text-sm font-medium text-slate-700">Login (Mein Bereich)</p>
             <div className="flex flex-col gap-3">
@@ -487,6 +513,9 @@ export function EmployeeFormDialog({
                 id="pin"
                 type="text"
                 inputMode="numeric"
+                pattern="\d{4,8}"
+                maxLength={8}
+                title="4 bis 8 Ziffern"
                 placeholder={
                   isEditMode
                     ? employee?.has_pin
@@ -498,8 +527,8 @@ export function EmployeeFormDialog({
                 onChange={(event) => setPin(event.target.value)}
               />
               <p className="text-xs text-slate-500">
-                Wird beim Stempeln am Tablet abgefragt, sofern in den Einstellungen aktiviert. Ohne PIN legt der Mitarbeiter
-                ihn beim ersten Stempeln am Tablet selbst fest (wenn unter Einstellungen → Kiosk erlaubt).
+                4 bis 8 Ziffern. Wird beim Stempeln am Tablet abgefragt, sofern in den Einstellungen aktiviert. Ohne PIN legt der Mitarbeiter
+                ihn beim ersten Stempeln am Tablet selbst fest (wenn unter Einstellungen → „Stempeln“ erlaubt).
               </p>
               {isEditMode && employee?.has_pin && !pin && (
                 <label className="mt-1 flex items-start gap-2 text-sm text-slate-700">
@@ -516,9 +545,9 @@ export function EmployeeFormDialog({
           </div>
 
           <div className="rounded-md border border-slate-200 p-3">
-            <p className="mb-3 text-sm font-medium text-slate-700">NFC-Karte (Tablet)</p>
+            <p className="mb-3 text-sm font-medium text-slate-700">Chip (Tablet)</p>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="nfc_uid">Karten-UID (optional)</Label>
+              <Label htmlFor="nfc_uid">Chip-UID (optional)</Label>
               <Input
                 id="nfc_uid"
                 type="text"
@@ -527,11 +556,13 @@ export function EmployeeFormDialog({
                 onChange={(event) => setNfcUid(event.target.value)}
               />
               <p className="text-xs text-slate-500">
-                Chip/Karte des Mitarbeiters: am Tablet direkt erkannt (ersetzt den PIN, bei RFID-Pflicht notwendig).
-                Unbekannte Chips zeigt das Tablet mit ihrer UID an. Feld leeren, um die Karte zu entfernen.
+                Chip oder Karte des Mitarbeiters: am Tablet direkt erkannt (ersetzt den PIN, bei „Nur Chip“ notwendig).
+                Unbekannte Chips zeigt das Tablet mit ihrer UID an. Feld leeren, um den Chip zu entfernen.
               </p>
             </div>
           </div>
+            </div>
+          </details>
 
           {isEditMode && isAdmin && (
             <div className="flex flex-col gap-1.5">
@@ -543,10 +574,24 @@ export function EmployeeFormDialog({
                 <SelectContent>
                   <SelectItem value={NO_HR_ROLE}>Keine (nur Mein Bereich)</SelectItem>
                   <SelectItem value="HR">HR</SelectItem>
-                  <SelectItem value="SUPERVISOR">Teamleader</SelectItem>
+                  <SelectItem value="SUPERVISOR">Teamleiter/in</SelectItem>
                   <SelectItem value="ADMIN">Admin</SelectItem>
                 </SelectContent>
               </Select>
+              {hrRole === 'HR' && (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300"
+                    checked={payrollAccess}
+                    onChange={(event) => void handlePayrollAccessChange(event.target.checked)}
+                  />
+                  Vergütung &amp; Lohn-Export (Vergütung, Zulagen, Lohnkosten, DATEV, Lohnarten)
+                </label>
+              )}
+              {hrRole === 'ADMIN' && (
+                <p className="text-xs text-slate-500">Admins haben „Vergütung &amp; Lohn-Export“ immer.</p>
+              )}
               {hrRoleError && <p className="text-sm text-red-600">{hrRoleError}</p>}
             </div>
           )}

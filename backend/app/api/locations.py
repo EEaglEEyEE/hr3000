@@ -7,6 +7,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import Location
 from app.schemas.location import LocationCreateRequest, LocationResponse, LocationUpdateRequest
+from app.services.holiday_import_service import ensure_holidays_imported_for_tenant
 
 router = APIRouter(tags=["locations"])
 
@@ -37,6 +38,9 @@ async def create_location(
     db.add(location)
     await db.commit()
     await db.refresh(location)
+    # Feiertage gleich importieren (nicht erst beim nächsten Serverstart).
+    await ensure_holidays_imported_for_tenant(db, actor.tenant_id)
+    await db.refresh(location)
     return LocationResponse.model_validate(location)
 
 
@@ -55,11 +59,14 @@ async def update_location(
         location.name = payload.name
     if payload.timezone is not None:
         location.timezone = payload.timezone
+    old_state = location.bundesland
     if payload.bundesland is not None:
         location.bundesland = payload.bundesland.value
     elif payload.clear_bundesland:
         location.bundesland = None
 
     await db.commit()
+    if location.bundesland != old_state:
+        await ensure_holidays_imported_for_tenant(db, actor.tenant_id)
     await db.refresh(location)
     return LocationResponse.model_validate(location)

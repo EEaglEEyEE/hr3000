@@ -5,8 +5,8 @@ from app.models.base import Base
 
 
 class LeaveEntitlement(Base):
-    """Urlaubsanspruch eines Mitarbeiters für ein Kalenderjahr, inkl. manuell
-    erfasstem Resturlaub aus dem Vorjahr. Der tatsächliche Verbrauch wird nicht
+    """Urlaubskonto eines Mitarbeiters für ein Kalenderjahr: fest eingetragener Anspruch (sonst
+    berechnet) und Übertrag aus dem Vorjahr. Der tatsächliche Verbrauch wird nicht
     hier gespeichert, sondern aus den Absence-Einträgen (VACATION) des Jahres
     berechnet, siehe app/services/leave_service.py."""
 
@@ -21,3 +21,6 @@ class LeaveEntitlement(Base):
     # True = Übertrag von HR fest eingetragen. False = bei aktivem automatischem Übertrag
     # (AppSettings.vacation_carry_over_auto) aus dem Resturlaub des Vorjahres berechnet.
     carried_over_manual: Mapped[bool] = mapped_column(Boolean, default=False)
+    # True = Anspruch für dieses Jahr fest eingetragen. False = berechnet aus dem Jahresurlaub laut
+    # Vertrag (bzw. Firmenstandard) mit Teilzeit und Teilurlaub, siehe leave_service.computed_entitlement.
+    entitled_manual: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -40,6 +40,7 @@ async def create_hr_user(
         email=payload.email,
         password_hash=hash_password(payload.password),
         role=payload.role,
+        payroll_access=payload.payroll_access and payload.role == HrRole.HR,
     )
     db.add(user)
     try:

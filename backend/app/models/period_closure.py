@@ -9,8 +9,8 @@ from app.models.base import Base
 
 class PeriodStatus(str, enum.Enum):
     # Vorgelegt: Monatsnachweis (PDF) liegt in der Personalakte, Mitarbeiter soll bestätigen.
+    # Die Bestätigung schließt direkt ab (früher eigener Status "bestätigt", Migration 0097).
     SUBMITTED = "SUBMITTED"
-    CONFIRMED = "CONFIRMED"
     # Mitarbeiter hat widersprochen – Monat ist wieder bearbeitbar, HR korrigiert und legt neu vor.
     DISPUTED = "DISPUTED"
     CLOSED = "CLOSED"
@@ -18,7 +18,7 @@ class PeriodStatus(str, enum.Enum):
 
 # In diesen Status ist der Monat für Stempelungen, Abwesenheiten und Schichtplan gesperrt
 # (der vorgelegte Nachweis darf nicht nachträglich "veralten").
-LOCKING_STATUSES = (PeriodStatus.SUBMITTED, PeriodStatus.CONFIRMED, PeriodStatus.CLOSED)
+LOCKING_STATUSES = (PeriodStatus.SUBMITTED, PeriodStatus.CLOSED)
 
 
 class PeriodClosure(Base):

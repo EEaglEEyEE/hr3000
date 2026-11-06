@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Update ausrollen – auf dem Server als root ausführen:  cd /opt/hr3000 && bash scripts/rollout.sh
+# Update ausrollen – auf dem Server als root ausführen:  cd /opt/hr3000 && bash scripts/rollout.sh [stand]
 # (Ersteinrichtung eines neuen Servers: scripts/bootstrap_server.sh + scripts/deploy.sh.)
+#
+# Ohne Angabe: der neueste Stand von main. Mit [stand] (Commit, z. B. 10c59be, oder Tag): nur bis
+# dorthin – er muss in main enthalten sein und darf nicht vor dem Stand auf dem Server liegen
+# (zurück geht es nur über eine Sicherung, siehe docs/betrieb.md).
 #
 # 1. Code holen (git pull; ohne GitHub-Zugang aus /tmp/hr3000.bundle)   4. Caddyfile prüfen
 # 2. Datenbank sichern (scripts/backup_db.sh)                           5. Migrationen auf Kopie (migtest)
@@ -22,14 +26,32 @@ printf "[client]\nuser=root\npassword=\"%s\"\n" "$MYSQL_ROOT_PASSWORD" > "$cnf"
 '"$1"
 }
 
-step "1/6 Code holen"
-if git pull -q --ff-only 2>/dev/null; then
-  echo "per GitHub"
-elif [ -f /tmp/hr3000.bundle ]; then
-  git fetch -q /tmp/hr3000.bundle main && git merge -q --ff-only FETCH_HEAD || fail "Bundle passt nicht zum Stand auf dem Server."
-  echo "aus /tmp/hr3000.bundle"
+REF=${1:-}
+
+step "1/6 Code holen${REF:+ (bis $REF)}"
+if [ -z "$REF" ]; then
+  if git pull -q --ff-only 2>/dev/null; then
+    echo "per GitHub"
+  elif [ -f /tmp/hr3000.bundle ]; then
+    git fetch -q /tmp/hr3000.bundle main && git merge -q --ff-only FETCH_HEAD || fail "Bundle passt nicht zum Stand auf dem Server."
+    echo "aus /tmp/hr3000.bundle"
+  else
+    fail "git pull fehlgeschlagen und kein Bundle unter /tmp/hr3000.bundle (siehe docs/betrieb.md)."
+  fi
 else
-  fail "git pull fehlgeschlagen und kein Bundle unter /tmp/hr3000.bundle (siehe docs/betrieb.md)."
+  if git fetch -q origin main 2>/dev/null; then
+    main_rev=$(git rev-parse origin/main); echo "per GitHub"
+  elif [ -f /tmp/hr3000.bundle ] && git fetch -q /tmp/hr3000.bundle main; then
+    main_rev=$(git rev-parse FETCH_HEAD); echo "aus /tmp/hr3000.bundle"
+  else
+    fail "git fetch fehlgeschlagen und kein Bundle unter /tmp/hr3000.bundle (siehe docs/betrieb.md)."
+  fi
+  target=$(git rev-parse -q --verify "$REF^{commit}") || fail "Stand '$REF' nicht gefunden."
+  # Nur Stände aus main (keine ungeprüften Branches) und nur vorwärts.
+  git merge-base --is-ancestor "$target" "$main_rev" || fail "Stand '$REF' ist nicht in main enthalten."
+  git merge-base --is-ancestor HEAD "$target" \
+    || fail "Stand '$REF' liegt vor dem Stand auf dem Server – zurück nur über eine Sicherung (docs/betrieb.md, Abschnitt 6)."
+  git merge -q --ff-only "$target" || fail "Stand '$REF' lässt sich nicht übernehmen (lokale Änderungen? git status)."
 fi
 rm -f /tmp/hr3000.bundle
 git log --oneline -1

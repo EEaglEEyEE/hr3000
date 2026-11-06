@@ -37,7 +37,7 @@ function ExportButton({ onClick }: { onClick: () => void }) {
 }
 
 export function ReportsPage() {
-  const { isAdmin } = useAuth()
+  const { canPayroll } = useAuth()
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-slate-900">Auswertungen</h1>
@@ -47,7 +47,7 @@ export function ReportsPage() {
           <TabsTrigger value="absences">Fehlzeiten</TabsTrigger>
           <TabsTrigger value="vacation">Urlaub</TabsTrigger>
           <TabsTrigger value="overtime">Überstunden</TabsTrigger>
-          {isAdmin && <TabsTrigger value="costs">Lohnkosten</TabsTrigger>}
+          {canPayroll && <TabsTrigger value="costs">Lohnkosten</TabsTrigger>}
         </TabsList>
         <TabsContent value="attention">
           <AttentionTab />
@@ -61,7 +61,7 @@ export function ReportsPage() {
         <TabsContent value="overtime">
           <OvertimeTab />
         </TabsContent>
-        {isAdmin && (
+        {canPayroll && (
           <TabsContent value="costs">
             <CostsTab />
           </TabsContent>
@@ -319,10 +319,10 @@ function CostsTab() {
             onClick={() =>
               downloadCsv(
                 `lohnkosten_${yearMonth}.csv`,
-                ['Personalnummer', 'Nachname', 'Vorname', 'Art', 'Satz', 'Stunden', 'Grundvergütung', 'Zuschläge', 'Gesamt', 'Hinweis'],
+                ['Personalnummer', 'Nachname', 'Vorname', 'Art', 'Satz', 'Stunden', 'Grundvergütung', 'Zuschläge', 'Zulagen', 'Gesamt', 'Hinweis'],
                 report.rows.map((r) => [
                   r.employee_number, r.last_name, r.first_name, r.pay_type, r.rate,
-                  (r.actual_minutes / 60).toFixed(2), r.base_cost, r.surcharge_cost, r.total_cost, r.note,
+                  (r.actual_minutes / 60).toFixed(2), r.base_cost, r.surcharge_cost, r.allowance_cost, r.total_cost, r.note,
                 ]),
               )
             }
@@ -330,7 +330,7 @@ function CostsTab() {
         )}
       </div>
       <p className="text-sm text-slate-500">
-        Brutto ohne Arbeitgeberanteile. Jeder Abruf wird im Audit-Log protokolliert. Stundenlohn: bezahlte Stunden (inkl. Feiertag/Urlaub/Krank) × Satz plus Zuschläge.
+        Brutto ohne Arbeitgeberanteile. Jeder Abruf wird im Audit-Log protokolliert. Stundenlohn: bezahlte Stunden (inkl. Feiertag/Urlaub/Krank) × Satz plus Zuschläge; dazu Zulagen und Einmalzahlungen im Zeitraum.
       </p>
       {query.isError && <p className="text-red-600">Auswertung konnte nicht geladen werden.</p>}
       {report && (
@@ -342,6 +342,7 @@ function CostsTab() {
               <TableHead>Stunden</TableHead>
               <TableHead>Grundvergütung</TableHead>
               <TableHead>Zuschläge</TableHead>
+              <TableHead>Zulagen</TableHead>
               <TableHead>Gesamt</TableHead>
             </TableRow>
           </TableHeader>
@@ -356,11 +357,12 @@ function CostsTab() {
                 <TableCell>{formatMinutesAsHours(r.actual_minutes).replace('+', '')}</TableCell>
                 <TableCell>{money(r.base_cost)}</TableCell>
                 <TableCell>{money(r.surcharge_cost)}</TableCell>
+                <TableCell>{r.allowance_cost ? money(r.allowance_cost) : '–'}</TableCell>
                 <TableCell className="font-medium">{money(r.total_cost)}</TableCell>
               </TableRow>
             ))}
             <TableRow>
-              <TableCell colSpan={5} className="text-right font-semibold">
+              <TableCell colSpan={6} className="text-right font-semibold">
                 Summe
               </TableCell>
               <TableCell className="font-semibold">{money(report.total_cost)}</TableCell>

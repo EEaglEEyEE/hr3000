@@ -15,8 +15,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AllowanceUnit, Employee, PayComponent, PayComponentKind
-from app.services.payroll_export_service import summarize_payroll
+from app.models import AllowanceUnit, Employee, PayComponent, PayComponentKind, PayComponentType
+from app.services.payroll_export_service import PayrollPeriod, payroll_period
 
 _CENT = Decimal("0.01")
 
@@ -47,11 +47,15 @@ def _month_share(start: date, end: date) -> Decimal:
 
 
 async def pay_component_amounts(
-    db: AsyncSession, employee: Employee, date_from: date, date_to: date
+    db: AsyncSession, employee: Employee, date_from: date, date_to: date, period: PayrollPeriod | None = None
 ) -> list[PayComponentAmount]:
+    """period: bereits berechnete Tage des Zeitraums (Rechenkern) – sonst wird bei Bedarf gerechnet."""
     components = (
         await db.execute(
-            select(PayComponent).where(PayComponent.employee_id == employee.id).order_by(PayComponent.kind, PayComponent.name, PayComponent.id)
+            select(PayComponent)
+            .join(PayComponentType, PayComponentType.id == PayComponent.type_id)
+            .where(PayComponent.employee_id == employee.id)
+            .order_by(PayComponent.kind, PayComponentType.name, PayComponent.id)
         )
     ).scalars().all()
     result: list[PayComponentAmount] = []
@@ -66,7 +70,9 @@ async def pay_component_amounts(
         if start > end:
             continue
         if component.unit == AllowanceUnit.PER_HOUR:
-            minutes = (await summarize_payroll(db, employee, start, end)).actual_minutes
+            if period is None:
+                period = await payroll_period(db, employee, date_from, date_to)
+            minutes = period.summary(start, end).actual_minutes
             hours = Decimal(minutes) / Decimal(60)
             result.append(PayComponentAmount(component, (amount * hours).quantize(_CENT, ROUND_HALF_UP), hours))
         else:

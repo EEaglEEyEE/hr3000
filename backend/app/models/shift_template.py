@@ -29,8 +29,9 @@ class TargetPeriod(str, enum.Enum):
 
 
 class ShiftTemplate(Base):
-    """Wiederverwendbare Schicht-Vorlage (z.B. "Frühschicht"), zugewiesen über
-    EmployeeDefaultShift/ShiftPlanEntry. Ersetzt WorkTimeModelTemplate.
+    """Wiederverwendbare Schicht-Vorlage (z.B. "Frühschicht"): Uhrzeiten, Pause und Soll eines
+    geplanten Schichttags (ShiftPlanEntry). In einer Fassung der Arbeitszeit (EmployeeDefaultShift)
+    liefert sie die Uhrzeiten – Soll und Pause nur, solange die Fassung keine eigenen hat.
 
     start_time/end_time sind bewusst NULLABLE: aus der Migration bestehender
     WorkTimeModel-Daten (siehe scripts/migrate_work_time_models.py) lassen
@@ -55,13 +56,11 @@ class ShiftTemplate(Base):
     # Mitarbeiter selbst keine/zu wenig Pause stempelt (wie break_rules,
     # aber pro Vorlage statt gesetzlicher Staffel).
     min_break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ab welcher Arbeitszeit (Minuten) die festen Minuten gelten; 0 = ab der ersten Minute.
+    min_break_after_minutes: Mapped[int] = mapped_column(Integer, default=0)
     target_minutes: Mapped[int] = mapped_column(Integer, default=0)
     target_period: Mapped[TargetPeriod] = mapped_column(Enum(TargetPeriod), default=TargetPeriod.DAILY)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
-    # Automatisch erzeugte Vorlage hinter einem Arbeitszeitmodell (Wochenstunden
-    # ohne Zeiten), siehe app/api/work_time_model.py – wird in der Schichtvorlagen-
-    # Verwaltung ausgeblendet.
-    is_work_time_model: Mapped[bool] = mapped_column(Boolean, default=False)
     # Alte Fassung nach einer Soll-Änderung ab Stichtag (siehe app/api/shift_templates.py):
     # bleibt für die Vergangenheit zugeordnet, wird in der Verwaltung ausgeblendet.
     archived: Mapped[bool] = mapped_column(Boolean, default=False)

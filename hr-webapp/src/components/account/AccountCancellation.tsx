@@ -15,7 +15,7 @@ export function currentSubdomain(): string {
   return window.location.hostname.split('.')[0]
 }
 
-/** Einstellungen → Allgemein: HR3000 kündigen bzw. Kündigung zurücknehmen (nur Admins). */
+/** Einstellungen → „Tarif & Konto“: HR3000 kündigen bzw. Kündigung zurücknehmen (nur Admins). */
 export function AccountCancellationCard() {
   const plan = usePlanQuery().data
   const cancel = useCancelAccountMutation()
@@ -124,7 +124,7 @@ export function CancellationBanner() {
         <>
           {' '}
           Zurücknehmen unter{' '}
-          <Link to="/einstellungen" className="underline">
+          <Link to="/einstellungen/konto" className="underline">
             Einstellungen
           </Link>
           .

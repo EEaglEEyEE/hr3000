@@ -11,6 +11,7 @@ Nur für Caddy gedacht (direkt an backend:8000). Von außen blockt das Caddyfile
 ``/api/internal/*``; die Mandanten-Middleware lässt den Pfad ohne Mandanten-Kontext durch.
 """
 
+import httpx
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
@@ -32,6 +33,16 @@ async def tls_allowed(
     host = domain.strip().lower().rstrip(".")
     if host == settings.super_admin_hostname.lower():
         return Response(status_code=200)
+    staging = (settings.staging_base_domain or "").strip().lower().rstrip(".")
+    if staging and host.endswith("." + staging):
+        # Testumgebung: nur deren Backend kennt die dortigen Firmen (siehe scripts/staging.sh).
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                answer = await client.get(settings.staging_tls_ask_url, params={"domain": host})
+            if answer.status_code == 200:
+                return Response(status_code=200)
+        except httpx.HTTPError:
+            pass
     subdomain = tenant_subdomain_for_host(host)
     if subdomain is not None:
         tenant_id = await db.scalar(

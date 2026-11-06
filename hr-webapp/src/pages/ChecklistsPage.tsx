@@ -45,7 +45,7 @@ export function ChecklistsPage() {
       <section className="flex flex-col gap-3">
         <h1 className="text-lg font-semibold text-slate-900">Offene Aufgaben (On-/Offboarding)</h1>
         <p className="text-sm text-slate-500">
-          Checklisten werden am Mitarbeiter gestartet (Reiter „Checklisten“). Hier siehst du alle offenen Aufgaben nach Fälligkeit.
+          Checklisten werden am Mitarbeiter gestartet (Reiter „Personalakte“ → „Checklisten“). Hier siehst du alle offenen Aufgaben nach Fälligkeit.
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
         <Table>

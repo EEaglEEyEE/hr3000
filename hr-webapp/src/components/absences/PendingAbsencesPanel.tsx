@@ -1,13 +1,14 @@
 import { useNavigate } from 'react-router-dom'
-import { useEmployeesQuery } from '../api/queries/employees'
-import { useDecideAbsenceMutation, usePendingAbsencesQuery } from '../api/queries/absences'
-import { useAbsenceTypeMap } from '../api/queries/absenceTypes'
-import { formatDate, formatHoursMinutes } from '../lib/format'
-import { ABSENCE_TYPE_LABELS } from '../lib/labels'
-import { Button } from '../components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { useEmployeesQuery } from '../../api/queries/employees'
+import { useDecideAbsenceMutation, usePendingAbsencesQuery } from '../../api/queries/absences'
+import { useAbsenceTypeMap } from '../../api/queries/absenceTypes'
+import { formatDate, formatHoursMinutes } from '../../lib/format'
+import { ABSENCE_TYPE_LABELS } from '../../lib/labels'
+import { Button } from '../ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 
-export function PendingAbsencesPage() {
+/** „Zu klären“ → „Urlaubsanträge“: offene Anträge genehmigen oder ablehnen. */
+export function PendingAbsencesPanel() {
   const absenceTypes = useAbsenceTypeMap()
   const navigate = useNavigate()
   const pendingQuery = usePendingAbsencesQuery()
@@ -18,10 +19,9 @@ export function PendingAbsencesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-slate-900">Urlaubsanträge</h1>
       <p className="text-sm text-slate-500">
-        Offene Urlaubsanträge, die auf Genehmigung warten (siehe Einstellung „Urlaubsgenehmigung
-        erforderlich“). Als Teamleader werden hier nur Anträge aus den eigenen Teams angezeigt.
+        Offene Anträge, die auf Genehmigung warten (je Abwesenheitsart unter Einstellungen → „Abwesenheitsarten“ mit
+        „Genehmigung nötig“). Als Teamleiter/in sieht man hier nur Anträge aus den eigenen Teams.
       </p>
 
       {pendingQuery.isLoading && <p className="text-slate-500">Lädt…</p>}

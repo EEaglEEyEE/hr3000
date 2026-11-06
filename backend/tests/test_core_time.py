@@ -4,6 +4,8 @@ ohne die Stunden zu verändern."""
 import uuid
 from datetime import date, time
 
+import pytest
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +15,21 @@ from app.services.settings_service import get_or_create_settings
 
 MONDAY = "2026-10-05"
 TUESDAY = "2026-10-06"
-CORE = {"core_time_start": "09:00", "core_time_end": "15:00", "punctuality_check": True, "late_tolerance_minutes": 5}
+CORE = {"core_time_start": "09:00", "core_time_end": "15:00", "disabled_day_flags": [], "late_tolerance_minutes": 5}
+
+
+@pytest.fixture(autouse=True)
+def _rules_changed_before_test_days(monkeypatch):
+    """Pünktlichkeits-Hinweise gelten erst ab der letzten Regeländerung ("heute") – die Testtage
+    liegen im Oktober 2026, also gilt "heute" hier als 01.10.2026."""
+    import app.api.settings as settings_api
+
+    class _Date(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 10, 1)
+
+    monkeypatch.setattr(settings_api, "date", _Date)
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
@@ -93,9 +109,9 @@ async def test_switching_the_check_off_clears_the_list(client: AsyncClient, db_s
     await _settings(client, admin, **CORE)
     await _work(client, admin, employee.id, MONDAY, "09:30", "17:00")
     assert await _open(client, admin, MONDAY) == ["LATE_ARRIVAL"]
-    await _settings(client, admin, punctuality_check=False)
+    await _settings(client, admin, disabled_day_flags=["EARLY_LEAVE", "LATE_ARRIVAL"])
     assert await _open(client, admin, MONDAY) == []
-    await _settings(client, admin, punctuality_check=True, clear_core_time=True)
+    await _settings(client, admin, disabled_day_flags=[], clear_core_time=True)
     assert await _open(client, admin, MONDAY) == []  # ohne Kernzeit und ohne Schicht kein Maßstab
 
 
@@ -107,23 +123,26 @@ async def test_single_flags_can_be_disabled(client: AsyncClient, db_session: Asy
     assert await _open(client, admin, MONDAY) == ["LATE_ARRIVAL"]
 
 
+MODEL = {"weekly_hours": 40, "weekdays": [0, 1, 2, 3, 4], "valid_from": "2026-10-01"}
+
+
 async def test_employee_own_core_time_or_exempt(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Kernzeit gehört zur Fassung der Arbeitszeit (wie Einstellungen / eigene / keine Prüfung)."""
     employee, admin = await _setup(db_session, client)
+    url = f"/employees/{employee.id}/work-time-model"
     await _settings(client, admin, **CORE)
     await _work(client, admin, employee.id, MONDAY, "09:30", "16:00")
     assert await _open(client, admin, MONDAY) == ["LATE_ARRIVAL"]
 
-    r = await client.patch(
-        f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "CUSTOM", "core_time_start": "10:00", "core_time_end": "14:00"}
-    )
+    r = await client.put(url, headers=admin, json={**MODEL, "core_time_mode": "CUSTOM", "core_time_start": "10:00", "core_time_end": "14:00"})
     assert r.status_code == 200 and r.json()["core_time_mode"] == "CUSTOM" and r.json()["core_time_start"] == "10:00:00"
     assert await _open(client, admin, MONDAY) == []
 
-    await client.patch(f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "NONE"})
+    await client.put(url, headers=admin, json={**MODEL, "core_time_mode": "NONE"})
     await _work(client, admin, employee.id, TUESDAY, "11:00", "12:00")
     assert await _open(client, admin, TUESDAY) == []
-    r = await client.patch(f"/employees/{employee.id}", headers=admin, json={"core_time_mode": "TENANT"})
-    assert r.json()["core_time_start"] is None
+    r = await client.put(url, headers=admin, json={**MODEL, "core_time_mode": "TENANT"})
+    assert r.json()["core_time_start"] is None and r.json()["core_time_mode"] == "TENANT"
     assert set(await _open(client, admin, TUESDAY)) == {"LATE_ARRIVAL", "EARLY_LEAVE"}
 
 
@@ -171,7 +190,7 @@ async def test_shift_times_take_precedence_over_core_time(client: AsyncClient, d
 
 async def test_night_shift_early_leave(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, admin = await _setup(db_session, client)
-    await _settings(client, admin, punctuality_check=True, shift_planning_enabled=True)
+    await _settings(client, admin, disabled_day_flags=[], shift_planning_enabled=True)
     night = ShiftTemplate(name="Nacht", start_time=time(22, 0), end_time=time(6, 0), target_minutes=480)
     db_session.add(night)
     await db_session.commit()
@@ -218,7 +237,7 @@ async def test_input_validation(client: AsyncClient, db_session: AsyncSession) -
         {"late_tolerance_minutes": -1},
         {"late_tolerance_minutes": 500},
         {"flex_frame_start": "08:00", "flex_frame_end": "18:00", "core_time_start": "07:00", "core_time_end": "15:00"},
-        {"punctuality_check": "ja bitte"},
+        {"legal_break_minimum": "ja bitte"},
     ):
         assert (await client.patch("/settings", headers=admin, json=body)).status_code == 422, body
     # Kernzeit außerhalb eines bereits gespeicherten Rahmens
@@ -231,8 +250,9 @@ async def test_input_validation(client: AsyncClient, db_session: AsyncSession) -
         {"core_time_mode": "CUSTOM", "core_time_start": "12:00", "core_time_end": "10:00"},
         {"core_time_mode": "IRGENDWIE"},
     ):
-        assert (await client.patch(f"/employees/{employee.id}", headers=admin, json=body)).status_code == 422, body
+        r = await client.put(f"/employees/{employee.id}/work-time-model", headers=admin, json={**MODEL, **body})
+        assert r.status_code == 422, body
 
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     await db_session.refresh(settings_row)
-    assert settings_row.core_time_start is None and settings_row.punctuality_check is False
+    assert settings_row.core_time_start is None and "LATE_ARRIVAL" in (settings_row.disabled_day_flags or "")

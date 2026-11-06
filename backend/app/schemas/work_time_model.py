@@ -1,8 +1,9 @@
 from datetime import date, time
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.break_rule import check_window
+from app.schemas.core_time import CoreTimeDays, CoreTimeMode, check_core_time
 
 
 class WorkTimeModelInput(BaseModel):
@@ -27,8 +28,25 @@ class WorkTimeModelInput(BaseModel):
     # Eigene Pause statt der betrieblichen Pausenregeln des Mandanten (die gesetzliche Staffel gilt
     # immer zusätzlich als Untergrenze): feste Minuten je Arbeitstag ODER feste Pausenzeit.
     break_minutes: int | None = Field(default=None, gt=0, le=240)
+    # Feste Minuten erst ab dieser Arbeitszeit (Std.); leer = ab der ersten Minute
+    break_after_hours: float | None = Field(default=None, ge=0, le=16)
     break_start: time | None = None
     break_end: time | None = None
+    # Uhrzeiten aus einer Schichtvorlage (optional): Beginn/Ende für Schichtplan, Pünktlichkeit und
+    # Ruhezeit-Prüfung. Das Soll bleibt das des Modells; ohne eigene Pause gilt die der Vorlage.
+    shift_template_id: int | None = Field(default=None, ge=1)
+    # Kernzeit/Pünktlichkeit dieser Fassung; leer = unverändert (wie die bisherige Fassung, sonst wie
+    # in den Einstellungen).
+    core_time_mode: CoreTimeMode | None = None
+    core_time_start: time | None = None
+    core_time_end: time | None = None
+    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
+    core_time_days: CoreTimeDays = None
+
+    @model_validator(mode="after")
+    def _core_time(self) -> "WorkTimeModelInput":
+        check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end, self.core_time_days)
+        return self
 
     @model_validator(mode="after")
     def _break(self) -> "WorkTimeModelInput":
@@ -36,13 +54,22 @@ class WorkTimeModelInput(BaseModel):
             if self.break_minutes is not None:
                 raise ValueError("Pause entweder als feste Minuten oder als feste Uhrzeit angeben.")
             check_window(self.break_start, self.break_end)
+        if self.break_after_hours is not None and self.break_minutes is None:
+            raise ValueError("„ab … Std.“ gibt es nur zusammen mit festen Pausenminuten.")
+        if self.break_after_hours == 0:
+            self.break_after_hours = None
         return self
 
     @property
+    def break_after_minutes(self) -> int:
+        return round(self.break_after_hours * 60) if self.break_after_hours else 0
+
+    @property
     def break_label(self) -> str:
-        """Namenszusatz der Vorlage bzw. Audit-Text, z.B. ", Pause 30 Min." / ", Pause 12:00–12:30"."""
+        """Namenszusatz der Vorlage bzw. Audit-Text, z.B. ", Pause 30 Min. ab 6 Std." / ", Pause 12:00–12:30"."""
         if self.break_minutes is not None:
-            return f", Pause {self.break_minutes} Min."
+            after = f" ab {self.break_after_hours:g} Std." if self.break_after_hours else ""
+            return f", Pause {self.break_minutes} Min.{after}"
         if self.break_start is not None and self.break_end is not None:
             return f", Pause {self.break_start:%H:%M}–{self.break_end:%H:%M}"
         return ""
@@ -135,17 +162,25 @@ class WorkTimeModelInput(BaseModel):
 class WorkTimeModelSetRequest(WorkTimeModelInput):
     valid_from: date
 
+    @classmethod
+    def from_input(cls, model: WorkTimeModelInput, valid_from: date) -> "WorkTimeModelSetRequest":
+        """Ein bereits geprüftes Modell (z.B. aus Anlegen-Dialog oder Import) ab Stichtag setzen –
+        mit allen Feldern (Monatsstunden, Pause, …)."""
+        data = model.model_dump(exclude_none=True)
+        if not data.get("weekdays"):
+            data.pop("weekdays", None)  # "nach Aufwand" hat keine Arbeitstage
+        return cls(**data, valid_from=valid_from)
 
-class WorkTimeModelResponse(BaseModel):
-    employee_id: int
-    # False = für heute ist gar keine Standard-Zuordnung hinterlegt.
-    configured: bool
-    # False = es gilt eine echte Schichtvorlage (siehe Schichtplanung), kein einfaches Modell.
-    is_work_time_model: bool
-    template_name: str | None
-    weekly_minutes: int | None
-    daily_minutes: int | None
-    weekdays: list[int]
+
+class WorkTimeModelFields(BaseModel):
+    """Beschreibung einer Fassung: Soll, Pause, Uhrzeiten (Schichtvorlage) und Kernzeit."""
+
+    # In der Antwort sind alle Felder immer vorhanden (OpenAPI: required) – auch die mit Standardwert.
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
+    weekly_minutes: int | None = None
+    daily_minutes: int | None = None
+    weekdays: list[int] = []
     # Soll-Minuten je Wochentag (Mo..So) – bei ungleich verteilten Stunden maßgeblich.
     day_minutes: list[int] | None = None
     uneven: bool = False
@@ -154,31 +189,37 @@ class WorkTimeModelResponse(BaseModel):
     monthly_cap_minutes: int | None = None
     # Festes Monatssoll (Tagessoll schwankt dann je nach Zahl der Arbeitstage im Monat).
     monthly_minutes: int | None = None
-    # Eigene Pause des Modells (sonst gelten die Pausenregeln des Mandanten).
+    # True = ältere Standard-Schicht: das Soll kommt (noch) aus der Schichtvorlage; beim nächsten
+    # Speichern im Arbeitszeitmodell wird es fest übernommen.
+    target_from_template: bool = False
+    # Pause dieser Fassung (leer = Pausenregeln); break_from_template = Pause der Schichtvorlage.
     break_minutes: int | None = None
+    break_after_minutes: int = 0
     break_start: time | None = None
     break_end: time | None = None
+    break_from_template: bool = False
+    # Schichtvorlage für die Uhrzeiten (optional)
+    shift_template_id: int | None = None
+    shift_template_name: str | None = None
+    shift_start: time | None = None
+    shift_end: time | None = None
+    # Kernzeit/Pünktlichkeit: TENANT = wie Einstellungen, CUSTOM = eigene, NONE = keine Prüfung
+    core_time_mode: CoreTimeMode = "TENANT"
+    core_time_start: time | None = None
+    core_time_end: time | None = None
+    core_time_days: CoreTimeDays = None
+
+
+class WorkTimeModelResponse(WorkTimeModelFields):
+    employee_id: int
+    # False = für heute ist gar keine Fassung hinterlegt.
+    configured: bool
     valid_from: date | None
 
 
-class WorkTimeModelVersion(BaseModel):
+class WorkTimeModelVersion(WorkTimeModelFields):
     """Eine Fassung des Arbeitszeitmodells mit Gültigkeitszeitraum (Historie)."""
 
     id: int
     valid_from: date
     valid_to: date | None
-    template_name: str
-    # False = echte Schichtvorlage (Schichtplanung) – dort bearbeiten, nicht hier.
-    is_work_time_model: bool
-    weekly_minutes: int | None
-    daily_minutes: int | None
-    weekdays: list[int]
-    day_minutes: list[int] | None = None
-    uneven: bool = False
-    flexible: bool = False
-    on_demand: bool = False
-    monthly_cap_minutes: int | None = None
-    monthly_minutes: int | None = None
-    break_minutes: int | None = None
-    break_start: time | None = None
-    break_end: time | None = None

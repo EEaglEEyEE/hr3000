@@ -62,6 +62,11 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    await save(false)
+  }
+
+  /** splitVacation: Krankheit im Urlaub – Urlaubstage zurückgeben (§ 9 BUrlG), nach Rückfrage. */
+  async function save(splitVacation: boolean) {
     try {
       if (isEditMode) {
         await updateAbsence.mutateAsync({
@@ -74,6 +79,7 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
             duration_minutes: effectiveScope === 'HOURS' ? durationMinutes : undefined,
             clear_duration: effectiveScope !== 'HOURS',
             note: note || null,
+            split_vacation: splitVacation,
           },
         })
       } else {
@@ -85,10 +91,20 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
           half_day: effectiveScope === 'HALF',
           ...(effectiveScope === 'HOURS' ? { duration_minutes: durationMinutes } : {}),
           note: note || undefined,
+          split_vacation: splitVacation,
         })
       }
       onOpenChange(false)
     } catch (err) {
+      if (
+        !splitVacation &&
+        err instanceof ApiError &&
+        err.code === 'ABSENCE_OVERLAP_VACATION' &&
+        window.confirm(`${err.message}\n\nUrlaubstage für die Krankheitstage zurückgeben?`)
+      ) {
+        await save(true)
+        return
+      }
       setError(
         err instanceof ApiError && err.status !== 422
           ? err.message

@@ -20,6 +20,7 @@ from app.api.checklists import router as checklists_router
 from app.api.period_closures import router as period_closures_router
 from app.api.reports import router as reports_router
 from app.api.surcharges import router as surcharges_router
+from app.api.wage_types import router as wage_types_router
 from app.api.employment import router as employment_router
 from app.api.employee_default_shifts import router as employee_default_shifts_router
 from app.api.employees import router as employees_router
@@ -147,6 +148,7 @@ app.include_router(checklists_router)
 app.include_router(branding_router)
 app.include_router(balance_adjustments_router)
 app.include_router(surcharges_router)
+app.include_router(wage_types_router)
 app.include_router(ws_router)
 app.include_router(tls_router)
 app.include_router(public_router)

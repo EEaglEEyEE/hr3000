@@ -16,7 +16,7 @@ const ALL_LOCATIONS = '__all__'
 
 const HR_ROLE_LABELS: Record<HrRole, string> = {
   HR: 'HR',
-  SUPERVISOR: 'Teamleader',
+  SUPERVISOR: 'Teamleiter/in',
   ADMIN: 'Admin',
   SUPER_ADMIN: 'Super-Admin',
 }
@@ -80,7 +80,7 @@ export function EmployeesPage() {
       {!locationsQuery.isLoading && locations.length === 0 && (
         <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Es ist noch kein Standort angelegt.{' '}
-          <Link to="/standorte" className="underline">
+          <Link to="/einstellungen/standorte" className="underline">
             Standort anlegen
           </Link>
           , um Mitarbeiter erfassen zu können.

@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import date, time
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -17,6 +17,8 @@ class SurchargeRuleCreateRequest(BaseModel):
     exclusive_group: str | None = Field(default=None, pattern=_GROUP)
     active: bool = True
     wage_type: str | None = Field(default=None, pattern=r"^\d{1,6}$")
+    # Gilt ab (leer = auch für zurückliegende Zeiträume, wie bisher)
+    valid_from: date | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> "SurchargeRuleCreateRequest":
@@ -43,6 +45,9 @@ class SurchargeRuleUpdateRequest(BaseModel):
     active: bool | None = None
     # Lohnart (DATEV); "" = entfernen
     wage_type: str | None = Field(default=None, pattern=r"^\d{0,6}$")
+    # Ab wann ein geänderter Satz, ein geändertes Zeitfenster oder geänderte Wochentage gelten;
+    # Tage davor rechnen mit der bisherigen Fassung. Leer = Fassung direkt korrigieren (rückwirkend).
+    valid_from: date | None = None
 
 
 class SurchargeRuleResponse(BaseModel):
@@ -56,6 +61,10 @@ class SurchargeRuleResponse(BaseModel):
     exclusive_group: str | None
     active: bool
     wage_type: str | None = None
+    # Gültigkeit dieser Fassung (leer = seit jeher bzw. offen) und Zugehörigkeit zur Regel
+    valid_from: date | None = None
+    valid_to: date | None = None
+    family_id: int
 
 
 class SurchargeLine(BaseModel):
@@ -65,7 +74,7 @@ class SurchargeLine(BaseModel):
     percent: float
     minutes: int
     equivalent_minutes: float
-    # Nur für Administratoren und nur bei Stundenlohn: Zuschlagsbetrag in EUR brutto.
+    # Nur mit „Vergütung & Lohn-Export“ und nur bei Stundenlohn: Zuschlagsbetrag in EUR brutto.
     amount: float | None = None
 
 

@@ -52,7 +52,7 @@ async def test_reports_require_full_hr_and_labor_costs_require_admin(client: Asy
 
 async def test_absence_stats_count_workdays_and_sick_rate(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, headers = await _setup(db_session, client)
-    # Mo 3.3. - So 9.3.2025: 6 Arbeitstage (Mo-Sa), Sonntag zählt nicht.
+    # Mo 3.3. - So 9.3.2025 ohne Arbeitszeitmodell: 5 Arbeitstage (Mo–Fr).
     db_session.add(Absence(employee_id=employee.id, type=AbsenceType.SICK, date_from=date(2025, 3, 3), date_to=date(2025, 3, 9), approval_status=AbsenceApprovalStatus.APPROVED))
     db_session.add(Absence(employee_id=employee.id, type=AbsenceType.VACATION, date_from=date(2025, 4, 7), date_to=date(2025, 4, 8), approval_status=AbsenceApprovalStatus.APPROVED))
     db_session.add(Absence(employee_id=employee.id, type=AbsenceType.VACATION, date_from=date(2025, 4, 14), date_to=date(2025, 4, 14), approval_status=AbsenceApprovalStatus.PENDING))
@@ -60,8 +60,8 @@ async def test_absence_stats_count_workdays_and_sick_rate(client: AsyncClient, d
 
     stats = (await client.get("/reports/absence-stats?year=2025", headers=headers["hr"])).json()
     months = {m["month"]: m for m in stats["months"]}
-    assert months[3]["sick_days"] == 6 and months[4]["vacation_days"] == 2  # PENDING zählt nicht
-    assert stats["employees"][0]["sick_days"] == 6 and stats["active_employee_count"] == 1
+    assert months[3]["sick_days"] == 5 and months[4]["vacation_days"] == 2  # PENDING zählt nicht
+    assert stats["employees"][0]["sick_days"] == 5 and stats["active_employee_count"] == 1
     assert 0 < stats["sick_rate_percent"] < 5
 
 

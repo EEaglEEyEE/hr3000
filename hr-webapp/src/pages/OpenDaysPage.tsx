@@ -1,8 +1,18 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import { usePendingAbsencesQuery } from '../api/queries/absences'
+import { useCorrectionRequestsQuery } from '../api/queries/correctionRequests'
 import { useLocationsQuery } from '../api/queries/locations'
-import { useMarkDayReviewedMutation, useOpenDaysQuery, useUnmarkDayReviewedMutation } from '../api/queries/timesheets'
+import {
+  useMarkDayReviewedMutation,
+  useMonthlyCapsQuery,
+  useOpenDaysCount,
+  useOpenDaysQuery,
+  useUnmarkDayReviewedMutation,
+} from '../api/queries/timesheets'
 import { useAuth } from '../auth/AuthContext'
+import { PendingAbsencesPanel } from '../components/absences/PendingAbsencesPanel'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Button } from '../components/ui/button'
 import { DAY_FLAG_LABELS } from '../lib/labels'
 import { formatDate, formatMinutesAsHours } from '../lib/format'
@@ -14,7 +24,64 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 const ALL_LOCATIONS = 'all'
 
+/** Reiter des Posteingangs „Zu klären“ (Adresse /zu-klaeren/:reiter). */
+const TABS = [
+  { key: 'tage', label: 'Tage' },
+  { key: 'korrekturen', label: 'Korrekturanträge', fullHrOnly: true },
+  { key: 'urlaubsantraege', label: 'Urlaubsanträge' },
+  { key: 'monatsgrenzen', label: 'Monatsgrenzen' },
+] as const
+
+/** Posteingang: offene Tage, Korrekturanträge, Urlaubsanträge und Monatsgrenzen an einer Stelle. */
 export function OpenDaysPage() {
+  const navigate = useNavigate()
+  const { reiter } = useParams()
+  const { isFullHr } = useAuth()
+  const counts: Record<string, number> = {
+    tage: useOpenDaysCount(),
+    korrekturen: useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0,
+    urlaubsantraege: usePendingAbsencesQuery().data?.length ?? 0,
+    monatsgrenzen: useMonthlyCapsQuery().data?.length ?? 0,
+  }
+  const tabs = TABS.filter((tab) => !('fullHrOnly' in tab) || isFullHr)
+  const current = tabs.find((tab) => tab.key === reiter)?.key ?? 'tage'
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-lg font-semibold text-slate-900">Zu klären</h1>
+      <Tabs value={current} onValueChange={(value) => navigate(`/zu-klaeren/${value}`, { replace: true })}>
+        <TabsList>
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.key} value={tab.key}>
+              {tab.label}
+              {counts[tab.key] > 0 && (
+                <span className="ml-1.5 rounded-full bg-red-600 px-1.5 text-xs font-semibold leading-5 text-white">
+                  {counts[tab.key]}
+                </span>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value="tage">
+          <OpenDaysList />
+        </TabsContent>
+        {isFullHr && (
+          <TabsContent value="korrekturen">
+            <PendingCorrectionRequests />
+          </TabsContent>
+        )}
+        <TabsContent value="urlaubsantraege">
+          <PendingAbsencesPanel />
+        </TabsContent>
+        <TabsContent value="monatsgrenzen">
+          <MonthlyCapsNotice />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+
+function OpenDaysList() {
   const navigate = useNavigate()
   const { isFullHr } = useAuth()
   const markReviewed = useMarkDayReviewedMutation()
@@ -31,8 +98,7 @@ export function OpenDaysPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold text-slate-900">Zu klären</h1>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="w-56">
           <Select value={locationFilter} onValueChange={setLocationFilter}>
             <SelectTrigger>
@@ -52,15 +118,13 @@ export function OpenDaysPage() {
 
       <p className="text-sm text-slate-500">
         Tage mit einer offenen (unvollständigen) Stempelung – z.B. ein „Kommen“ ohne
-        zugehöriges „Gehen“ –, einer widersprüchlichen Buchungsfolge oder einem Sonderfall:
-        außerplanmäßig gestempelt, trotz Urlaub/Krankheit, an einem Feiertag, außerhalb der
-        Beschäftigung oder über 10 Stunden. Korrigierte Tage verschwinden automatisch. Mit „Erledigt“
-        lässt sich ein Tag auch bewusst so stehen lassen, wie er ist – fehlende Zeiten werden dabei
-        nicht ergänzt.
+        zugehöriges „Gehen“ –, einer widersprüchlichen Buchungsfolge, einem Arbeitstag ganz ohne
+        Stempelung oder einem Sonderfall (siehe Einstellungen, z.B. außerplanmäßig gestempelt, trotz
+        Urlaub/Krankheit, an einem Feiertag, zu spät). Korrigierte Tage verschwinden automatisch. Mit
+        „Erledigt“ lässt sich ein Tag auch bewusst so stehen lassen, wie er ist – fehlende Zeiten werden
+        dabei nicht ergänzt; ändert sich der Tag später, erscheint er wieder. Dieselben Tage zählen beim
+        Monatsabschluss, im Monatsbericht und im Lohn-Export als offen.
       </p>
-
-      {isFullHr && <PendingCorrectionRequests />}
-      <MonthlyCapsNotice />
 
       {lastDone && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">
@@ -149,7 +213,7 @@ export function OpenDaysPage() {
                       Erledigt
                     </Button>
                   ) : (
-                    <span className="text-slate-400">Korrigieren →</span>
+                    isFullHr && <span className="text-slate-400">Korrigieren →</span>
                   )}
                 </TableCell>
               </TableRow>

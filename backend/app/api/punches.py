@@ -22,6 +22,7 @@ from app.services.timesheet_service import (
     employee_timezone,
     local_date,
     maybe_auto_insert_break,
+    refresh_auto_breaks,
     recalculate_day,
     shift_day_of,
 )
@@ -161,9 +162,13 @@ def _ensure_punch_type_enabled(settings_row, punch_type: PunchType) -> None:
 async def _after_punch(db: AsyncSession, employee: Employee, punch: Punch) -> None:
     """Automatische Pause beim Gehen, Tag/Konto neu rechnen, Kiosks informieren."""
     tz = await employee_timezone(db, employee)
-    if punch.punch_type == PunchType.GO:
+    work_date = await shift_day_of(db, employee, punch, tz)
+    if punch.source == PunchSource.MANUAL_HR:
+        # Nachgetragen: automatische Pausen des ganzen Tages neu setzen (Reihenfolge kann anders sein).
+        await refresh_auto_breaks(db, employee, work_date, tz)
+    elif punch.punch_type == PunchType.GO:
         await maybe_auto_insert_break(db, employee, punch, tz)
-    calculation = await recalculate_day(db, employee, await shift_day_of(db, employee, punch, tz))
+    calculation = await recalculate_day(db, employee, work_date)
     await _broadcast_balance_update(db, employee, calculation)
 
 
@@ -286,6 +291,9 @@ async def correct_punch(
     await db.refresh(punch)
 
     new_date = await shift_day_of(db, employee, punch, tz)
+    await refresh_auto_breaks(db, employee, old_date, tz)
+    if new_date != old_date:
+        await refresh_auto_breaks(db, employee, new_date, tz)
     calculation = await recalculate_day(db, employee, old_date)
     if new_date != old_date:
         calculation = await recalculate_day(db, employee, new_date)
@@ -326,5 +334,6 @@ async def delete_punch(
     await db.delete(punch)
     await db.commit()
 
+    await refresh_auto_breaks(db, employee, work_date, tz)
     calculation = await recalculate_day(db, employee, work_date)
     await _broadcast_balance_update(db, employee, calculation)

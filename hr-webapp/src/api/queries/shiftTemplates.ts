@@ -12,16 +12,27 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['shift-templates'] })
 }
 
-/** Ohne includeWorkTimeModels werden die automatisch erzeugten Vorlagen hinter
- * Arbeitszeitmodellen (Wochenstunden ohne Zeiten) ausgeblendet – sie sind keine
- * Schichten, die man auswählen oder pflegen würde. */
-export function useShiftTemplatesQuery({ includeWorkTimeModels = false } = {}) {
+/** Schichtvorlagen des Mandanten (ohne archivierte alte Fassungen). Nur für HR/Teamleitung. */
+export function useShiftTemplatesQuery({ enabled = true } = {}) {
   return useQuery({
     queryKey: ['shift-templates'],
     queryFn: async () => unwrap(await apiClient.GET('/shift-templates')),
-    select: (templates) =>
-      includeWorkTimeModels ? templates : templates.filter((template) => !template.is_work_time_model),
+    enabled,
   })
+}
+
+/** Hat die Vorlage eine eigene Pause (feste Uhrzeit oder feste Minuten)? */
+export function templateBreakLabel(template: ShiftTemplate): string {
+  if (template.break_mode === 'FIXED' && template.fixed_break_start && template.fixed_break_end) {
+    return `${template.fixed_break_start.slice(0, 5)}–${template.fixed_break_end.slice(0, 5)}`
+  }
+  if (template.min_break_minutes) {
+    const after = template.min_break_after_minutes
+      ? ` ab ${(template.min_break_after_minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })} Std.`
+      : ''
+    return `${template.min_break_minutes} Min.${after}`
+  }
+  return ''
 }
 
 export function useCreateShiftTemplateMutation() {

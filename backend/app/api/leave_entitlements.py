@@ -9,9 +9,10 @@ from app.errors import AppError
 from app.models import Employee, LeaveEntitlement
 from app.schemas.leave_entitlement import LeaveEntitlementResponse, LeaveEntitlementUpdateRequest
 from app.services.leave_service import (
+    annual_vacation_base,
+    computed_entitlement,
     get_or_create_entitlement,
     leave_balance,
-    suggested_entitlement,
     workdays_per_week,
 )
 from app.services.settings_service import get_or_create_settings
@@ -23,7 +24,6 @@ router = APIRouter(tags=["leave_entitlements"])
 async def _to_response(db: AsyncSession, employee: Employee, entitlement: LeaveEntitlement) -> LeaveEntitlementResponse:
     balance = await leave_balance(db, employee.id, entitlement.year, entitlement)
     settings_row = await get_or_create_settings(db, employee.tenant_id)
-    full_time = float(settings_row.default_annual_vacation_days)
     return LeaveEntitlementResponse(
         employee_id=entitlement.employee_id,
         year=entitlement.year,
@@ -35,10 +35,14 @@ async def _to_response(db: AsyncSession, employee: Employee, entitlement: LeaveE
         expired_days=balance.expired_days,
         expiring_days=balance.expiring_days,
         expiry_date=balance.expiry_date,
-        suggested_entitled_days=(
-            await suggested_entitlement(db, employee.id, entitlement.year, full_time)
-            if full_time and settings_row.prorate_part_time_vacation
-            else None
+        suggested_entitled_days=await computed_entitlement(db, employee, entitlement.year),
+        entitled_manual=entitlement.entitled_manual,
+        # Jahresurlaub, der in diesem Jahr gilt (heute bzw. am nächstgelegenen Tag des Jahres)
+        annual_vacation_days=await annual_vacation_base(
+            db,
+            employee,
+            min(max(date.today(), date(entitlement.year, 1, 1)), date(entitlement.year, 12, 31)),
+            float(settings_row.default_annual_vacation_days or 0),
         ),
         workdays_per_week=await workdays_per_week(db, employee.id, date.today()),
     )
@@ -85,6 +89,9 @@ async def update_leave_entitlement(
     entitlement = await get_or_create_entitlement(db, employee_id, year, employee.tenant_id)
     if payload.entitled_days is not None:
         entitlement.entitled_days = payload.entitled_days
+        entitlement.entitled_manual = True
+    if payload.entitled_auto:
+        entitlement.entitled_manual = False
     if payload.carried_over_days is not None:
         entitlement.carried_over_days = payload.carried_over_days
         entitlement.carried_over_manual = True

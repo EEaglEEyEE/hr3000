@@ -147,7 +147,7 @@ export function EmployeeGrid({
             }`}
           >
             <span className={`h-2.5 w-2.5 rounded-full ${nfcActive ? 'bg-emerald-500' : 'bg-slate-600'}`} />
-            {nfcActive ? 'NFC aktiv – Karte auflegen' : 'NFC aktivieren'}
+            {nfcActive ? 'NFC aktiv – Chip vorhalten' : 'NFC aktivieren'}
           </button>
         )}
         <button
@@ -261,7 +261,7 @@ export function EmployeeGrid({
       {resetConfirm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/70">
           <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl bg-slate-900 p-6">
-            <p>Gerät zurücksetzen und neues Tablet-Token eingeben? Dafür ist die Kiosk-Admin-PIN nötig.</p>
+            <p>Gerät zurücksetzen und neues Tablet-Token eingeben? Dafür ist die Tablet-Admin-PIN nötig.</p>
             <input
               type="password"
               inputMode="numeric"

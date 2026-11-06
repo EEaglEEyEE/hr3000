@@ -46,7 +46,8 @@ async def test_work_time_model_sets_target_and_holiday_credit(
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["is_work_time_model"] is True
+    assert body["shift_template_id"] is None and body["target_from_template"] is False
+    assert body["core_time_mode"] == "TENANT"
     assert body["weekly_minutes"] == 2400
     assert body["daily_minutes"] == 480
     assert body["weekdays"] == [0, 1, 2, 3, 4]

@@ -12,7 +12,6 @@ from app.errors import AppError
 from app.models import (
     LOCKING_STATUSES,
     AbsenceType,
-    DayReview,
     Employee,
     PeriodClosure,
     Punch,
@@ -26,12 +25,16 @@ from app.services.surcharge_service import compute_surcharges
 from app.services.timesheet_service import (
     absence_day_counts,
     balance_as_of,
-    pair_punches_detail,
     calculate_day,
+    day_fingerprint,
+    day_reviews,
     employee_timezone,
     missing_punch_reported,
+    needs_review,
+    pair_punches_detail,
     punch_blocks,
     punches_by_day,
+    review_valid,
     today_in,
 )
 
@@ -231,15 +234,8 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
 
     # Nachtschichten zählen zum Tag ihres Kommens (Gehen ggf. am Folgetag).
     by_day = await punches_by_day(db, employee, first, last, tz)
-    reviewed_days = set(
-        (
-            await db.execute(
-                select(DayReview.work_date).where(
-                    DayReview.employee_id == employee.id, DayReview.work_date >= first, DayReview.work_date <= last
-                )
-            )
-        ).scalars().all()
-    )
+    reviews = await day_reviews(db, [employee.id], first, last)
+    today = today_in(tz)
 
     settings_row = await get_or_create_settings(db, employee.tenant_id)
     type_names = {t.id: t.name for t in await list_absence_types(db, employee.tenant_id)}
@@ -285,11 +281,11 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
             # Halbe Abwesenheitstage, z.B. "½ Urlaub" oder "½ Urlaub · Stempelung fehlt"
             label = calc.absence_label if calc.status in (SummaryStatus.ABSENCE, SummaryStatus.COMPLETE) or not label else f"{calc.absence_label} · {label}"
 
-        # Von HR als erledigt markierte Tage blockieren den Abschluss nicht mehr.
-        is_open = current not in reviewed_days and (
-            calc.status in (SummaryStatus.ERROR, SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND)
-            or missing_punch_reported(calc, report_no_punch_days)
-            or bool(calc.flags)
+        # Die eine Regel "Tag offen" (wie "Zu klären"); "Erledigt" gilt, solange der Tag gleich bleibt.
+        is_open = needs_review(
+            calc.status, calc.flags, current, today, missing_reported=missing_punch_reported(calc, report_no_punch_days)
+        ) and not review_valid(
+            reviews, employee.id, current, day_fingerprint(calc.status, calc.target_minutes, calc.actual_minutes, calc.flags)
         )
         if calc.flags:
             label = (label + " · " if label else "") + ", ".join(_FLAG_LABELS.get(f, f) for f in calc.flags)

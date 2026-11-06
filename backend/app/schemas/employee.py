@@ -1,27 +1,11 @@
 import datetime as dt
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.daily_summary import SummaryStatus
 from app.models.hr_user import HrRole
 from app.schemas.common import NewPassword, normalize_card_uid
-from app.schemas.core_time import CoreTimeDays
 from app.schemas.work_time_model import WorkTimeModelInput
-
-
-CoreTimeMode = Literal["TENANT", "CUSTOM", "NONE"]
-
-
-def _check_core_time(mode: str | None, start: dt.time | None, end: dt.time | None, days: list | None = None) -> None:
-    if mode == "CUSTOM":
-        if days is not None:
-            return  # Kernzeit je Wochentag (je Tag geprüft, siehe CoreTimeDay)
-        if start is None or end is None:
-            raise ValueError("Eigene Kernzeit: bitte Beginn und Ende angeben.")
-        if start >= end:
-            raise ValueError("Eigene Kernzeit: der Beginn muss vor dem Ende liegen.")
 
 
 class EmployeeCreateRequest(BaseModel):
@@ -34,7 +18,8 @@ class EmployeeCreateRequest(BaseModel):
     password: NewPassword | None = None
     # None = Standard des Mandanten (Einstellungen)
     auto_break_enabled: bool | None = None
-    pin: str | None = Field(default=None, max_length=20)
+    # Stempel-PIN: 4–8 Ziffern (Tablet-Tastatur), "" = entfernen
+    pin: str | None = Field(default=None, pattern=r"^(\d{4,8})?$")
     nfc_uid: str | None = Field(default=None, max_length=64)
 
     @field_validator("nfc_uid")
@@ -46,18 +31,17 @@ class EmployeeCreateRequest(BaseModel):
     birth_date: dt.date | None = None
     show_birthday_in_calendar: bool | None = None
     team_id: int | None = None
-    # Optional direkt beim Anlegen: gilt ab Eintritt (bzw. heute, ohne Eintrittsdatum).
+    # Optional direkt beim Anlegen: gilt ab Eintritt (bzw. heute, ohne Eintrittsdatum) – inkl.
+    # Kernzeit/Pünktlichkeit (die gehört zur Fassung der Arbeitszeit).
     work_time_model: WorkTimeModelInput | None = None
-    # Kernarbeitszeit: TENANT = wie Einstellungen, CUSTOM = eigene (mit Zeiten), NONE = keine Prüfung
-    core_time_mode: CoreTimeMode = "TENANT"
-    core_time_start: dt.time | None = None
-    core_time_end: dt.time | None = None
-    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
-    core_time_days: CoreTimeDays = None
+    # True = bewusst ohne Arbeitszeitmodell anlegen (z. B. reines HR-Konto), auch wenn in den
+    # Einstellungen ein Standardmodell steht. Ohne Modell gibt es kein Soll.
+    no_work_time_model: bool = False
 
     @model_validator(mode="after")
-    def _valid_core_time(self) -> "EmployeeCreateRequest":
-        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end, self.core_time_days)
+    def _model_or_none(self) -> "EmployeeCreateRequest":
+        if self.no_work_time_model and self.work_time_model is not None:
+            raise ValueError("Entweder ein Arbeitszeitmodell angeben oder „ohne Arbeitszeitmodell“, nicht beides.")
         return self
 
 
@@ -72,7 +56,8 @@ class EmployeeUpdateRequest(BaseModel):
     login_email: EmailStr | None = None
     password: NewPassword | None = None
     auto_break_enabled: bool | None = None
-    pin: str | None = Field(default=None, max_length=20)
+    # Stempel-PIN: 4–8 Ziffern (Tablet-Tastatur), "" = entfernen
+    pin: str | None = Field(default=None, pattern=r"^(\d{4,8})?$")
     # None = unverändert, "" = Karte entfernen (wie bei pin).
     nfc_uid: str | None = Field(default=None, max_length=64)
 
@@ -90,21 +75,12 @@ class EmployeeUpdateRequest(BaseModel):
     show_birthday_in_calendar: bool | None = None
     team_id: int | None = None
     clear_team_id: bool = False
-    # Kernarbeitszeit: TENANT = wie Einstellungen, CUSTOM = eigene (mit Zeiten), NONE = keine Prüfung
-    core_time_mode: CoreTimeMode | None = None
-    core_time_start: dt.time | None = None
-    core_time_end: dt.time | None = None
-    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
-    core_time_days: CoreTimeDays = None
-
-    @model_validator(mode="after")
-    def _valid_core_time(self) -> "EmployeeUpdateRequest":
-        _check_core_time(self.core_time_mode, self.core_time_start, self.core_time_end, self.core_time_days)
-        return self
 
 
 class EmployeeHrRoleUpdateRequest(BaseModel):
     hr_role: HrRole | None
+    # Berechtigung „Vergütung & Lohn-Export“ (nur bei HR; Admins haben sie immer); None = unverändert
+    payroll_access: bool | None = None
 
 
 class BulkImportRowError(BaseModel):
@@ -128,6 +104,7 @@ class EmployeeResponse(BaseModel):
     active: bool
     login_email: str | None
     hr_role: HrRole | None
+    hr_payroll_access: bool = False
     auto_break_enabled: bool
     has_pin: bool
     nfc_uid: str | None
@@ -136,10 +113,6 @@ class EmployeeResponse(BaseModel):
     birth_date: dt.date | None
     show_birthday_in_calendar: bool
     team_id: int | None
-    core_time_mode: str = "TENANT"
-    core_time_start: dt.time | None = None
-    core_time_end: dt.time | None = None
-    core_time_days: CoreTimeDays = None
     anonymized_at: dt.datetime | None
 
 

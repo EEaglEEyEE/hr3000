@@ -30,7 +30,11 @@ export function useCreateContractMutation(employeeId: number) {
           body: payload,
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'contracts'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'contracts'] })
+      // Der Jahresurlaub im Vertrag bestimmt den berechneten Urlaubsanspruch.
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'leave-entitlement'] })
+    },
   })
 }
 
@@ -43,7 +47,11 @@ export function useDeleteContractMutation(employeeId: number) {
       })
       if (result.error !== undefined) throwApiError(result)
     },
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'contracts'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'contracts'] })
+      // Der Jahresurlaub im Vertrag bestimmt den berechneten Urlaubsanspruch.
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'leave-entitlement'] })
+    },
   })
 }
 

@@ -33,14 +33,19 @@ function nav() {
 }
 
 describe('Seitenleiste', () => {
-  it('zeigt Admins alle Bereiche inklusive Einstellungen', async () => {
+  it('zeigt Admins das Tagesgeschäft und die Abrechnung, Konfiguration unter Einstellungen', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     mockApi({ ...features(), ...hrTodoRoutes() })
     renderLayout()
     await screen.findByText('Inhalt')
-    for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Urlaubsanträge', 'Lohn-Export', 'Teams', 'Audit-Log']) {
+    for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Monatsabschluss', 'Lohn-Export', 'Checklisten']) {
       expect(within(nav()).getByRole('link', { name: new RegExp(label) })).toBeInTheDocument()
     }
+    // Standorte, Teams, Feiertage, Tablets, Pausenregeln … stehen jetzt in den Einstellungen.
+    for (const label of ['Teams', 'Audit-Log', 'Feiertage', 'Tablets', 'Pausenregeln', 'Standorte', 'Lohnarten', 'Zuschläge']) {
+      expect(within(nav()).queryByRole('link', { name: new RegExp(label) })).not.toBeInTheDocument()
+    }
+    expect(within(nav()).getAllByRole('link').length).toBeLessThanOrEqual(10)
     expect(screen.getByRole('link', { name: 'Einstellungen' })).toBeInTheDocument()
   })
 
@@ -63,25 +68,13 @@ describe('Seitenleiste', () => {
     expect(await within(nav()).findByRole('link', { name: /Schichtplan-Kalender/ })).toBeInTheDocument()
   })
 
-  it('blendet "Urlaubsanträge" aus, wenn Anträge abgeschaltet und keine offen sind', async () => {
-    loginAs({ kind: 'hr', role: 'ADMIN' })
-    const calls = mockApi({ ...features({ absence_requests_enabled: false }), ...hrTodoRoutes() })
+  it('hat keinen eigenen Menüpunkt „Urlaubsanträge“ mehr – offene Anträge zählen bei „Zu klären“', async () => {
+    loginAs({ kind: 'hr', role: 'SUPERVISOR' })
+    mockApi({ ...features(), ...hrTodoRoutes({ pendingAbsences: [{ id: 7 }, { id: 8 }] }) })
     renderLayout()
-    await waitFor(() => expect(calls.some((call) => call.path === '/features')).toBe(true))
-    await waitFor(() => expect(within(nav()).queryByRole('link', { name: /Urlaubsanträge/ })).not.toBeInTheDocument())
-  })
-
-  it('lässt "Urlaubsanträge" stehen, solange alte Anträge offen sind', async () => {
-    loginAs({ kind: 'hr', role: 'ADMIN' })
-    // Schichtplanung an = sichtbares Zeichen, dass die Feature-Schalter geladen sind
-    // (vorher zeigt die Leiste "Urlaubsanträge" ohnehin an).
-    mockApi({
-      ...features({ absence_requests_enabled: false, shift_planning_enabled: true }),
-      ...hrTodoRoutes({ pendingAbsences: [{ id: 7 }] }),
-    })
-    renderLayout()
-    await within(nav()).findByRole('link', { name: /Schichtplan-Kalender/ })
-    expect(await within(nav()).findByRole('link', { name: /Urlaubsanträge/ })).toBeInTheDocument()
+    const link = within(nav()).getByRole('link', { name: /Zu klären/ })
+    await waitFor(() => expect(within(link).getByTitle('2 offen')).toHaveTextContent('2'))
+    expect(within(nav()).queryByRole('link', { name: /Urlaubsanträge/ })).not.toBeInTheDocument()
   })
 
   it('zeigt die Anzahl offener Punkte rot an "Zu klären" (offene Tage + Grenzen + Korrekturen)', async () => {
@@ -138,5 +131,16 @@ describe('Seitenleiste', () => {
     renderLayout()
     await screen.findByText('Inhalt')
     expect(screen.queryByRole('link', { name: 'Mein Bereich' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Berechtigung „Vergütung & Lohn-Export“', () => {
+  it('HR sieht den Lohn-Export und die Einstellungen (Lohnarten dort nur mit Freigabe)', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    mockApi({ ...features(), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    expect(within(nav()).getByRole('link', { name: /Lohn-Export/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Einstellungen' })).toBeInTheDocument()
   })
 })

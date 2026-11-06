@@ -1,6 +1,6 @@
-from datetime import date, datetime, time
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, Time, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -53,19 +53,14 @@ class Employee(Base):
     login_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     hr_role: Mapped[HrRole | None] = mapped_column(Enum(HrRole), nullable=True)
+    # Berechtigung „Vergütung & Lohn-Export“ bei hr_role HR (Admins haben sie immer)
+    hr_payroll_access: Mapped[bool] = mapped_column(Boolean, default=False)
     # Wenn gesetzt, fügt das System beim Ausstempeln (GO) automatisch die gesetzlich
     # vorgeschriebene Pause als BREAK_START/BREAK_END-Punches ein, sofern der
     # Mitarbeiter selbst keine Pause gestempelt hat. Siehe app/services/
     # timesheet_service.py maybe_auto_insert_break.
     # Standard: an – die gesetzliche Pause wird beim Ausstempeln automatisch gebucht, wenn keine gestempelt wurde.
     auto_break_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Kernarbeitszeit/Pünktlichkeit: TENANT = wie in den Einstellungen, CUSTOM = eigene Kernzeit
-    # (core_time_start/-end), NONE = keine Prüfung (z.B. Außendienst, Aushilfen).
-    core_time_mode: Mapped[str] = mapped_column(String(10), default="TENANT")
-    core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
-    core_time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
-    # Eigene Kernzeit je Wochentag (nur bei CUSTOM); NULL = jeden Tag core_time_start/-end.
-    core_time_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # DSGVO-Anonymisierung (siehe app/api/employees.py anonymize_employee):
     # gesetzt, sobald Name/Kontaktdaten überschrieben wurden. Punches/Absences
     # bleiben für die Aufbewahrungsfrist erhalten – nur die Stammdaten werden

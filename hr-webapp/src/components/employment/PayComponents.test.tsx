@@ -28,6 +28,10 @@ function routes() {
     'GET /employees/{employee_id}/contracts': [],
     'GET /employees/{employee_id}/compensation': [],
     'GET /employees/{employee_id}/pay-components': [allowance],
+    'GET /pay-component-types': [
+      { id: 3, kind: 'ALLOWANCE', name: 'Fahrtkosten', wage_type: '2000', active: true, in_use: 1 },
+      { id: 4, kind: 'ALLOWANCE', name: 'Altzulage', wage_type: null, active: false, in_use: 1 },
+    ],
     'POST /employees/{employee_id}/pay-components': allowance,
     'PATCH /employees/{employee_id}/pay-components/{component_id}': { ...allowance, valid_to: '2026-12-31' },
   }
@@ -53,7 +57,7 @@ describe('Zulagen & Einmalzahlungen', () => {
     await waitFor(() =>
       expect(lastBody(calls, 'POST')).toEqual({
         kind: 'ONE_TIME',
-        name: 'Weihnachtsgeld',
+        type_name: 'Weihnachtsgeld',
         amount: 500.5,
         pay_date: '2026-11-30',
         wage_type: null,
@@ -76,7 +80,7 @@ describe('Zulagen & Einmalzahlungen', () => {
     await userEvent.type(within(dialog).getByLabelText('Lohnart (optional)'), '2100')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
     await waitFor(() =>
-      expect(lastBody(calls, 'POST')).toMatchObject({ kind: 'ALLOWANCE', name: 'Erschwernis', amount: 1.5, unit: 'PER_HOUR', wage_type: '2100', valid_to: null }),
+      expect(lastBody(calls, 'POST')).toMatchObject({ kind: 'ALLOWANCE', type_name: 'Erschwernis', amount: 1.5, unit: 'PER_HOUR', wage_type: '2100', valid_to: null }),
     )
 
     await userEvent.click(screen.getByRole('button', { name: 'Beenden' }))
@@ -85,6 +89,30 @@ describe('Zulagen & Einmalzahlungen', () => {
     await userEvent.type(end, '2026-12-31')
     await userEvent.click(screen.getByRole('button', { name: 'OK' }))
     await waitFor(() => expect(lastBody(calls, 'PATCH')).toEqual({ valid_to: '2026-12-31', clear_valid_to: false }))
+  })
+
+  it('nimmt eine vorhandene Art aus dem Katalog (Lohnart steht dort)', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi(routes())
+    renderWithProviders(<EmploymentTab employeeId={7} isAdmin />)
+    await screen.findByText('50,00 EUR je Monat')
+    await userEvent.click(screen.getByRole('button', { name: 'Neue Zulage' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.type(within(dialog).getByLabelText('Bezeichnung'), 'fahrtkosten')
+    expect(await within(dialog).findByText(/Lohnart 2000/)).toBeInTheDocument()
+    expect(within(dialog).queryByLabelText('Lohnart (optional)')).not.toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText('Betrag je Monat (EUR)'), '40')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(lastBody(calls, 'POST')).toMatchObject({ kind: 'ALLOWANCE', type_id: 3, amount: 40 }))
+    expect(lastBody(calls, 'POST')).not.toHaveProperty('type_name')
+
+    // inaktive Art: Hinweis statt Speichern
+    await userEvent.click(screen.getByRole('button', { name: 'Neue Zulage' }))
+    const second = await screen.findByRole('dialog')
+    await userEvent.type(within(second).getByLabelText('Bezeichnung'), 'Altzulage')
+    await userEvent.type(within(second).getByLabelText('Betrag je Monat (EUR)'), '5')
+    await userEvent.click(within(second).getByRole('button', { name: 'Speichern' }))
+    expect(await within(second).findByText(/ist inaktiv/)).toBeInTheDocument()
   })
 
   it('ist für HR nicht sichtbar', async () => {

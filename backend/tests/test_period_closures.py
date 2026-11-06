@@ -132,7 +132,7 @@ async def test_cannot_submit_open_month_twice_or_with_open_days(client: AsyncCli
     assert again.status_code == 409 and again.json()["code"] == "PERIOD_ALREADY_SUBMITTED"
 
 
-async def test_only_the_employee_confirms_then_hr_closes_and_only_admin_reopens(
+async def test_only_the_employee_confirms_which_closes_and_only_admin_reopens(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     ctx = await _setup(db_session, client)
@@ -142,13 +142,11 @@ async def test_only_the_employee_confirms_then_hr_closes_and_only_admin_reopens(
 
     assert (await client.post(_url(employee.id, "confirm"), headers=hr)).status_code == 403  # HR bestätigt nicht für andere
     assert (await client.post(_url(employee.id, "confirm"), headers=ctx["other"])).status_code in (403, 404)
-    premature = await client.post(_url(employee.id, "close"), headers=hr)
-    assert premature.status_code == 409 and premature.json()["code"] == "CONFIRMATION_PENDING"
-
+    # Die Bestätigung schließt den Monat direkt ab (kein eigener Status "bestätigt" mehr)
     confirmed = await client.post(_url(employee.id, "confirm"), headers=ctx["self"])
-    assert confirmed.status_code == 200 and confirmed.json()["status"] == "CONFIRMED"
-    closed = await client.post(_url(employee.id, "close"), headers=hr)
-    assert closed.status_code == 200 and closed.json()["status"] == "CLOSED"
+    assert confirmed.status_code == 200 and confirmed.json()["status"] == "CLOSED"
+    assert confirmed.json()["closed_without_confirmation"] is False and confirmed.json()["confirmed_at"] is not None
+    assert (await client.post(_url(employee.id, "close"), headers=hr)).status_code == 409  # schon abgeschlossen
 
     assert (await client.post(_url(employee.id, "reopen"), headers=hr)).status_code == 403
     assert (await client.post(_url(employee.id, "reopen"), headers=ctx["admin"])).status_code == 204
@@ -159,7 +157,7 @@ async def test_only_the_employee_confirms_then_hr_closes_and_only_admin_reopens(
     assert len((await client.get(f"/employees/{employee.id}/documents", headers=hr)).json()) == 1
 
     actions = {e.action for e in (await db_session.execute(select(AuditLogEntry))).scalars().all()}
-    assert {AuditAction.PERIOD_SUBMITTED, AuditAction.PERIOD_CONFIRMED, AuditAction.PERIOD_CLOSED, AuditAction.PERIOD_REOPENED} <= actions
+    assert {AuditAction.PERIOD_SUBMITTED, AuditAction.PERIOD_CONFIRMED, AuditAction.PERIOD_REOPENED} <= actions
 
 
 async def test_dispute_unlocks_month_notifies_hr_and_allows_resubmission(
@@ -230,3 +228,66 @@ async def test_month_report_print_view_single_and_bulk(client: AsyncClient, db_s
     bulk = await client.get("/month-reports", headers=hr, params={"year": 2025, "month": 3})
     assert bulk.status_code == 200 and bulk.content.startswith(b"%PDF")
     assert (await client.get("/month-reports", headers=ctx["self"], params={"year": 2025, "month": 3})).status_code == 403
+
+
+async def test_open_requests_hold_back_submission(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Offene Anträge im Monat wären nach dem Vorlegen nicht mehr entscheidbar – erst Hinweis."""
+    from datetime import date as _date
+
+    from app.models import Absence, AbsenceApprovalStatus, AbsenceType
+
+    ctx = await _setup(db_session, client)
+    employee, hr = ctx["employee"], ctx["hr"]
+    employee_id = employee.id
+    await _work_day(client, hr, employee_id, "2025-03-10")
+    db_session.add(
+        Absence(
+            employee_id=employee_id, type=AbsenceType.VACATION, date_from=_date(2025, 3, 27), date_to=_date(2025, 3, 28),
+            approval_status=AbsenceApprovalStatus.PENDING,
+        )
+    )
+    await db_session.commit()
+    blocked = await client.post(_url(employee_id, "submit"), headers=hr)
+    assert blocked.status_code == 409 and blocked.json()["code"] == "OPEN_REQUESTS_PRESENT"
+    assert "1 Abwesenheitsantrag" in blocked.json()["detail"]
+    forced = await client.post(_url(employee_id, "submit"), headers=hr, json={"ignore_open_requests": True, "ignore_open_days": True})
+    assert forced.status_code == 200 and forced.json()["status"] == "SUBMITTED"
+
+
+async def test_without_login_submit_closes_directly(client: AsyncClient, db_session: AsyncSession) -> None:
+    ctx = await _setup(db_session, client)
+    hr = ctx["hr"]
+    location_id = ctx["employee"].location_id
+    kiosk_only = Employee(location_id=location_id, first_name="Karl", last_name="Kiosk", employee_number="E3")
+    db_session.add(kiosk_only)
+    await db_session.commit()
+    kiosk_id = kiosk_only.id
+    await _work_day(client, hr, kiosk_id, "2025-03-10")
+    r = await client.post(_url(kiosk_id, "submit"), headers=hr, json={"ignore_open_days": True})
+    assert r.status_code == 200 and r.json()["status"] == "CLOSED" and r.json()["closed_without_confirmation"] is True
+
+
+async def test_settings_that_recalculate_respect_closed_months(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Kontobeginn, Schichtplanung und maximale Schichtlänge rechneten bisher auch abgeschlossene
+    Monate neu – jetzt nur, solange kein vorgelegter/abgeschlossener Monat betroffen ist."""
+    from datetime import date as _date
+
+    from app.models import ShiftPlanEntry
+
+    ctx = await _setup(db_session, client)
+    employee, hr, admin = ctx["employee"], ctx["hr"], ctx["admin"]
+    employee_id = employee.id
+    await _work_day(client, hr, employee_id, "2025-03-10")
+    db_session.add(ShiftPlanEntry(employee_id=employee_id, date=_date(2025, 3, 12), is_workday=False))
+    await db_session.commit()
+    # vor dem Abschluss geht alles
+    assert (await client.patch("/settings", headers=admin, json={"max_shift_span_hours": 14})).status_code == 200
+    assert (await client.post(_url(employee_id, "submit"), headers=hr, json={"ignore_open_days": True})).status_code == 200
+
+    for body in ({"balance_start_date": "2025-01-01"}, {"max_shift_span_hours": 16}, {"shift_planning_enabled": False}):
+        r = await client.patch("/settings", headers=admin, json=body)
+        assert r.status_code == 409 and r.json()["code"] == "PERIOD_LOCKED", body
+    # Kontobeginn nach dem gesperrten Monat (bisher leer = erste Stempelung im März): betrifft März
+    assert (await client.patch("/settings", headers=admin, json={"balance_start_date": "2025-06-01"})).status_code == 409
+    assert (await client.post(_url(employee_id, "reopen"), headers=hr)).status_code == 204  # Vorlage zurückziehen
+    assert (await client.patch("/settings", headers=admin, json={"balance_start_date": "2025-06-01"})).status_code == 200

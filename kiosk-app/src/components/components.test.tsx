@@ -62,7 +62,7 @@ describe('PunchPad', () => {
     expect(screen.getByText('Gleitzeitsaldo: -1:15 Std.')).toBeInTheDocument()
     expect(screen.getByText('Resturlaub: 12,5 Tage')).toBeInTheDocument()
     expect(screen.getByText('PIN falsch.')).toBeInTheDocument()
-    expect(screen.getByText('Per Karte identifiziert')).toBeInTheDocument()
+    expect(screen.getByText('Per Chip erkannt')).toBeInTheDocument()
   })
 
   it('bietet die Chip-Registrierung nur an, wenn sie erlaubt ist', () => {

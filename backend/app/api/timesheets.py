@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_actor, get_current_full_hr_principal, get_current_hr_or_self, get_current_hr_principal
@@ -24,12 +24,17 @@ from app.services.timesheet_service import (
     balance_as_of,
     balance_start,
     calculate_day,
+    day_fingerprint,
+    day_reviews,
     employee_timezone,
     is_birthday,
+    needs_review,
     punch_blocks,
     punches_for_day,
     rebuild_balance,
+    review_valid,
     today_in,
+    utc_today,
     week_start,
 )
 
@@ -45,7 +50,7 @@ async def _refresh_stale_day_cache(db: AsyncSession, tenant_id: int) -> None:
     Konto nur als veraltet (invalidate_balance) – der Tages-Cache, aus dem "Zu klären" liest, wäre
     sonst bis zum nächsten Öffnen des Mitarbeiters veraltet. Daher die betroffenen Mitarbeiter vorher
     nachrechnen (nur ab dem veralteten Tag)."""
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = utc_today() - timedelta(days=1)
     stale = (
         await db.execute(
             select(Employee).where(
@@ -58,7 +63,7 @@ async def _refresh_stale_day_cache(db: AsyncSession, tenant_id: int) -> None:
                     Employee.id.in_(
                         select(DailySummary.employee_id).where(
                             DailySummary.status.in_([SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND]),
-                            DailySummary.work_date < date.today(),
+                            DailySummary.work_date < utc_today(),
                         )
                     ),
                 ),
@@ -88,37 +93,23 @@ async def list_open_days(
     tatsächlich gestempelt wurde – ein Tag ganz ohne Punches erzeugt keinen
     Cache-Eintrag, siehe docs/konzept.md Abschnitt 3.
 
-    Was HR mit "Erledigt" abgehakt hat (DayReview), erscheint nicht mehr."""
+    Was HR mit "Erledigt" abgehakt hat (DayReview), erscheint nicht mehr – solange sich der Tag
+    nicht ändert. Dieselbe Regel (timesheet_service.needs_review) gilt für Monatsabschluss,
+    Monatsbericht und Lohn-Export."""
     await _refresh_stale_day_cache(db, actor.tenant_id)
-    # Offen/fehlerhaft ODER ein noch nicht geklärter Sonderfall (z.B. außerplanmäßig gestempelt).
-    reviewed = (
-        select(DayReview.id)
-        .where(DayReview.employee_id == DailySummary.employee_id, DayReview.work_date == DailySummary.work_date)
-        .exists()
-    )
+    today = utc_today()
     stmt = (
         select(DailySummary, Employee)
         .join(Employee, Employee.id == DailySummary.employee_id)
         .where(
-            ~reviewed,
             or_(
-                DailySummary.status.in_([SummaryStatus.OPEN_MISSING_PUNCH, SummaryStatus.ERROR]),
+                DailySummary.status.in_(
+                    [SummaryStatus.OPEN_MISSING_PUNCH, SummaryStatus.ERROR, SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND]
+                ),
                 DailySummary.flags.is_not(None),
             ),
             Employee.tenant_id == actor.tenant_id,
-            # Heute nur, was schon feststeht: abgeschlossene Sonderfälle (z.B. außerplanmäßig
-            # gestempelt und wieder ausgestempelt) und widersprüchliche Buchungen. Eine heute noch
-            # laufende Schicht (fehlendes "Gehen") ist noch nicht "zu klären".
-            or_(
-                DailySummary.work_date < date.today(),
-                and_(
-                    DailySummary.work_date == date.today(),
-                    or_(
-                        DailySummary.status == SummaryStatus.ERROR,
-                        and_(DailySummary.status == SummaryStatus.COMPLETE, DailySummary.flags.is_not(None)),
-                    ),
-                ),
-            ),
+            DailySummary.work_date <= today,
         )
     )
     if date_from is not None:
@@ -132,8 +123,22 @@ async def list_open_days(
         stmt = stmt.where(Employee.team_id.in_(team_ids or set()))
     stmt = stmt.order_by(DailySummary.work_date.asc())
 
-    result = await db.execute(stmt)
-    rows = result.all()
+    candidates = (await db.execute(stmt)).all()
+    reviews = await day_reviews(
+        db,
+        sorted({employee.id for _, employee in candidates}),
+        min((s.work_date for s, _ in candidates), default=today),
+        today,
+    )
+    rows = []
+    for summary, employee in candidates:
+        flags = summary.flags.split(",") if summary.flags else []
+        if not needs_review(summary.status, flags, summary.work_date, today):
+            continue
+        fingerprint = day_fingerprint(summary.status, summary.target_minutes, summary.actual_minutes, flags)
+        if review_valid(reviews, employee.id, summary.work_date, fingerprint):
+            continue
+        rows.append((summary, employee))
 
     # Digest-Benachrichtigung nur bei ungefiltertem Vollüberblick auslösen
     # (kein location_id-Filter, kein Supervisor mit team-beschränkter Sicht)
@@ -227,17 +232,7 @@ async def get_timesheet(
     )
 
     tz = await employee_timezone(db, employee)
-    reviewed_days = set(
-        (
-            await db.execute(
-                select(DayReview.work_date).where(
-                    DayReview.employee_id == employee.id,
-                    DayReview.work_date >= date_from,
-                    DayReview.work_date <= date_to,
-                )
-            )
-        ).scalars().all()
-    )
+    reviews = await day_reviews(db, [employee.id], date_from, date_to)
     days: list[TimesheetDay] = []
     current = date_from
     while current <= date_to:
@@ -255,7 +250,10 @@ async def get_timesheet(
                 is_birthday=birthday,
                 exceeds_max_daily_minutes=calculation.exceeds_max_daily_minutes,
                 flags=calculation.flags,
-                reviewed=current in reviewed_days,
+                reviewed=review_valid(
+                    reviews, employee.id, current,
+                    day_fingerprint(calculation.status, calculation.target_minutes, calculation.actual_minutes, calculation.flags),
+                ),
             )
         )
         current += timedelta(days=1)
@@ -276,6 +274,8 @@ async def mark_day_reviewed(
     employee = await db.get(Employee, employee_id)
     if employee is None or employee.tenant_id != actor.tenant_id:
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
+    calc = await calculate_day(db, employee, work_date, await employee_timezone(db, employee))
+    fingerprint = day_fingerprint(calc.status, calc.target_minutes, calc.actual_minutes, calc.flags)
     existing = (
         await db.execute(select(DayReview).where(DayReview.employee_id == employee_id, DayReview.work_date == work_date))
     ).scalar_one_or_none()
@@ -288,9 +288,15 @@ async def mark_day_reviewed(
                 note=(payload.note.strip() or None) if payload and payload.note else None,
                 reviewed_by_hr_user_id=actor.audit_hr_user_id,
                 reviewed_by_employee_id=actor.audit_employee_id,
+                fingerprint=fingerprint,
             )
         )
-        await db.commit()
+    else:
+        # erneut abgehakt (der Tag hatte sich geändert): neuer Stand
+        existing.fingerprint = fingerprint
+        existing.reviewed_by_hr_user_id = actor.audit_hr_user_id
+        existing.reviewed_by_employee_id = actor.audit_employee_id
+    await db.commit()
 
 
 @router.delete("/employees/{employee_id}/day-reviews/{work_date}", status_code=204)

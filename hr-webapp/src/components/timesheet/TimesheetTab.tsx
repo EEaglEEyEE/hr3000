@@ -56,7 +56,7 @@ export function TimesheetTab({ employeeId, canAdjust = false }: { employeeId: nu
             )}
             <p className="mt-2 text-xs text-slate-400">
               {balanceQuery.data && !balanceQuery.data.balance_start
-                ? 'Noch kein Konto: es beginnt mit der ersten Stempelung oder ab dem Stichtag unter Einstellungen → „Gleitzeitkonten führen ab“.'
+                ? 'Noch kein Konto: es beginnt mit der ersten Stempelung oder ab dem Stichtag unter Einstellungen → „Arbeitszeit“ → „Gleitzeitkonten führen ab“.'
                 : `Konto seit ${balanceQuery.data?.balance_start ? formatDate(balanceQuery.data.balance_start) : '–'}. Zählt jeden Tag mit Soll; der heutige erst nach dem Ausstempeln.`}
             </p>
           </CardContent>

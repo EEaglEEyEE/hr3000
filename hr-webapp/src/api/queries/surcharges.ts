@@ -4,12 +4,15 @@ import type { components } from '../schema'
 
 export type SurchargeRule = components['schemas']['SurchargeRuleResponse']
 export type SurchargeRuleCreate = components['schemas']['SurchargeRuleCreateRequest']
+export type SurchargeRuleUpdate = components['schemas']['SurchargeRuleUpdateRequest']
 export type SurchargeReport = components['schemas']['SurchargeReportResponse']
 
-export function useSurchargeRulesQuery() {
+/** Aktuelle und künftige Fassungen; mit includeHistory auch abgelaufene. */
+export function useSurchargeRulesQuery({ includeHistory = false } = {}) {
   return useQuery({
-    queryKey: ['surcharge-rules'],
-    queryFn: async () => unwrap(await apiClient.GET('/surcharge-rules')),
+    queryKey: ['surcharge-rules', includeHistory],
+    queryFn: async () =>
+      unwrap(await apiClient.GET('/surcharge-rules', { params: { query: { include_history: includeHistory } } })),
   })
 }
 
@@ -30,6 +33,15 @@ export function useCreateDefaultSurchargeRulesMutation() {
   const invalidate = useInvalidateRules()
   return useMutation({
     mutationFn: async () => unwrap(await apiClient.POST('/surcharge-rules/defaults')),
+    onSuccess: invalidate,
+  })
+}
+
+export function useUpdateSurchargeRuleMutation() {
+  const invalidate = useInvalidateRules()
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: number; payload: SurchargeRuleUpdate }) =>
+      unwrap(await apiClient.PATCH('/surcharge-rules/{rule_id}', { params: { path: { rule_id: id } }, body: payload })),
     onSuccess: invalidate,
   })
 }
@@ -81,9 +93,9 @@ export function useSetSurchargeWageTypeMutation() {
   return useMutation({
     mutationFn: async ({ id, wageType }: { id: number; wageType: string }) =>
       unwrap(
-        await apiClient.PATCH('/surcharge-rules/{rule_id}', {
+        await apiClient.PUT('/surcharge-rules/{rule_id}/wage-type', {
           params: { path: { rule_id: id } },
-          body: { wage_type: wageType, clear_exclusive_group: false },
+          body: { wage_type: wageType },
         }),
       ),
     onSuccess: invalidate,

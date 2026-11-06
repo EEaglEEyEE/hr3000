@@ -1,9 +1,12 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_admin_principal, get_current_hr_principal
 from app.db import get_db
-from app.models import AuditAction
+from app.models import AuditAction, Employee, Punch, ShiftPlanEntry
 from app.errors import AppError
 from app.schemas.core_time import parse_core_time_days, serialize_core_time_days
 from app.schemas.settings import (
@@ -18,9 +21,17 @@ from app.services.auth_service import hash_password
 from app.services.secret_box import encrypt_secret
 from app.services.audit_service import log_action
 from app.services.settings_service import get_or_create_settings
-from app.services.timesheet_service import DAY_FLAGS, invalidate_tenant_balances
+from app.services.period_service import ensure_tenant_open_from
+from app.services.timesheet_service import DAY_FLAGS, invalidate_tenant_balances, staffel_covers_law
+
+_PUNCTUALITY_FLAGS = {"LATE_ARRIVAL", "EARLY_LEAVE", "OUTSIDE_FLEX_FRAME"}
 
 router = APIRouter(tags=["settings"])
+
+
+async def _first_punch_day(db: AsyncSession, tenant_id: int) -> date | None:
+    first = await db.scalar(select(func.min(Punch.timestamp_utc)).where(Punch.tenant_id == tenant_id))
+    return first.date() if first else None
 
 
 @router.get("/settings", response_model=SettingsResponse)
@@ -61,9 +72,6 @@ async def update_settings(
     if payload.require_pin_for_punch is not None:
         settings_row.require_pin_for_punch = payload.require_pin_for_punch
         changed.append(f"require_pin_for_punch={payload.require_pin_for_punch}")
-    if payload.vacation_approval_required is not None:
-        settings_row.vacation_approval_required = payload.vacation_approval_required
-        changed.append(f"vacation_approval_required={payload.vacation_approval_required}")
     if payload.default_bundesland is not None:
         settings_row.default_bundesland = payload.default_bundesland.value
         changed.append(f"default_bundesland={payload.default_bundesland.value}")
@@ -102,6 +110,14 @@ async def update_settings(
         settings_row.email_notifications_enabled = payload.email_notifications_enabled
         changed.append(f"email_notifications_enabled={payload.email_notifications_enabled}")
     if payload.shift_planning_enabled is not None and payload.shift_planning_enabled != settings_row.shift_planning_enabled:
+        # Tagesausnahmen wirken nur mit Schichtplanung – nicht in vorgelegte/abgeschlossene Monate hinein.
+        first_entry = await db.scalar(
+            select(func.min(ShiftPlanEntry.date)).join(Employee, Employee.id == ShiftPlanEntry.employee_id).where(
+                Employee.tenant_id == actor.tenant_id
+            )
+        )
+        if first_entry is not None:
+            await ensure_tenant_open_from(db, actor.tenant_id, first_entry)
         settings_row.shift_planning_enabled = payload.shift_planning_enabled
         changed.append(f"shift_planning_enabled={payload.shift_planning_enabled}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)
@@ -120,6 +136,9 @@ async def update_settings(
     if payload.prorate_part_time_vacation is not None:
         settings_row.prorate_part_time_vacation = payload.prorate_part_time_vacation
         changed.append(f"prorate_part_time_vacation={payload.prorate_part_time_vacation}")
+    if payload.prorate_partial_year_vacation is not None:
+        settings_row.prorate_partial_year_vacation = payload.prorate_partial_year_vacation
+        changed.append(f"prorate_partial_year_vacation={payload.prorate_partial_year_vacation}")
     if payload.vacation_carry_over_auto is not None:
         settings_row.vacation_carry_over_auto = payload.vacation_carry_over_auto
         changed.append(f"vacation_carry_over_auto={payload.vacation_carry_over_auto}")
@@ -141,10 +160,35 @@ async def update_settings(
         allowed = set(DAY_FLAGS)
         if any(flag not in allowed for flag in payload.disabled_day_flags):
             raise AppError(400, "INVALID_FLAG", "Unbekannter Sonderfall.")
+        before = {f for f in (settings_row.disabled_day_flags or "").split(",") if f}
+        if (before - set(payload.disabled_day_flags)) & _PUNCTUALITY_FLAGS:
+            settings_row.punctuality_from = date.today()  # neu eingeschaltet: erst ab heute melden
         settings_row.disabled_day_flags = ",".join(sorted(set(payload.disabled_day_flags))) or None
         changed.append(f"disabled_day_flags={settings_row.disabled_day_flags}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
-    for field in ("datev_consultant_number", "datev_client_number", "datev_hours_wage_type"):
+    if payload.legal_break_minimum is not None and payload.legal_break_minimum != settings_row.legal_break_minimum:
+        if payload.legal_break_minimum and not await staffel_covers_law(db, actor.tenant_id, date.today()):
+            raise AppError(
+                409,
+                "STAFFEL_BELOW_LAW",
+                "Die Pausenstaffel liegt unter der gesetzlichen Mindestpause (§ 4 ArbZG) – bitte zuerst anpassen.",
+            )
+        settings_row.legal_break_minimum = payload.legal_break_minimum
+        changed.append(f"legal_break_minimum={payload.legal_break_minimum}")
+    for field, clear in (("break_precise_from", payload.clear_break_precise), ("break_capped_from", payload.clear_break_capped)):
+        old, new = getattr(settings_row, field), getattr(payload, field)
+        if new is None and not clear:
+            continue
+        if new == old:
+            continue
+        # Ab dem früheren der beiden Tage rechnet sich alles neu – nicht in abgeschlossenen Monaten.
+        effective = min(d for d in (old, new) if d is not None) if (old or new) else None
+        if effective is not None:
+            await ensure_tenant_open_from(db, actor.tenant_id, effective)
+        setattr(settings_row, field, new)
+        changed.append(f"{field}={new.isoformat() if new else 'aus'}")
+        await invalidate_tenant_balances(db, actor.tenant_id, effective)
+    for field in ("datev_consultant_number", "datev_client_number"):
         value = getattr(payload, field)
         if value is not None:
             setattr(settings_row, field, value or None)
@@ -197,10 +241,6 @@ async def update_settings(
         settings_row.flex_frame_start = settings_row.flex_frame_end = None
         changed.append("flex_frame=keiner")
         punctuality_changed = True
-    if payload.punctuality_check is not None and payload.punctuality_check != settings_row.punctuality_check:
-        settings_row.punctuality_check = payload.punctuality_check
-        changed.append(f"punctuality_check={payload.punctuality_check}")
-        punctuality_changed = True
     if payload.late_tolerance_minutes is not None and payload.late_tolerance_minutes != settings_row.late_tolerance_minutes:
         settings_row.late_tolerance_minutes = payload.late_tolerance_minutes
         changed.append(f"late_tolerance_minutes={payload.late_tolerance_minutes}")
@@ -213,8 +253,14 @@ async def update_settings(
         settings_row.kiosk_screen_on_from = settings_row.kiosk_screen_on_until = None
         changed.append("kiosk_screen_hours=immer an")
     if punctuality_changed:
+        # Neue Regeln gelten ab heute – frühere Tage bekommen keine Pünktlichkeits-Hinweise.
+        settings_row.punctuality_from = date.today()
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
     if payload.max_shift_span_hours is not None and payload.max_shift_span_hours != settings_row.max_shift_span_hours:
+        # Ändert die Zuordnung von Stempelungen zu Tagen rückwirkend.
+        first_punch = await _first_punch_day(db, actor.tenant_id)
+        if first_punch is not None:
+            await ensure_tenant_open_from(db, actor.tenant_id, first_punch)
         settings_row.max_shift_span_hours = payload.max_shift_span_hours
         changed.append(f"max_shift_span_hours={payload.max_shift_span_hours}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)
@@ -237,6 +283,7 @@ async def update_settings(
         "kiosk_errand_buttons",
         "portal_punching_enabled",
         "absence_requests_enabled",
+        "absence_four_eyes",
         "kiosk_sort",
         "kiosk_theme",
         "kiosk_card_self_registration",
@@ -255,6 +302,13 @@ async def update_settings(
     if payload.balance_start_date is not None or payload.clear_balance_start_date:
         new_start = None if payload.clear_balance_start_date else payload.balance_start_date
         if new_start != settings_row.balance_start_date:
+            # Kontobeginn verschiebt alle Salden ab dem früheren der beiden Stichtage (leer = erste Stempelung).
+            starts = [settings_row.balance_start_date, new_start]
+            if None in starts:
+                starts.append(await _first_punch_day(db, actor.tenant_id))
+            known = [d for d in starts if d is not None]
+            if known:
+                await ensure_tenant_open_from(db, actor.tenant_id, min(known))
             settings_row.balance_start_date = new_start
             changed.append(f"balance_start_date={new_start}")
             await invalidate_tenant_balances(db, actor.tenant_id, None)

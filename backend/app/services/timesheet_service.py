@@ -17,7 +17,9 @@ from app.models import (
     BreakRule,
     BreakRuleKind,
     DailySummary,
+    DayReview,
     Employee,
+    EmployeeDefaultShift,
     EmployeeLocationPeriod,
     Location,
     OvertimeBalance,
@@ -61,6 +63,9 @@ class DayCalculation:
     absence_label: str | None = None
     # Anteil unbezahlter Abwesenheit (senkt bei flexiblen Modellen das Wochensoll)
     unpaid_portion: float = 0.0
+    # Gutschrift im Ist je Zeitart (Kategorie, Minuten) – Feiertage als PUBLIC_HOLIDAY. Für den
+    # Lohn-Export (Lohnarten je Zeitart); gestempelte Zeit steht nicht darin.
+    credit_parts: list[tuple[AbsenceType, int]] = field(default_factory=list)
 
 
 class DayFlag:
@@ -102,8 +107,14 @@ async def employee_timezone(db: AsyncSession, employee: Employee) -> ZoneInfo:
 
 
 def today_in(tz: ZoneInfo) -> date:
-    """Heutiges Datum in der Zeitzone des Standorts – Auswertungen gehen nie über heute hinaus."""
-    return datetime.now(tz).date()
+    """Heutiges Datum in der Zeitzone des Standorts – Auswertungen gehen nie über heute hinaus.
+    Dieselbe Uhr wie die Tagesberechnung (_utcnow), damit "heute" überall gleich ist."""
+    return _utcnow().replace(tzinfo=UTC).astimezone(tz).date()
+
+
+def utc_today() -> date:
+    """Heutiges Datum (UTC, wie der Server) für mandantenweite Listen ("Zu klären", Monatsabschluss)."""
+    return _utcnow().date()
 
 
 def local_date(dt: datetime, tz: ZoneInfo) -> date:
@@ -151,7 +162,7 @@ async def _calculate_day_core(db: AsyncSession, employee: Employee, work_date: d
     day_punches = await punches_for_day(db, employee, work_date, tz)
     calculation = await _resolve_day(db, employee, work_date, tz, day_punches)
     calculation.has_punches = bool(day_punches)
-    if day_punches and employee.core_time_mode != "NONE":
+    if day_punches:
         calculation.flags.extend(await _punctuality_flags(db, employee, work_date, tz, calculation, day_punches))
     return calculation
 
@@ -159,10 +170,10 @@ async def _calculate_day_core(db: AsyncSession, employee: Employee, work_date: d
 async def _punctuality_flags(
     db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, calculation: DayCalculation, day_punches: list[Punch]
 ) -> list[str]:
-    """Kernarbeitszeit/Gleitzeit (Einstellungen, je Mitarbeiter änderbar): zu spät gekommen, zu früh
-    gegangen, außerhalb des Gleitzeit-Rahmens gestempelt. Nur an normalen Arbeitstagen mit Soll –
-    nicht bei Abwesenheit (auch halbtags), Feiertag, außerplanmäßiger Arbeit oder widersprüchlichen
-    Buchungen. Reine Hinweise für "Zu klären": an den Stunden ändert sich nichts."""
+    """Kernarbeitszeit/Gleitzeit (Einstellungen, je Fassung der Arbeitszeit änderbar): zu spät
+    gekommen, zu früh gegangen, außerhalb des Gleitzeit-Rahmens gestempelt. Nur an normalen
+    Arbeitstagen mit Soll – nicht bei Abwesenheit (auch halbtags), Feiertag, außerplanmäßiger Arbeit
+    oder widersprüchlichen Buchungen. Reine Hinweise für "Zu klären": an den Stunden ändert sich nichts."""
     if (
         not calculation.target_minutes
         or calculation.absence_type is not None
@@ -171,12 +182,17 @@ async def _punctuality_flags(
         or DayFlag.HOLIDAY_WORK in calculation.flags
     ):
         return []
+    plan = await resolve_effective_shift(db, employee.id, work_date)
+    version = plan.version
+    core_mode = (version.core_time_mode if version is not None else None) or "TENANT"
+    if core_mode == "NONE":
+        return []
     rules = (
         await db.execute(
             select(
                 AppSettings.core_time_start,
                 AppSettings.core_time_end,
-                AppSettings.punctuality_check,
+                AppSettings.punctuality_from,
                 AppSettings.late_tolerance_minutes,
                 AppSettings.flex_frame_start,
                 AppSettings.flex_frame_end,
@@ -186,9 +202,11 @@ async def _punctuality_flags(
     ).first()
     if rules is None:
         return []
-    core_start, core_end, check, tolerance, frame_start, frame_end, core_days = rules
-    if employee.core_time_mode == "CUSTOM":
-        core_start, core_end, core_days = employee.core_time_start, employee.core_time_end, employee.core_time_days
+    core_start, core_end, active_from, tolerance, frame_start, frame_end, core_days = rules
+    if active_from is not None and work_date < active_from:
+        return []  # Regeln erst ab ihrer letzten Änderung prüfen (sonst wäre die ganze Vergangenheit offen)
+    if core_mode == "CUSTOM":
+        core_start, core_end, core_days = version.core_time_start, version.core_time_end, version.core_time_days
     by_weekday = parse_core_time_days(core_days)
     if by_weekday is not None:
         # Kernzeit je Wochentag: an Tagen ohne Eintrag gibt es keine Kernzeit.
@@ -209,19 +227,20 @@ async def _punctuality_flags(
     first_come = local(comes[0])
     last_go = local(goes[-1]) if goes and calculation.status == SummaryStatus.COMPLETE else None
 
-    if check:
-        # Schicht mit Uhrzeiten (Schichtplanung) hat Vorrang vor der Kernzeit.
-        plan = await resolve_effective_shift(db, employee.id, work_date)
-        start, end = (plan.start_time, plan.end_time) if plan.start_time and plan.end_time else (core_start, core_end)
-        grace = timedelta(minutes=tolerance or 0)
-        if start is not None and first_come > at(start) + grace:
-            flags.append(DayFlag.LATE_ARRIVAL)
-        if start is not None and end is not None and last_go is not None:
-            # Nachtschicht (Ende vor Beginn) endet am Folgetag.
-            if last_go < at(end, next_day=end <= start) - grace:
-                flags.append(DayFlag.EARLY_LEAVE)
+    # Schicht mit Uhrzeiten (Schichtvorlage) hat Vorrang vor Kernzeit und Gleitzeit-Rahmen.
+    shift_times = bool(plan.start_time and plan.end_time)
+    # "Zu spät"/"zu früh" werden immer ermittelt; ob sie gemeldet werden, regeln die Häkchen
+    # (disabled_day_flags, siehe calculate_day).
+    start, end = (plan.start_time, plan.end_time) if shift_times else (core_start, core_end)
+    grace = timedelta(minutes=tolerance or 0)
+    if start is not None and first_come > at(start) + grace:
+        flags.append(DayFlag.LATE_ARRIVAL)
+    if start is not None and end is not None and last_go is not None:
+        # Nachtschicht (Ende vor Beginn) endet am Folgetag.
+        if last_go < at(end, next_day=end <= start) - grace:
+            flags.append(DayFlag.EARLY_LEAVE)
 
-    if frame_start is not None and frame_end is not None:
+    if frame_start is not None and frame_end is not None and not shift_times:
         if first_come < at(frame_start) or (last_go is not None and last_go > at(frame_end)):
             flags.append(DayFlag.OUTSIDE_FLEX_FRAME)
     return flags
@@ -243,7 +262,8 @@ async def _resolve_flexible_day(
         hours = await _absence_day(db, employee, work_date)
         extra, label = (hours.duration_credit(), hours.label) if hours and hours.durations else (0, None)
         return DayCalculation(
-            work_date, credit + extra + (worked or 0), None, SummaryStatus.HOLIDAY, flags=flags, absence_label=label
+            work_date, credit + extra + (worked or 0), None, SummaryStatus.HOLIDAY, flags=flags, absence_label=label,
+            credit_parts=_holiday_parts(credit, hours),
         )
     absence_day = await _absence_day(db, employee, work_date)
     if absence_day is not None:
@@ -251,10 +271,14 @@ async def _resolve_flexible_day(
         common = absence_day.fields()
         if absence_day.portion >= 1 and day_punches:
             return DayCalculation(work_date, worked, None, status, flags=[DayFlag.WORK_DURING_ABSENCE], **common)
+        parts = absence_day.credit_parts(None, credit)
         if not day_punches:
             # Ohne Tagessoll muss die andere Hälfte eines halben Tages nicht gestempelt werden.
-            return DayCalculation(work_date, credited, None, SummaryStatus.ABSENCE, **common)
-        return DayCalculation(work_date, None if worked is None else worked + credited, None, status, **common)
+            return DayCalculation(work_date, credited, None, SummaryStatus.ABSENCE, credit_parts=parts, **common)
+        return DayCalculation(
+            work_date, None if worked is None else worked + credited, None, status,
+            credit_parts=parts if worked is not None else [], **common,
+        )
     return DayCalculation(
         work_date, worked, None, status, exceeds_max_daily_minutes=worked is not None and worked > MAX_DAILY_WORKING_MINUTES
     )
@@ -296,8 +320,11 @@ async def _resolve_day(
         if hours and hours.durations:
             credited = (credited or 0) + hours.duration_credit()
             holiday_label = hours.label
+        parts = _holiday_parts(plan.target_minutes if plan.plan_exists else 0, hours)
         if not day_punches:
-            return DayCalculation(work_date, credited, plan.target_minutes, SummaryStatus.HOLIDAY, absence_label=holiday_label)
+            return DayCalculation(
+                work_date, credited, plan.target_minutes, SummaryStatus.HOLIDAY, absence_label=holiday_label, credit_parts=parts
+            )
         # Gearbeitet an einem Feiertag: Gutschrift + gearbeitete Zeit (-> Saldo/Feiertagszuschlag).
         # Unvollständige Buchungen zeigen den Stempelstatus (anwesend/offen) statt "Feiertag".
         worked, worked_status = await _pair_punches(db, employee, work_date, tz, day_punches)
@@ -307,6 +334,7 @@ async def _resolve_day(
                 exceeds_max_daily_minutes=(worked or 0) > MAX_DAILY_WORKING_MINUTES,
                 flags=[DayFlag.HOLIDAY_WORK],
                 absence_label=holiday_label,
+                credit_parts=parts,
             )
         return DayCalculation(work_date, None, plan.target_minutes, worked_status, flags=[DayFlag.HOLIDAY_WORK])
 
@@ -316,10 +344,11 @@ async def _resolve_day(
         # Freizeitausgleich = Soll ohne Gutschrift (siehe absence_type_service) – bei halben
         # Tagen jeweils zur Hälfte.
         credited, target = absence_day.values(plan.target_minutes, plan.target_minutes if plan.plan_exists else 0)
+        parts = absence_day.credit_parts(plan.target_minutes, plan.target_minutes if plan.plan_exists else 0)
         common = absence_day.fields()
         if absence_day.portion >= 1:
             if not day_punches:
-                return DayCalculation(work_date, credited, target, SummaryStatus.ABSENCE, **common)
+                return DayCalculation(work_date, credited, target, SummaryStatus.ABSENCE, credit_parts=parts, **common)
             # Gestempelt trotz genehmigter Abwesenheit: die gearbeitete Zeit zählt (keine doppelte
             # Gutschrift), HR klärt, ob die Abwesenheit für den Tag storniert werden muss.
             actual, status = await _pair_punches(db, employee, work_date, tz, day_punches)
@@ -335,11 +364,12 @@ async def _resolve_day(
         # damit erledigt (Rest des Solls belastet das Gleitzeitkonto).
         if not day_punches:
             status = SummaryStatus.ABSENCE if absence_day.portion == 0 else SummaryStatus.OPEN_MISSING_PUNCH
-            return DayCalculation(work_date, credited, target, status, **common)
+            return DayCalculation(work_date, credited, target, status, credit_parts=parts, **common)
         worked, status = await _pair_punches(db, employee, work_date, tz, day_punches)
         return DayCalculation(
             work_date, None if worked is None else worked + credited, target, status,
             exceeds_max_daily_minutes=worked is not None and worked > MAX_DAILY_WORKING_MINUTES,
+            credit_parts=parts if worked is not None else [],
             **common,
         )
 
@@ -386,6 +416,30 @@ async def _approved_absences_covering(db: AsyncSession, employee_id: int, work_d
     return list(result.scalars().all())
 
 
+def _rounded_parts(raw: dict[AbsenceType, float]) -> list[tuple[AbsenceType, int]]:
+    """Minuten je Kategorie ganzzahlig; Rundungsrest beim größten Teil, damit die Summe der
+    gerundeten Gesamtsumme entspricht."""
+    if not raw:
+        return []
+    parts = {category: round(minutes) for category, minutes in raw.items()}
+    rest = round(sum(raw.values())) - sum(parts.values())
+    if rest:
+        largest = max(parts, key=lambda category: parts[category])
+        parts[largest] += rest
+    return [(category, minutes) for category, minutes in parts.items() if minutes]
+
+
+def _holiday_parts(holiday_minutes: int | None, hours: "AbsenceDay | None") -> list[tuple[AbsenceType, int]]:
+    """Gutschrift eines Feiertags: Soll des Tages als Feiertag plus bezahlte Stundenangaben."""
+    parts = [(AbsenceType.PUBLIC_HOLIDAY, holiday_minutes)] if holiday_minutes else []
+    for category, minutes in hours.duration_parts() if hours and hours.durations else []:
+        parts.append((category, minutes))
+    merged: dict[AbsenceType, int] = {}
+    for category, minutes in parts:
+        merged[category] = merged.get(category, 0) + minutes
+    return list(merged.items())
+
+
 @dataclass
 class AbsenceDay:
     """Genehmigte Abwesenheit(en) eines Tages: ein ganzer Tag, bis zu zwei halbe Tage und/oder
@@ -418,6 +472,26 @@ class AbsenceDay:
                 credited += minutes
         target = None if target_minutes is None else max(round(target_minutes - reduction), 0)
         return round(credited), target
+
+    def credit_parts(self, target_minutes: int | None, credit_minutes: int | None) -> list[tuple[AbsenceType, int]]:
+        """Gutschrift aus values() aufgeteilt nach Kategorie (Rundung so, dass die Summe stimmt)."""
+        raw: dict[AbsenceType, float] = {}
+        for absence, fraction in self.parts:
+            credit, _ = absence_day_values(absence.type, target_minutes, credit_minutes)
+            if credit:
+                raw[absence.type] = raw.get(absence.type, 0.0) + credit * fraction
+        for absence, minutes in self.durations:
+            if absence.type not in (AbsenceType.UNPAID, AbsenceType.TIME_OFF_IN_LIEU) and minutes:
+                raw[absence.type] = raw.get(absence.type, 0.0) + minutes
+        return _rounded_parts(raw)
+
+    def duration_parts(self) -> list[tuple[AbsenceType, int]]:
+        """Bezahlte Stundenangaben je Kategorie (Gegenstück zu duration_credit)."""
+        raw: dict[AbsenceType, float] = {}
+        for absence, minutes in self.durations:
+            if absence.type not in (AbsenceType.UNPAID, AbsenceType.TIME_OFF_IN_LIEU) and minutes:
+                raw[absence.type] = raw.get(absence.type, 0.0) + minutes
+        return _rounded_parts(raw)
 
     def duration_credit(self) -> int:
         """Gutschrift aus bezahlten Stundenangaben (z.B. "Feiertag (GfB)" an einem Feiertag)."""
@@ -509,6 +583,48 @@ async def reports_days_without_punches(db: AsyncSession, tenant_id: int) -> bool
         await db.execute(select(AppSettings.report_days_without_punches).where(AppSettings.tenant_id == tenant_id))
     ).scalar_one_or_none()
     return True if value is None else bool(value)
+
+
+def day_fingerprint(status: SummaryStatus, target: int | None, actual: int | None, flags: list[str]) -> str:
+    """Stand eines Tages für "Erledigt": Status, Soll, Ist und Hinweise (wie im Tages-Cache)."""
+    return f"{status.value}|{target or 0}|{'-' if actual is None else actual}|{','.join(sorted(flags))}"
+
+
+def needs_review(
+    status: SummaryStatus, flags: list[str], work_date: date, today: date, *, missing_reported: bool = True
+) -> bool:
+    """Die eine Regel "Tag offen" für "Zu klären", Monatsabschluss, Monatsbericht und Lohn-Export:
+    widersprüchlich; fehlende Stempelung (vergangene Tage); ein gemeldeter Sonderfall. Heute zählt
+    nur, was schon feststeht (Widerspruch oder abgeschlossener Tag mit Sonderfall); eine laufende
+    Schicht ist nicht offen, ein liegengebliebenes "anwesend" älter als einen Tag schon."""
+    if status == SummaryStatus.ERROR:
+        return True
+    if work_date >= today:
+        return status == SummaryStatus.COMPLETE and bool(flags)
+    if status == SummaryStatus.OPEN_MISSING_PUNCH:
+        return missing_reported
+    if status in (SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND):
+        return work_date < today - timedelta(days=1)
+    return bool(flags)
+
+
+async def day_reviews(db: AsyncSession, employee_ids: list[int], first: date, last: date) -> dict[tuple[int, date], str | None]:
+    """Abgehakte Tage ("Erledigt") mit ihrem Fingerabdruck."""
+    if not employee_ids:
+        return {}
+    rows = await db.execute(
+        select(DayReview.employee_id, DayReview.work_date, DayReview.fingerprint).where(
+            DayReview.employee_id.in_(employee_ids), DayReview.work_date >= first, DayReview.work_date <= last
+        )
+    )
+    return {(employee_id, day): fingerprint for employee_id, day, fingerprint in rows.all()}
+
+
+def review_valid(reviews: dict[tuple[int, date], str | None], employee_id: int, work_date: date, fingerprint: str) -> bool:
+    """Gilt "Erledigt" noch? Nur, wenn der Tag seitdem gleich geblieben ist (ältere Einträge ohne
+    Fingerabdruck gelten weiter)."""
+    key = (employee_id, work_date)
+    return key in reviews and (reviews[key] is None or reviews[key] == fingerprint)
 
 
 def missing_punch_reported(calc: DayCalculation, report_days_without_punches: bool) -> bool:
@@ -740,12 +856,12 @@ async def pair_punches_detail(
     # Feste Pausenzeiten: abgezogen, soweit anwesend und nicht ohnehin als Pause gestempelt.
     window_minutes = policy.window_minutes(presence, punched_breaks, work_date, tz)
     # Gestempelte Pausen, Unterbrechungen zwischen mehreren Kommen/Gehen und feste Pausenzeiten
-    # erfüllen die Mindestpause (gesetzliche Staffel bzw. feste Minuten); nur ein verbleibender
-    # Fehlbetrag wird zusätzlich abgezogen.
-    taken = break_minutes + gap_minutes + window_minutes
-    shortfall = max(policy.required_minutes(gross_minutes) - taken, 0.0)
+    # erfüllen die Mindestpause (Staffel bzw. feste Minuten); nur ein verbleibender Fehlbetrag wird
+    # zusätzlich abgezogen.
+    punched = [(end - start).total_seconds() / 60 for start, end in punched_breaks]
+    shortfall = policy.shortfall(gross_minutes, punched, gap_minutes, window_minutes)
     actual_minutes = max(round(gross_minutes - break_minutes - window_minutes - shortfall), 0)
-    return actual_minutes, SummaryStatus.COMPLETE, round(taken + shortfall)
+    return actual_minutes, SummaryStatus.COMPLETE, round(break_minutes + gap_minutes + window_minutes + shortfall)
 
 
 def overlap_minutes(a: Interval, b: Interval) -> float:
@@ -754,16 +870,37 @@ def overlap_minutes(a: Interval, b: Interval) -> float:
 
 @dataclass
 class BreakPolicy:
-    """Pausenregeln eines Arbeitstags. steps: (Schwelle, Minuten) aus gesetzlicher Staffel und
-    festen Pausenminuten – maßgeblich ist die höchste erreichte Stufe (Mindestpause). windows: feste
-    Pausenzeiten in Ortszeit, abgezogen soweit der Mitarbeiter darin anwesend war."""
+    """Pausenregeln eines Arbeitstags. steps: (Schwelle, Minuten) aus Pausenstaffel und eigener
+    Pause (Arbeitszeitmodell/Schichtvorlage) – maßgeblich ist die höchste erreichte Stufe
+    (Mindestpause). windows: feste Pausenzeiten in Ortszeit, abgezogen soweit anwesend.
+    precise: genau nach § 4 ArbZG (Schwelle nach Arbeitszeit ohne Pausen, gestempelte Pausen zählen
+    erst ab 15 Min.). capped: der Abzug drückt die Arbeitszeit nie unter die Schwelle."""
 
     steps: list[tuple[int, int]] = field(default_factory=list)
     windows: list[tuple[time, time]] = field(default_factory=list)
+    precise: bool = False
+    capped: bool = False
+
+    def required_step(self, basis_minutes: float) -> tuple[int, int]:
+        """(Schwelle, Minuten) der höchsten erreichten Stufe; (0, 0) ohne Pausenpflicht."""
+        applicable = [(threshold, minutes) for threshold, minutes in self.steps if basis_minutes > threshold]
+        return max(applicable, key=lambda step: (step[1], step[0])) if applicable else (0, 0)
 
     def required_minutes(self, gross_minutes: float) -> float:
-        applicable = [minutes for threshold, minutes in self.steps if gross_minutes > threshold]
-        return float(max(applicable)) if applicable else 0.0
+        return float(self.required_step(gross_minutes)[1])
+
+    def shortfall(self, gross: float, punched: list[float], gaps: float, window: float) -> float:
+        """Zusätzlich abzuziehende Minuten: was zur Mindestpause noch fehlt. gross = Kommen bis
+        Gehen (inkl. gestempelter Pausen), punched = Dauer der gestempelten Pausen, gaps =
+        Unterbrechungen zwischen Gehen und Kommen (ab 15 Min.), window = feste Pausenzeit."""
+        punched_total = sum(punched)
+        counted = sum(b for b in punched if b >= MIN_BREAK_BLOCK_MINUTES) if self.precise else punched_total
+        basis = gross - punched_total - window if self.precise else gross
+        threshold, required = self.required_step(basis)
+        missing = max(required - counted - gaps - window, 0.0)
+        if self.capped and missing:
+            missing = min(missing, max(gross - punched_total - window - threshold, 0.0))
+        return missing
 
     def local_windows(self, work_date: date) -> list[Interval]:
         """Feste Pausenzeiten (naive Ortszeit) am Arbeitstag und am Folgetag (Nachtschicht)."""
@@ -787,10 +924,38 @@ class BreakPolicy:
         return max(present - on_break, 0.0)
 
 
+# § 4 ArbZG: mehr als 6 Std. Arbeit -> mindestens 30 Min. Pause, mehr als 9 Std. -> 45 Min.
+LEGAL_BREAK_STEPS = ((360, 30), (540, 45))
+
+
+def covers_law(steps: list[tuple[int, int]]) -> bool:
+    """Verlangt die Staffel bei jeder Arbeitszeit mindestens die gesetzliche Pause?"""
+    def required(work: int, rows) -> int:
+        return max((minutes for threshold, minutes in rows if work > threshold), default=0)
+
+    checkpoints = [threshold + 1 for threshold, _ in LEGAL_BREAK_STEPS] + [720, 960]
+    return all(required(work, steps) >= required(work, LEGAL_BREAK_STEPS) for work in checkpoints)
+
+
+async def staffel_covers_law(db: AsyncSession, tenant_id: int, day: date, exclude_id: int | None = None,
+                             extra: list[tuple[int, int]] | None = None) -> bool:
+    """Pausenstaffel des Mandanten an diesem Tag (ohne exclude_id, plus extra) gegen § 4 prüfen."""
+    stmt = select(BreakRule).where(
+        BreakRule.tenant_id == tenant_id,
+        BreakRule.kind != BreakRuleKind.FIXED_WINDOW,
+        BreakRule.valid_from <= day,
+        or_(BreakRule.valid_to.is_(None), BreakRule.valid_to >= day),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(BreakRule.id != exclude_id)
+    rows = [(r.min_work_minutes, r.deduct_minutes) for r in (await db.execute(stmt)).scalars().all()]
+    return covers_law(rows + (extra or []))
+
+
 async def break_policy(db: AsyncSession, employee: Employee, work_date: date) -> BreakPolicy:
-    """Pausenregeln, die an diesem Tag gelten (effektiv-datiert): die gesetzliche Staffel immer;
-    dazu feste Minuten/Zeiten aus dem Arbeitszeitmodell bzw. der Schichtvorlage des Tages, falls
-    dort eine eigene Pause hinterlegt ist – sonst die betrieblichen Regeln des Mandanten."""
+    """Pausenregeln, die an diesem Tag gelten (effektiv-datiert): die Pausenstaffel immer; dazu die
+    eigene Pause aus Arbeitszeitmodell bzw. Schichtvorlage des Tages (feste Minuten ab Schwelle
+    oder feste Pausenzeit) – eine eigene Pausenzeit ersetzt die festen Pausenzeiten des Betriebs."""
     rules = (
         await db.execute(
             select(BreakRule).where(
@@ -800,35 +965,51 @@ async def break_policy(db: AsyncSession, employee: Employee, work_date: date) ->
             )
         )
     ).scalars().all()
-    steps = [(r.min_work_minutes, r.deduct_minutes) for r in rules if r.kind in (None, BreakRuleKind.LEGAL)]
-    own = await _template_break(db, employee, work_date)
+    # Pausenstaffel (früher getrennt: "gesetzlich" und "feste Minuten" – rechnerisch dasselbe).
+    steps = [(r.min_work_minutes, r.deduct_minutes) for r in rules if r.kind != BreakRuleKind.FIXED_WINDOW]
+    windows = [
+        (r.start_time, r.end_time)
+        for r in rules
+        if r.kind == BreakRuleKind.FIXED_WINDOW and r.start_time is not None and r.end_time is not None
+    ]
+    own = await _own_break(db, employee, work_date)
     if own is not None:
-        fixed, windows = own
-    else:
-        fixed = [(r.min_work_minutes, r.deduct_minutes) for r in rules if r.kind == BreakRuleKind.FIXED_MINUTES]
-        windows = [
-            (r.start_time, r.end_time)
-            for r in rules
-            if r.kind == BreakRuleKind.FIXED_WINDOW and r.start_time is not None and r.end_time is not None
-        ]
-    return BreakPolicy(steps=steps + fixed, windows=windows)
+        own_steps, own_windows = own
+        steps += own_steps
+        if own_windows:
+            windows = own_windows
+    settings_row = (
+        await db.execute(
+            select(AppSettings.break_precise_from, AppSettings.break_capped_from).where(AppSettings.tenant_id == employee.tenant_id)
+        )
+    ).first()
+    precise_from, capped_from = settings_row if settings_row is not None else (None, None)
+    return BreakPolicy(
+        steps=steps,
+        windows=windows,
+        precise=precise_from is not None and work_date >= precise_from,
+        capped=capped_from is not None and work_date >= capped_from,
+    )
 
 
-async def _template_break(
+async def _own_break(
     db: AsyncSession, employee: Employee, work_date: date
 ) -> tuple[list[tuple[int, int]], list[tuple[time, time]]] | None:
-    """Eigene Pause der Schichtvorlage bzw. des Arbeitszeitmodells an diesem Tag: feste Pausenzeit
-    (break_mode FIXED) oder feste Minuten (min_break_minutes, ab der ersten Arbeitsminute)."""
+    """Eigene Pause an diesem Tag: die der Fassung der Arbeitszeit, sonst die der Schichtvorlage des
+    Tages (an geplanten Schichttagen immer die der Schicht) – feste Pausenzeit (break_mode FIXED)
+    oder feste Minuten ab einer Schwelle (min_break_minutes/min_break_after_minutes)."""
     plan = await resolve_effective_shift(db, employee.id, work_date)
-    if plan.shift_template_id is None:
+    source: EmployeeDefaultShift | ShiftTemplate | None = None
+    if not plan.from_entry and plan.version is not None and plan.version.break_mode is not None:
+        source = plan.version
+    elif plan.shift_template_id is not None:
+        source = await db.get(ShiftTemplate, plan.shift_template_id)
+    if source is None:
         return None
-    template = await db.get(ShiftTemplate, plan.shift_template_id)
-    if template is None:
-        return None
-    if template.break_mode == BreakMode.FIXED and template.fixed_break_start and template.fixed_break_end:
-        return [], [(template.fixed_break_start, template.fixed_break_end)]
-    if template.min_break_minutes:
-        return [(0, template.min_break_minutes)], []
+    if source.break_mode == BreakMode.FIXED and source.fixed_break_start and source.fixed_break_end:
+        return [], [(source.fixed_break_start, source.fixed_break_end)]
+    if source.min_break_minutes:
+        return [(source.min_break_after_minutes or 0, source.min_break_minutes)], []
     return None
 
 
@@ -881,7 +1062,7 @@ async def maybe_auto_insert_break(
     policy = await break_policy(db, employee, work_date)
     # Feste Pausenzeiten zieht die Tagesberechnung ohnehin ab – gebucht wird nur der Rest.
     window_minutes = policy.window_minutes(presence, [], work_date, tz)
-    missing = min(policy.required_minutes(gross_minutes) - gap_minutes - window_minutes, last_pair_minutes - 1)
+    missing = min(policy.shortfall(gross_minutes, [], gap_minutes, window_minutes), last_pair_minutes - 1)
     if missing <= 0:
         return
 
@@ -890,6 +1071,7 @@ async def maybe_auto_insert_break(
     idempotency_prefix = f"auto-break-{go_punch.id}"
     db.add(
         Punch(
+            tenant_id=employee.tenant_id,
             employee_id=employee.id,
             location_id=employee.location_id,
             punch_type=PunchType.BREAK_START,
@@ -900,6 +1082,7 @@ async def maybe_auto_insert_break(
     )
     db.add(
         Punch(
+            tenant_id=employee.tenant_id,
             employee_id=employee.id,
             location_id=employee.location_id,
             punch_type=PunchType.BREAK_END,
@@ -909,6 +1092,22 @@ async def maybe_auto_insert_break(
         )
     )
     await db.commit()
+
+
+async def refresh_auto_breaks(db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo) -> None:
+    """Nach einer Korrektur (Stempelung nachgetragen, geändert, gelöscht): die automatisch
+    gebuchten Pausen des Tages entfernen und – falls der Tag mit "Gehen" endet – neu setzen.
+    Sonst blieben sie z.B. hinter einem vorverlegten "Gehen" stehen (Tag widersprüchlich) oder
+    kämen zu einer nachgetragenen echten Pause hinzu."""
+    day_punches = await punches_for_day(db, employee, work_date, tz)
+    auto = [p for p in day_punches if p.source == PunchSource.AUTO_BREAK]
+    for punch in auto:
+        await db.delete(punch)
+    if auto:
+        await db.commit()
+    remaining = [p for p in day_punches if p.source != PunchSource.AUTO_BREAK]
+    if remaining and remaining[-1].punch_type == PunchType.GO:
+        await maybe_auto_insert_break(db, employee, remaining[-1], tz)
 
 
 async def recalculate_day(db: AsyncSession, employee: Employee, work_date: date) -> DayCalculation:
@@ -1022,7 +1221,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
     # Serialisiert parallele Neuberechnungen desselben Mitarbeiters (MySQL: Zeilensperre).
     locked = (await db.execute(select(Employee).where(Employee.id == employee.id).with_for_update())).scalar_one()
     tz = await employee_timezone(db, locked)
-    today = datetime.now(tz).date()
+    today = today_in(tz)
     yesterday = today - timedelta(days=1)
 
     start = await balance_start(db, locked)

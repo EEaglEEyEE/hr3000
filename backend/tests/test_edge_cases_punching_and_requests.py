@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BreakRule, Device, Employee, HrRole, HrUser, Location, Tenant
+from absence_helpers import require_vacation_approval
 from app.models.period_closure import PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
@@ -334,7 +335,7 @@ async def test_switched_off_requests_block_every_type_for_plain_employees(client
 async def test_open_requests_stay_decidable_after_switching_off(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, admin, me, _ = await _setup(db_session, client)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
     body = {"employee_id": employee.id, "type": "VACATION", "date_from": "2026-09-14", "date_to": "2026-09-15"}
     request = await client.post("/absences", headers=me, json=body)

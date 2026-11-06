@@ -67,6 +67,17 @@ class Actor:
         return False
 
     @property
+    def has_payroll_access(self) -> bool:
+        """Berechtigung „Vergütung & Lohn-Export“: Admins immer, volle HR nur mit Freigabe."""
+        if self.is_admin_level:
+            return True
+        if not self.is_full_hr_level:
+            return False
+        if self.hr_user is not None:
+            return bool(self.hr_user.payroll_access)
+        return self.employee is not None and bool(self.employee.hr_payroll_access)
+
+    @property
     def audit_hr_user_id(self) -> int | None:
         """Für created_by-Spalten: nur gesetzt, wenn ein klassischer HrUser-Account
         agiert hat."""
@@ -168,6 +179,19 @@ async def get_current_admin_principal(
     actor = await get_current_actor(request, credentials, db)
     if not actor.is_admin_level:
         raise AppError(403, "ADMIN_PERMISSION_REQUIRED", "Nur für Administratoren.")
+    return actor
+
+
+async def get_current_payroll_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Actor:
+    """Vergütung, Zulagen, Lohnkosten, DATEV, Lohnarten und Beträge im Lohn-Export: Admins und HR
+    mit Berechtigung „Vergütung & Lohn-Export“ (Actor.has_payroll_access)."""
+    actor = await get_current_actor(request, credentials, db)
+    if not actor.has_payroll_access:
+        raise AppError(403, "PAYROLL_PERMISSION_REQUIRED", "Nur mit Berechtigung „Vergütung & Lohn-Export“.")
     return actor
 
 

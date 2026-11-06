@@ -9,6 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, HrRole, HrUser, Location
+from absence_helpers import require_vacation_approval
 from app.services.auth_service import hash_password
 from app.services.period_service import build_month_report
 from app.services.settings_service import get_or_create_settings
@@ -174,7 +175,7 @@ async def test_half_days_cannot_be_combined_with_full_days_or_a_third_half(clien
 async def test_rejected_half_day_does_not_block_another(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, admin, me = await _setup(db_session, client)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
     first = await _absence(client, me, employee.id, MONDAY)
     second = await _absence(client, me, employee.id, MONDAY)

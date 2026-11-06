@@ -16,7 +16,8 @@ from app.schemas.break_rule import (
     window_length,
 )
 from app.services.period_service import ensure_tenant_open_from
-from app.services.timesheet_service import invalidate_tenant_balances
+from app.services.settings_service import get_or_create_settings
+from app.services.timesheet_service import invalidate_tenant_balances, staffel_covers_law
 
 router = APIRouter(tags=["break_rules"])
 
@@ -42,15 +43,33 @@ async def _ensure_no_conflict(
     )
     if exclude_id is not None:
         stmt = stmt.where(BreakRule.id != exclude_id)
+    def family(kind: BreakRuleKind | None) -> str:
+        return "window" if kind == BreakRuleKind.FIXED_WINDOW else "staffel"
+
     kind = rule.kind or BreakRuleKind.LEGAL
     for other in (await db.execute(stmt)).scalars().all():
-        if (other.kind or BreakRuleKind.LEGAL) != kind:
+        if family(other.kind) != family(kind):
             continue
         if kind == BreakRuleKind.FIXED_WINDOW:
             if other.start_time < rule.end_time and rule.start_time < other.end_time:
                 raise AppError(409, "WINDOW_OVERLAP", "Diese Pausenzeit überschneidet sich mit einer anderen.")
         elif other.min_work_minutes == rule.min_work_minutes:
             raise AppError(409, "THRESHOLD_TAKEN", "Für diese Arbeitszeitschwelle gibt es bereits eine Regel.")
+
+
+async def _ensure_legal_minimum(
+    db: AsyncSession, tenant_id: int, effective: date, rule_id: int, replacement: list[tuple[int, int]]
+) -> None:
+    """Mit "Gesetzliche Mindestpause einhalten" darf die Staffel nach der Änderung nicht unter § 4
+    ArbZG liegen."""
+    settings_row = await get_or_create_settings(db, tenant_id)
+    if settings_row.legal_break_minimum and not await staffel_covers_law(db, tenant_id, effective, rule_id, replacement):
+        raise AppError(
+            409,
+            "STAFFEL_BELOW_LAW",
+            "So läge die Pausenstaffel unter der gesetzlichen Mindestpause (§ 4 ArbZG: ab 6 Std. 30 Min., ab 9 Std. "
+            "45 Min.). Abweichungen nur mit Tarifvertrag – dann zuerst „Gesetzliche Mindestpause einhalten“ ausschalten.",
+        )
 
 
 @router.get("/break-rules", response_model=list[BreakRuleResponse])
@@ -123,6 +142,8 @@ async def update_break_rule(
         changed.min_work_minutes = 0
         changed.deduct_minutes = window_length(changed.start_time, changed.end_time)
 
+    if changed.kind != BreakRuleKind.FIXED_WINDOW:
+        await _ensure_legal_minimum(db, actor.tenant_id, effective, rule.id, [(changed.min_work_minutes, changed.deduct_minutes)])
     if rule.valid_from >= effective:
         # Regel wirkt noch nicht bzw. erst ab heute: direkt ändern.
         await _ensure_no_conflict(db, actor.tenant_id, changed, rule.valid_from, exclude_id=rule.id)
@@ -154,6 +175,8 @@ async def delete_break_rule(
     rule = await _get_rule(db, rule_id, actor.tenant_id)
     effective = max(valid_from or date.today(), rule.valid_from)
     await ensure_tenant_open_from(db, actor.tenant_id, effective)
+    if rule.kind != BreakRuleKind.FIXED_WINDOW:
+        await _ensure_legal_minimum(db, actor.tenant_id, effective, rule.id, [])
     if rule.valid_from >= effective:
         await db.delete(rule)
     else:

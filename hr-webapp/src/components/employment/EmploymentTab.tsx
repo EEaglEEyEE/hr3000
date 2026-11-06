@@ -11,7 +11,7 @@ import {
   type Compensation,
   type Contract,
 } from '../../api/queries/employment'
-import { formatDate, todayIsoDate } from '../../lib/format'
+import { formatDate, formatDays, todayIsoDate } from '../../lib/format'
 import { CONTRACT_TYPE_LABELS, PAY_TYPE_LABELS } from '../../lib/labels'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
@@ -80,6 +80,7 @@ function ContractSection({ employeeId }: { employeeId: number }) {
             <TableHead>Probezeit bis</TableHead>
             <TableHead>Befristet bis</TableHead>
             <TableHead>Kündigungsfrist</TableHead>
+            <TableHead>Jahresurlaub</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -94,6 +95,11 @@ function ContractSection({ employeeId }: { employeeId: number }) {
               <TableCell>{contract.fixed_term_end ? formatDate(contract.fixed_term_end) : '–'}</TableCell>
               <TableCell>{contract.notice_period ?? '–'}</TableCell>
               <TableCell>
+                {contract.annual_vacation_days !== null && contract.annual_vacation_days !== undefined
+                  ? `${formatDays(contract.annual_vacation_days)} Tage`
+                  : 'Standard'}
+              </TableCell>
+              <TableCell>
                 <Button variant="ghost" size="icon" onClick={() => void handleDelete(contract)}>
                   <Trash2 className="h-4 w-4 text-red-600" />
                 </Button>
@@ -102,7 +108,7 @@ function ContractSection({ employeeId }: { employeeId: number }) {
           ))}
           {contractsQuery.data?.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-slate-500">
+              <TableCell colSpan={9} className="text-center text-slate-500">
                 Noch keine Vertragsdaten hinterlegt.
               </TableCell>
             </TableRow>
@@ -130,6 +136,7 @@ function ContractDialog({
   const [probationEnd, setProbationEnd] = useState('')
   const [fixedTermEnd, setFixedTermEnd] = useState('')
   const [noticePeriod, setNoticePeriod] = useState('')
+  const [annualVacation, setAnnualVacation] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -143,6 +150,7 @@ function ContractDialog({
         probation_end: probationEnd || null,
         fixed_term_end: contractType === 'FIXED_TERM' ? fixedTermEnd || null : null,
         notice_period: noticePeriod.trim() || null,
+        annual_vacation_days: annualVacation.trim() === '' ? null : Number(annualVacation),
       })
       onOpenChange(false)
     } catch (err) {
@@ -201,6 +209,22 @@ function ContractDialog({
             <Label htmlFor="notice_period">Kündigungsfrist</Label>
             <Input id="notice_period" maxLength={100} placeholder="z. B. 4 Wochen zum Monatsende" value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)} />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="annual_vacation_days">Jahresurlaub (Tage, 5-Tage-Woche)</Label>
+            <Input
+              id="annual_vacation_days"
+              type="number"
+              min={0}
+              max={365}
+              step={0.5}
+              placeholder="leer = Standard aus den Einstellungen"
+              value={annualVacation}
+              onChange={(e) => setAnnualVacation(e.target.value)}
+            />
+            <p className="text-xs text-slate-500">
+              Daraus wird der Urlaubsanspruch je Jahr berechnet (Teilzeit und Ein-/Austritt je nach Einstellung).
+            </p>
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -239,7 +263,7 @@ function CompensationSection({ employeeId }: { employeeId: number }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Vergütung</h2>
-          <p className="text-sm text-slate-500">Nur für Administratoren sichtbar; jeder Abruf wird protokolliert.</p>
+          <p className="text-sm text-slate-500">Nur mit „Vergütung &amp; Lohn-Export“ sichtbar; jeder Abruf wird protokolliert.</p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>
           <Plus className="h-4 w-4" />

@@ -93,15 +93,16 @@ async def work_intervals(db: AsyncSession, employee: Employee, work_date: date, 
             pieces.append((cursor, end))
 
     gross = sum((end - start).total_seconds() for start, end in shifts) / 60
-    break_minutes = sum((end - start).total_seconds() for start, end in breaks) / 60
+    punched = [(end - start).total_seconds() / 60 for start, end in breaks]
     # Unterbrechungen zwischen mehreren Kommen/Gehen zählen als Pause (ab 15 Min., wie timesheet_service).
-    break_minutes += sum(
+    gaps = sum(
         gap
         for gap in (
             (shifts[i + 1][0] - shifts[i][1]).total_seconds() / 60 for i in range(len(shifts) - 1)
         )
         if gap >= 15
     )
+    window_minutes = 0.0
     policy = await break_policy(db, employee, work_date)
     # Feste Pausenzeiten an ihrer Uhrzeit herausschneiden (zählen als Pause).
     for w_start, w_end in policy.local_windows(work_date):
@@ -110,13 +111,14 @@ async def work_intervals(db: AsyncSession, employee: Employee, work_date: date, 
             if end <= w_start or start >= w_end:
                 cut.append((start, end))
                 continue
-            break_minutes += (min(end, w_end) - max(start, w_start)).total_seconds() / 60
+            window_minutes += (min(end, w_end) - max(start, w_start)).total_seconds() / 60
             if start < w_start:
                 cut.append((start, w_start))
             if end > w_end:
                 cut.append((w_end, end))
         pieces = cut
-    shortfall = max(policy.required_minutes(gross) - break_minutes, 0.0)
+    # Derselbe Fehlbetrag wie in der Tagesberechnung (timesheet_service.BreakPolicy.shortfall).
+    shortfall = policy.shortfall(gross, punched, gaps, window_minutes)
     while shortfall > 0 and pieces:
         start, end = pieces[-1]
         length = (end - start).total_seconds() / 60
@@ -208,7 +210,8 @@ async def compute_surcharges(
     date_to: date,
     rules: list[SurchargeRule] | None = None,
 ) -> list[SurchargeTotal]:
-    """Zuschlagsminuten je aktiver Regel über den Zeitraum (nur tatsächlich gearbeitete Zeit)."""
+    """Zuschlagsminuten je aktiver Regel-Fassung über den Zeitraum (nur tatsächlich gearbeitete Zeit);
+    je Tag zählen nur die an diesem Tag gültigen Fassungen."""
     rules = await active_rules(db, employee.tenant_id) if rules is None else rules
     if not rules:
         return []
@@ -219,17 +222,31 @@ async def compute_surcharges(
     date_to = min(date_to, today_in(tz))  # nur bis heute
     current = date_from
     while current <= date_to:
-        intervals = await work_intervals(db, employee, current, tz)
+        day_rules = [r for r in rules if r.valid_on(current)]
+        intervals = await work_intervals(db, employee, current, tz) if day_rules else []
         if intervals:
             holidays = {d for d in (current, current + _ONE_DAY) if await _is_holiday(db, employee, d)}
-            for rule_id, secs in classify_intervals(intervals, rules, current, holidays, tz).items():
+            for rule_id, secs in classify_intervals(intervals, day_rules, current, holidays, tz).items():
                 seconds[rule_id] += secs
-        if overtime_rules:
+        day_overtime = [r for r in overtime_rules if r.valid_on(current)]
+        if day_overtime:
             calc = await calculate_day(db, employee, current, tz)
             if calc.status == SummaryStatus.COMPLETE and calc.target_minutes is not None:
                 extra = max((calc.actual_minutes or 0) - calc.target_minutes, 0) * 60
-                for rule in overtime_rules:
+                for rule in day_overtime:
                     seconds[rule.id] += extra
         current += _ONE_DAY
 
     return [SurchargeTotal(rule=r, minutes=round(seconds[r.id] / 60)) for r in rules]
+
+
+def merge_by_family(totals: list[SurchargeTotal]) -> list[tuple[SurchargeRule, int]]:
+    """Minuten je Regel über alle Fassungen (z.B. Spalten im Lohn-Export): Name der neuesten Fassung."""
+    merged: dict[int, tuple[SurchargeRule, int]] = {}
+    for total in totals:
+        current = merged.get(total.rule.family)
+        newest = total.rule
+        if current is not None and (current[0].valid_from or date.min) > (total.rule.valid_from or date.min):
+            newest = current[0]
+        merged[total.rule.family] = (newest, (current[1] if current else 0) + total.minutes)
+    return list(merged.values())

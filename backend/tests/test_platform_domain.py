@@ -234,3 +234,45 @@ def test_login_url_without_platform_domain_keeps_old_behaviour(monkeypatch):
 def test_login_url_without_subdomain_is_current_host(base_domain):
     # Zugangsdaten für Mitarbeiter innerhalb eines Mandanten: aktuelle Adresse bleibt.
     assert login_url(_request("lassner.hr.lassners.de", "https")) == "https://lassner.hr.lassners.de"
+
+
+# --- Testumgebung (scripts/staging.sh): Zertifikate für deren Hosts entscheidet das Staging-Backend ---
+
+
+async def test_staging_hosts_are_asked_at_the_staging_backend(client, db_session, base_domain, monkeypatch) -> None:
+    import types
+
+    import httpx
+
+    import app.api.tls as tls_module
+
+    monkeypatch.setattr(settings, "staging_base_domain", "test.hr3000.de")
+    asked: list[str] = []
+    down = {"value": False}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc) -> None:
+            return None
+
+        async def get(self, url, params=None, **kwargs):
+            if down["value"]:
+                raise httpx.ConnectError("staging down")
+            asked.append(params["domain"])
+            return httpx.Response(200 if params["domain"] == "demo.test.hr3000.de" else 404)
+
+    monkeypatch.setattr(tls_module, "httpx", types.SimpleNamespace(AsyncClient=FakeClient, HTTPError=httpx.HTTPError))
+    assert await _ask(client, "demo.test.hr3000.de") == 200
+    assert await _ask(client, "kiosk.fremd.test.hr3000.de") == 404
+    assert asked == ["demo.test.hr3000.de", "kiosk.fremd.test.hr3000.de"]
+    down["value"] = True
+    assert await _ask(client, "demo.test.hr3000.de") == 404  # Testumgebung aus -> kein Zertifikat
+    monkeypatch.setattr(settings, "staging_base_domain", None)
+    down["value"] = False
+    assert await _ask(client, "demo.test.hr3000.de") == 404
+    assert asked == ["demo.test.hr3000.de", "kiosk.fremd.test.hr3000.de"]  # ohne Testumgebung nicht gefragt

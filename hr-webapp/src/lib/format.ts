@@ -78,6 +78,12 @@ export function currentYearMonth(): string {
   return todayIsoDate().slice(0, 7)
 }
 
+/** Vormonat als "YYYY-MM" – Standard für Abrechnungen (der laufende Monat ist noch nicht fertig). */
+export function previousYearMonth(): string {
+  const [year, month] = currentYearMonth().split('-').map(Number)
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`
+}
+
 /** "YYYY-MM" (Wert von <input type="month">) -> erster/letzter Kalendertag
  * dieses Monats, für Zeitraum-Filter wie den Lohn-Export. */
 export function monthRange(yearMonth: string): { from: string; to: string } {

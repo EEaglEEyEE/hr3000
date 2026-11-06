@@ -51,11 +51,11 @@ export function usePeriodOverviewQuery(year: number, month: number) {
 export function useSubmitPeriodMutation() {
   const invalidate = useInvalidatePeriods()
   return useMutation({
-    mutationFn: async (input: PeriodRef & { ignoreOpenDays?: boolean }) =>
+    mutationFn: async (input: PeriodRef & { ignoreOpenDays?: boolean; ignoreOpenRequests?: boolean }) =>
       unwrap(
         await apiClient.POST('/employees/{employee_id}/period-closures/{year}/{month}/submit', {
           params: pathOf(input),
-          body: { ignore_open_days: input.ignoreOpenDays ?? false },
+          body: { ignore_open_days: input.ignoreOpenDays ?? false, ignore_open_requests: input.ignoreOpenRequests ?? false },
         }),
       ),
     onSuccess: invalidate,
@@ -68,7 +68,7 @@ export function useSubmitAllPeriodsMutation() {
     mutationFn: async (input: { year: number; month: number; ignoreOpenDays?: boolean }) =>
       unwrap(
         await apiClient.POST('/period-closures/submit-all', {
-          body: { year: input.year, month: input.month, ignore_open_days: input.ignoreOpenDays ?? false },
+          body: { year: input.year, month: input.month, ignore_open_days: input.ignoreOpenDays ?? false, ignore_open_requests: false },
         }),
       ),
     onSuccess: invalidate,
@@ -78,11 +78,11 @@ export function useSubmitAllPeriodsMutation() {
 export function useClosePeriodMutation() {
   const invalidate = useInvalidatePeriods()
   return useMutation({
-    mutationFn: async (input: PeriodRef & { withoutConfirmation?: boolean }) =>
+    mutationFn: async (input: PeriodRef) =>
       unwrap(
         await apiClient.POST('/employees/{employee_id}/period-closures/{year}/{month}/close', {
           params: pathOf(input),
-          body: { without_confirmation: input.withoutConfirmation ?? false },
+          body: { without_confirmation: true },
         }),
       ),
     onSuccess: invalidate,

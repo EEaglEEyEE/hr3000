@@ -151,8 +151,8 @@ function HrTodo({ requestsEnabled }: { requestsEnabled: boolean }) {
   const capsExceeded = (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length
   const items = [
     { to: '/zu-klaeren', label: 'Zu klären', count: openDays + capsExceeded + (isFullHr ? corrections : 0) },
-    { to: '/urlaubsantraege', label: 'Urlaubsanträge', count: pendingAbsences },
-  ].filter((item) => item.to !== '/urlaubsantraege' || requestsEnabled || item.count > 0)
+    { to: '/zu-klaeren/urlaubsantraege', label: 'Urlaubsanträge', count: pendingAbsences },
+  ].filter((item) => item.label !== 'Urlaubsanträge' || requestsEnabled || item.count > 0)
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {items.map((item) => (

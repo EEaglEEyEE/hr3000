@@ -2,6 +2,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, HrRole, HrUser, Location, SupervisorTeamAssignment, Team
+from absence_helpers import require_vacation_approval
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 
@@ -61,12 +62,12 @@ async def _hr_token(client: AsyncClient, email: str) -> str:
     return response.json()["access_token"]
 
 
-async def _request_pending_vacation(client: AsyncClient, employee_id: int) -> None:
+async def _request_pending_vacation(client: AsyncClient, employee_id: int, day: str = "2026-08-10") -> None:
     token = await _employee_token(client)
     await client.post(
         "/absences",
         headers={"Authorization": f"Bearer {token}"},
-        json={"employee_id": employee_id, "type": "VACATION", "date_from": "2026-08-10", "date_to": "2026-08-10"},
+        json={"employee_id": employee_id, "type": "VACATION", "date_from": day, "date_to": day},
     )
 
 
@@ -83,7 +84,7 @@ async def test_absence_request_notifies_teams_supervisor(
     db_session.add(SupervisorTeamAssignment(team_id=team.id, hr_user_id=supervisor.id))
     employee = await _create_self_service_employee(db_session, location, team_id=team.id)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     await _request_pending_vacation(client, employee.id)
@@ -105,7 +106,7 @@ async def test_absence_request_falls_back_to_admin_without_team(
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     await _request_pending_vacation(client, employee.id)
@@ -124,7 +125,7 @@ async def test_absence_decision_notifies_requesting_employee(
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     employee_token = await _employee_token(client)
@@ -154,7 +155,7 @@ async def test_notifications_are_scoped_to_recipient(client: AsyncClient, db_ses
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     await _request_pending_vacation(client, employee.id)
@@ -169,11 +170,11 @@ async def test_mark_notification_read_and_read_all(client: AsyncClient, db_sessi
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     await _request_pending_vacation(client, employee.id)
-    await _request_pending_vacation(client, employee.id)
+    await _request_pending_vacation(client, employee.id, "2026-08-11")  # sich überschneidende Anträge sind nicht erlaubt
 
     admin_token = await _hr_token(client, "admin@example.com")
     list_response = await client.get("/notifications", headers={"Authorization": f"Bearer {admin_token}"})
@@ -202,7 +203,7 @@ async def test_cannot_mark_other_recipients_notification_as_read(
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     await _request_pending_vacation(client, employee.id)

@@ -37,9 +37,10 @@ export function ShiftTemplatesPage() {
       </div>
 
       <p className="text-sm text-slate-500">
-        Wiederverwendbare Schichten (z.B. „Frühschicht“), die Mitarbeitern als Standard-Schicht oder
-        als Ausnahme für einen einzelnen Tag zugewiesen werden (siehe Tab „Schichtplanung“ am
-        Mitarbeiter).
+        Wiederverwendbare Schichten (z.B. „Frühschicht“) mit Uhrzeiten: im Arbeitszeitmodell eines
+        Mitarbeiters als feste Uhrzeiten (Reiter „Arbeitszeit“) oder als Schicht an einzelnen Tagen
+        (Schichtplan-Kalender bzw. Reiter „Arbeitszeit“ → „Schichtplanung“). Das Soll pro Schichttag gilt nur an geplanten
+        Schichttagen.
       </p>
 
       {templatesQuery.isLoading && <p className="text-slate-500">Lädt…</p>}

@@ -34,3 +34,6 @@ class EffectiveShiftDayResponse(BaseModel):
     from_entry: bool
     shift_template_id: int | None
     target_minutes: int | None
+    # Arbeitszeitmodell ohne Tagessoll: flexibel (Wochensoll) bzw. nach Aufwand (ohne Soll)
+    flexible: bool = False
+    on_demand: bool = False

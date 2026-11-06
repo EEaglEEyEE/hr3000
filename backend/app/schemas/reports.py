@@ -40,7 +40,8 @@ class AbsenceStatsResponse(BaseModel):
     employees: list[AbsenceStatsEmployee]
     active_employee_count: int
     # Krankenquote = Krankheitstage / (aktive Mitarbeiter x Arbeitstage bis heute/Jahresende);
-    # Näherung (Arbeitstage = Mo–Sa ohne Feiertage), None ohne Mitarbeiter/Arbeitstage.
+    # Näherung (Arbeitstage laut Arbeitszeitmodell, ohne Modell Mo–Fr, jeweils ohne Feiertage),
+    # None ohne Mitarbeiter/Arbeitstage.
     sick_rate_percent: float | None
 
 
@@ -76,6 +77,8 @@ class LaborCostRow(EmployeeRef):
     actual_minutes: int
     base_cost: float | None
     surcharge_cost: float | None
+    # Zulagen und Einmalzahlungen im Zeitraum (wie im Lohn-Export eines Admins)
+    allowance_cost: float = 0.0
     total_cost: float | None
     note: str | None = None
 

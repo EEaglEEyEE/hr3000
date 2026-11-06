@@ -17,7 +17,7 @@ export function PlanNotice() {
   )
 }
 
-/** Tarif-Karte für Einstellungen → Allgemein. */
+/** Tarif-Karte für Einstellungen → „Tarif & Konto“. */
 export function PlanCard() {
   const plan = usePlanQuery().data
   if (!plan) return null

@@ -226,6 +226,8 @@ def _issue_employee_token_pair(employee: Employee) -> TokenResponse:
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
         extra_claims={
             "hr_role": employee.hr_role.value if employee.hr_role else None,
+            # Berechtigung „Vergütung & Lohn-Export“ (nur Anzeige; geprüft wird im Backend)
+            "payroll": employee.hr_role == HrRole.ADMIN or (employee.hr_role == HrRole.HR and employee.hr_payroll_access),
             "pwv": password_fingerprint(employee.password_hash),
         },
     )
@@ -245,6 +247,7 @@ def _issue_token_pair(user: HrUser) -> TokenResponse:
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
         extra_claims={
             "role": user.role.value,
+            "payroll": user.role == HrRole.ADMIN or (user.role == HrRole.HR and user.payroll_access),
             "tenant_id": user.tenant_id,
             "pwv": password_fingerprint(user.password_hash),
         },

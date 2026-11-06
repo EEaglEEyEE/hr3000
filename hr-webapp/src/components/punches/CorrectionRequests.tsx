@@ -209,7 +209,7 @@ export function CorrectionRequestSelfCard() {
   )
 }
 
-/** Zu klären: offene Korrekturanträge übernehmen oder ablehnen (nur Admin/HR). */
+/** Zu klären → „Korrekturanträge“: offene Korrekturanträge übernehmen oder ablehnen (nur Admin/HR). */
 export function PendingCorrectionRequests() {
   const navigate = useNavigate()
   const requestsQuery = useCorrectionRequestsQuery('PENDING')
@@ -227,11 +227,14 @@ export function PendingCorrectionRequests() {
   }
 
   const requests = requestsQuery.data ?? []
-  if (requests.length === 0) return null
+  if (requestsQuery.isLoading) return <p className="text-slate-500">Lädt…</p>
+  if (requests.length === 0) return <p className="text-sm text-slate-500">Keine offenen Korrekturanträge.</p>
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50/50 p-4">
-      <p className="text-sm font-medium text-slate-900">Korrekturanträge ({requests.length})</p>
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-slate-500">
+        Von Mitarbeitern beantragte Korrekturen ihrer Stempelungen. „Übernehmen“ trägt sie ein.
+      </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Table>
         <TableHeader>

@@ -9,8 +9,8 @@ import { apiClient } from '../api/client'
 import { AuthProvider } from '../auth/AuthContext'
 
 type Login =
-  | { kind: 'hr'; role: 'SUPER_ADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR' }
-  | { kind: 'employee'; employeeId: number; hrRole?: 'ADMIN' | 'HR' | 'SUPERVISOR' }
+  | { kind: 'hr'; role: 'SUPER_ADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean }
+  | { kind: 'employee'; employeeId: number; hrRole?: 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean }
 
 function base64Url(value: object): string {
   return btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -24,8 +24,13 @@ export function fakeJwt(payload: Record<string, unknown>): string {
 export function loginAs(login: Login): void {
   const payload =
     login.kind === 'hr'
-      ? { sub: '1', role: login.role, type: 'hr' }
-      : { sub: String(login.employeeId), type: 'employee', ...(login.hrRole ? { hr_role: login.hrRole } : {}) }
+      ? { sub: '1', role: login.role, type: 'hr', ...(login.payroll ? { payroll: true } : {}) }
+      : {
+          sub: String(login.employeeId),
+          type: 'employee',
+          ...(login.hrRole ? { hr_role: login.hrRole } : {}),
+          ...(login.payroll ? { payroll: true } : {}),
+        }
   localStorage.setItem('hr3000.access_token', fakeJwt(payload))
   localStorage.setItem('hr3000.refresh_token', fakeJwt(payload))
   localStorage.setItem('hr3000.principal_type', login.kind)

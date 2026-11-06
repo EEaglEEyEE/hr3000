@@ -18,14 +18,12 @@ class AppSettings(Base):
     require_pin_for_punch: Mapped[bool] = mapped_column(Boolean, default=False)
     # Siehe app/api/absences.py create_absence – ohne diese Einstellung wird
     # jede Absenz weiterhin direkt final (APPROVED) angelegt.
-    vacation_approval_required: Mapped[bool] = mapped_column(Boolean, default=False)
     # Bundesland-Kürzel (z.B. "BY"), siehe app/services/holiday_calendar.py –
     # Vorbelegung für den Feiertags-Import, falls dort kein Bundesland angegeben wird.
     default_bundesland: Mapped[str | None] = mapped_column(String(2), nullable=True)
-    # Vorbelegung für LeaveEntitlement.entitled_days beim ersten Zugriff auf
-    # einen neuen Mitarbeiter/Jahr, siehe app/services/leave_service.py
-    # get_or_create_entitlement – 0 bedeutet "kein automatischer Standard",
-    # entspricht dem bisherigen (impliziten) Verhalten.
+    # Jahresurlaub (5-Tage-Woche) für alle, bei denen im Vertrag keiner steht; daraus wird der
+    # Anspruch je Jahr berechnet (leave_service.computed_entitlement). 0 = nichts berechnen,
+    # HR trägt den Anspruch je Jahr ein.
     default_annual_vacation_days: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     # Blendet Geburtstage im Mitarbeiter-Kalender ein (siehe
     # app/api/timesheets.py get_timesheet, TimesheetDay.is_birthday) – pro
@@ -53,6 +51,9 @@ class AppSettings(Base):
     default_day_minutes: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # --- Regeln ---
     prorate_part_time_vacation: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Teilurlaub bei Ein-/Austritt im Jahr berechnen (§ 5 BUrlG). Neue Mandanten an, bestehende aus
+    # (Migration 0098) – dort galt bisher immer der volle Jahresurlaub.
+    prorate_partial_year_vacation: Mapped[bool] = mapped_column(Boolean, default=True)
     # Resturlaub automatisch ins Folgejahr übertragen (sonst trägt HR den Übertrag ein).
     vacation_carry_over_auto: Mapped[bool] = mapped_column(Boolean, default=False)
     # Höchstens so viele Tage übertragen (NULL = unbegrenzt).
@@ -60,7 +61,8 @@ class AppSettings(Base):
     # Übertragener Urlaub verfällt nach diesem Tag des Folgejahres ("MM-TT", z.B. "03-31"; NULL = kein Verfall).
     vacation_carry_over_expiry: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Sonderfälle, die NICHT unter "Zu klären" erscheinen sollen (kommagetrennte DayFlags)
-    disabled_day_flags: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Neue Firmen: Hinweise "zu spät"/"zu früh" erst nach bewusstem Einschalten (Kernarbeitszeit).
+    disabled_day_flags: Mapped[str | None] = mapped_column(String(200), nullable=True, default="EARLY_LEAVE,LATE_ARRIVAL")
     # Wie lange nach dem "Kommen" ein "Gehen" am Folgetag noch zur Schicht gehört (Nachtschicht)
     max_shift_span_hours: Mapped[int] = mapped_column(Integer, default=16)
     # Arbeitstage mit Soll, an denen gar nicht gestempelt wurde, als "Stempelung fehlt" melden
@@ -70,8 +72,7 @@ class AppSettings(Base):
     # --- DATEV-LODAS-Export (siehe app/services/datev_export_service.py) ---
     datev_consultant_number: Mapped[str | None] = mapped_column(String(7), nullable=True)  # Beraternummer
     datev_client_number: Mapped[str | None] = mapped_column(String(5), nullable=True)  # Mandantennummer
-    # Lohnart für die Ist-Stunden von Mitarbeitern mit Stundenlohn; leer = keine Stunden übertragen
-    datev_hours_wage_type: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    # Lohnarten je Zeitart stehen in wage_type_mappings (Seite „Lohnarten“)
     # --- Kernarbeitszeit / Gleitzeit (alles optional, Standard aus) ---
     # Kernzeit, in der Mitarbeiter anwesend sein sollen (z.B. 09:00–15:00); NULL = keine Kernzeit.
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
@@ -79,9 +80,20 @@ class AppSettings(Base):
     # Kernzeit je Wochentag (z.B. freitags kürzer); NULL = jeden Tag core_time_start/-end.
     # Format siehe app/schemas/core_time.py.
     core_time_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # Zu spät kommen / zu früh gehen (gegenüber Schicht bzw. Kernzeit) unter "Zu klären" melden
-    punctuality_check: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Zu spät/zu früh (gegenüber Schicht bzw. Kernzeit) melden: über die Hinweise LATE_ARRIVAL /
+    # EARLY_LEAVE in disabled_day_flags. Toleranz in Minuten.
     late_tolerance_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    # Pünktlichkeits-Hinweise (zu spät, zu früh, außerhalb Gleitzeit-Rahmen) erst ab diesem Tag –
+    # gesetzt bei jeder Änderung der Regeln, damit nicht die ganze Vergangenheit "zu klären" ist.
+    punctuality_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # --- Pausen (Pausenregeln) ---
+    # Pausenstaffel darf die gesetzliche Mindestpause (§ 4 ArbZG) nicht unterschreiten (Prüfung
+    # beim Ändern der Staffel). Aus nur bei abweichender Regelung, z.B. Tarifvertrag nach § 7 ArbZG.
+    legal_break_minimum: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Pausen genau nach § 4 rechnen (Schwelle nach Arbeitszeit ohne Pausen, Pausen erst ab 15 Min.)
+    # bzw. Pausenabzug höchstens bis zur Schwelle – jeweils ab diesem Tag, leer = aus.
+    break_precise_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    break_capped_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Gleitzeit-Rahmen (frühestes Kommen / spätestes Gehen); NULL = kein Rahmen
     flex_frame_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     flex_frame_end: Mapped[time | None] = mapped_column(Time, nullable=True)
@@ -105,6 +117,9 @@ class AppSettings(Base):
     kiosk_errand_buttons: Mapped[bool] = mapped_column(Boolean, default=False)
     # Mitarbeiter dürfen selbst Abwesenheiten/Urlaub beantragen (aus = nur HR/Teamleader tragen ein)
     absence_requests_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Vier-Augen-Prinzip: eigene Abwesenheiten werden nie selbst genehmigt (auch nicht von HR,
+    # Admin oder Teamleader) – sie gehen als Antrag an jemand anderen. Aus = bisheriges Verhalten.
+    absence_four_eyes: Mapped[bool] = mapped_column(Boolean, default=False)
     # Mitarbeiter dürfen über den Web-Login (Startseite) selbst stempeln – Standard aus.
     portal_punching_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Begrüßungs-/Hinweistext über den Kacheln

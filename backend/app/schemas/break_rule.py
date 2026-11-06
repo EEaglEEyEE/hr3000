@@ -37,6 +37,8 @@ class BreakRuleCreateRequest(BaseModel):
             self.min_work_minutes = 0
             self.deduct_minutes = window_length(self.start_time, self.end_time)
         else:
+            # "Feste Minuten" ist eine Zeile der Pausenstaffel (rechnerisch identisch).
+            self.kind = BreakRuleKind.LEGAL
             if self.min_work_minutes is None or self.deduct_minutes is None:
                 raise ValueError("Bitte Arbeitsminuten und Pausenminuten angeben.")
             self.start_time = self.end_time = None

@@ -17,7 +17,6 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import AuditAction, Employee, EmployeeLocationPeriod, HrRole, Location, Team
 from app.schemas.work_time_model import WorkTimeModelInput, WorkTimeModelSetRequest
-from app.schemas.core_time import serialize_core_time_days
 from app.schemas.employee import (
     BulkImportResult,
     BulkImportRowError,
@@ -108,11 +107,12 @@ async def list_location_employees(
         # Die Liste enthält NFC-UIDs und Anwesenheitsstatus – nichts für Kollegen im Self-Service.
         raise AppError(403, "FORBIDDEN", "Keine Berechtigung.")
 
-    result = await db.execute(
-        select(Employee)
-        .where(Employee.location_id == location_id, Employee.active.is_(True))
-        .order_by(Employee.last_name.asc(), Employee.first_name.asc())
-    )
+    stmt = select(Employee).where(Employee.location_id == location_id, Employee.active.is_(True))
+    # Teamleader sehen nur ihre Teams und keine Chip-Nummern (die braucht nur das Tablet bzw. HR).
+    limited = actor.device is None and actor.is_supervisor_level
+    if limited:
+        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+    result = await db.execute(stmt.order_by(Employee.last_name.asc(), Employee.first_name.asc()))
     employees = result.scalars().all()
 
     responses = []
@@ -127,7 +127,7 @@ async def list_location_employees(
                 last_name=employee.last_name,
                 employee_number=employee.employee_number,
                 has_pin=employee.has_pin,
-                nfc_uid=employee.nfc_uid,
+                nfc_uid=None if limited else employee.nfc_uid,
                 today_status=calculation.status,
                 today_flags=calculation.flags,
             )
@@ -192,10 +192,6 @@ async def create_employee(
             defaults.default_show_birthday if payload.show_birthday_in_calendar is None else payload.show_birthday_in_calendar
         ),
         team_id=payload.team_id,
-        core_time_mode=payload.core_time_mode,
-        core_time_start=payload.core_time_start if payload.core_time_mode == "CUSTOM" else None,
-        core_time_end=payload.core_time_end if payload.core_time_mode == "CUSTOM" else None,
-        core_time_days=serialize_core_time_days(payload.core_time_days) if payload.core_time_mode == "CUSTOM" else None,
     )
     db.add(employee)
     try:
@@ -219,7 +215,7 @@ async def create_employee(
     await db.commit()
 
     model = payload.work_time_model
-    if model is None and defaults.default_day_minutes:
+    if model is None and defaults.default_day_minutes and not payload.no_work_time_model:
         # Standard-Arbeitszeitmodell des Mandanten (Einstellungen)
         model = WorkTimeModelInput(daily_hours=[int(m) / 60 for m in defaults.default_day_minutes.split(",")])
     if model is not None:
@@ -227,12 +223,7 @@ async def create_employee(
 
         await set_work_time_model(
             employee.id,
-            WorkTimeModelSetRequest(
-                **model.model_dump(
-                    include={"weekly_hours", "weekdays", "daily_hours", "flexible", "on_demand", "monthly_cap_hours"}
-                ),
-                valid_from=employee.hire_date or date.today(),
-            ),
+            WorkTimeModelSetRequest.from_input(model, employee.hire_date or date.today()),
             actor,
             db,
         )
@@ -381,7 +372,14 @@ async def update_employee_hr_role(
 
     old_role = employee.hr_role.value if employee.hr_role else "keine"
     new_role = payload.hr_role.value if payload.hr_role else "keine"
+    old_payroll = employee.hr_payroll_access
     employee.hr_role = payload.hr_role
+    if payload.payroll_access is not None:
+        employee.hr_payroll_access = payload.payroll_access
+    if employee.hr_role != HrRole.HR:
+        employee.hr_payroll_access = False  # Admins haben sie immer, Teamleader und Mitarbeiter nie
+    if employee.hr_payroll_access != old_payroll:
+        new_role += ", Vergütung & Lohn-Export " + ("an" if employee.hr_payroll_access else "aus")
 
     log_action(
         db,
@@ -544,9 +542,11 @@ async def update_employee(
     # Konten mit HR-Berechtigung sind Zugänge zur Verwaltung: Login, Passwort und
     # Aktiv-Status darf nur ein Admin ändern – sonst könnte ein HR-Nutzer per
     # Passwort-Änderung ein Admin-Konto übernehmen (siehe auch reset-password).
+    # Unverändert mitgeschickte Werte (der Dialog sendet die Login-E-Mail immer) zählen nicht.
+    email_changed = payload.login_email is not None and payload.login_email.lower() != (employee.login_email or "").lower()
     touches_access = (
         payload.password is not None
-        or payload.login_email is not None
+        or email_changed
         or (payload.active is not None and payload.active != employee.active)
     )
     if employee.hr_role is not None and touches_access and not actor.is_admin_level:
@@ -610,14 +610,7 @@ async def update_employee(
         employee.team_id = payload.team_id
     elif payload.clear_team_id:
         employee.team_id = None
-    if payload.core_time_mode is not None:
-        employee.core_time_mode = payload.core_time_mode
-        custom = payload.core_time_mode == "CUSTOM"
-        employee.core_time_start = payload.core_time_start if custom else None
-        employee.core_time_end = payload.core_time_end if custom else None
-        employee.core_time_days = serialize_core_time_days(payload.core_time_days) if custom else None
-    if (employee.hire_date, employee.termination_date) != balance_relevant or payload.core_time_mode is not None:
-        # Auch die Kernzeit wirkt auf den Tages-Cache ("Zu klären": zu spät/zu früh).
+    if (employee.hire_date, employee.termination_date) != balance_relevant:
         await invalidate_balance(db, employee.id, None)
 
     try:

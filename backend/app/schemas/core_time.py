@@ -1,9 +1,10 @@
 """Kernzeit je Wochentag: 7 Einträge (Mo..So), je Tag Beginn/Ende oder None (an diesem Tag keine
-Kernzeit). Gespeichert kompakt als Text in AppSettings.core_time_days bzw. Employee.core_time_days,
+Kernzeit). Gespeichert kompakt als Text in AppSettings.core_time_days bzw. in der Fassung der
+Arbeitszeit (EmployeeDefaultShift.core_time_days),
 z.B. "09:00-15:00,09:00-15:00,09:00-15:00,09:00-15:00,09:00-12:00,," (NULL = jeden Tag dieselbe
 Kernzeit aus core_time_start/-end)."""
 from datetime import time
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
@@ -48,3 +49,18 @@ def _from_storage(value: Any) -> Any:
 
 _SevenDays = Annotated[list[CoreTimeDay | None], Field(min_length=7, max_length=7)]
 CoreTimeDays = Annotated[_SevenDays | None, BeforeValidator(_from_storage)]
+
+
+# Kernzeit einer Fassung der Arbeitszeit: TENANT = wie in den Einstellungen, CUSTOM = eigene
+# (Beginn/Ende oder je Wochentag), NONE = keine Pünktlichkeitsprüfung (z.B. Außendienst).
+CoreTimeMode = Literal["TENANT", "CUSTOM", "NONE"]
+
+
+def check_core_time(mode: str | None, start: time | None, end: time | None, days: list | None = None) -> None:
+    if mode == "CUSTOM":
+        if days is not None:
+            return  # Kernzeit je Wochentag (je Tag geprüft, siehe CoreTimeDay)
+        if start is None or end is None:
+            raise ValueError("Eigene Kernzeit: bitte Beginn und Ende angeben.")
+        if start >= end:
+            raise ValueError("Eigene Kernzeit: der Beginn muss vor dem Ende liegen.")

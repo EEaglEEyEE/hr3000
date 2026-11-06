@@ -52,9 +52,15 @@ export function PeriodClosuresPage() {
     try {
       await submit.mutateAsync({ employeeId: row.employee_id, year, month })
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'OPEN_DAYS_PRESENT') {
-        if (window.confirm(`${err.message}\n\nTrotzdem vorlegen? Offene Tage werden im Nachweis rot markiert.`)) {
-          await run(() => submit.mutateAsync({ employeeId: row.employee_id, year, month, ignoreOpenDays: true }))
+      if (err instanceof ApiError && (err.code === 'OPEN_DAYS_PRESENT' || err.code === 'OPEN_REQUESTS_PRESENT')) {
+        const hint =
+          err.code === 'OPEN_DAYS_PRESENT'
+            ? 'Offene Tage werden im Nachweis rot markiert.'
+            : 'Die Anträge lassen sich danach erst nach „Zurückziehen“ entscheiden.'
+        if (window.confirm(`${err.message}\n\nTrotzdem vorlegen? ${hint}`)) {
+          await run(() =>
+            submit.mutateAsync({ employeeId: row.employee_id, year, month, ignoreOpenDays: true, ignoreOpenRequests: true }),
+          )
         }
       } else {
         setMessage(err instanceof ApiError ? err.message : 'Vorlegen fehlgeschlagen.')
@@ -98,8 +104,9 @@ export function PeriodClosuresPage() {
       </div>
       <p className="text-sm text-slate-500">
         Pro Mitarbeiter wird ein Monatsnachweis (PDF) erzeugt und in der Personalakte abgelegt. Der Mitarbeiter bestätigt
-        ihn oder widerspricht. Ab dem Vorlegen ist der Monat für Stempelungen, Abwesenheiten und Schichtplanung gesperrt; ein
-        Widerspruch oder „Zurückziehen“ öffnet ihn wieder.
+        ihn – damit ist der Monat abgeschlossen – oder widerspricht. Ohne Login wird direkt abgeschlossen. Ab dem Vorlegen
+        ist der Monat für Stempelungen, Abwesenheiten und Schichtplanung gesperrt; ein Widerspruch oder „Zurückziehen“ öffnet
+        ihn wieder. Offene Anträge im Monat werden vor dem Vorlegen gemeldet.
       </p>
       {message && <p className="text-sm text-red-600">{message}</p>}
       {skipped.length > 0 && (
@@ -178,7 +185,7 @@ export function PeriodClosuresPage() {
                       variant="outline"
                       onClick={() => {
                         if (window.confirm('Abschluss ohne Bestätigung des Mitarbeiters? Das wird im Audit-Log vermerkt.')) {
-                          void run(() => close.mutateAsync({ employeeId: row.employee_id, year, month, withoutConfirmation: true }))
+                          void run(() => close.mutateAsync({ employeeId: row.employee_id, year, month }))
                         }
                       }}
                     >
@@ -189,12 +196,7 @@ export function PeriodClosuresPage() {
                     </Button>
                   </>
                 )}
-                {row.status === 'CONFIRMED' && (
-                  <Button size="sm" onClick={() => void run(() => close.mutateAsync({ employeeId: row.employee_id, year, month }))}>
-                    Abschließen
-                  </Button>
-                )}
-                {(row.status === 'CONFIRMED' || row.status === 'CLOSED') && isAdmin && (
+                {row.status === 'CLOSED' && isAdmin && (
                   <Button
                     size="sm"
                     variant="ghost"

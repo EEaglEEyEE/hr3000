@@ -56,11 +56,11 @@ export function DeviceQrDialog({ device, onClose }: { device: Device | undefined
             <div className="h-64 w-64 animate-pulse rounded-md bg-slate-100" />
           )}
           <p className="text-center text-sm text-slate-600">
-            Mit der Kamera des Tablets scannen – der Kiosk öffnet sich und ist sofort eingerichtet. Oder in der
-            Kiosk-App „QR-Code scannen“ wählen.
+            Mit der Kamera des Tablets scannen – die Tablet-App öffnet sich und ist sofort eingerichtet. Oder in der
+            Tablet-App „QR-Code scannen“ wählen.
           </p>
           <div className="flex flex-col items-center gap-1 rounded-md bg-slate-50 px-4 py-3">
-            <span className="text-xs text-slate-500">Ohne Kamera: diesen Kopplungscode in der Kiosk-App eingeben</span>
+            <span className="text-xs text-slate-500">Ohne Kamera: diesen Kopplungscode in der Tablet-App eingeben</span>
             <span className="font-mono text-2xl font-semibold tracking-widest text-slate-900">
               {pairingCode?.code ?? (pairing.isError ? '–' : '····-····')}
             </span>

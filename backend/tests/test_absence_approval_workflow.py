@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee, HrRole, HrUser, Location, SupervisorTeamAssignment, Team
+from absence_helpers import require_vacation_approval
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 from app.services.timesheet_service import calculate_day, employee_timezone
@@ -68,7 +69,7 @@ async def test_self_service_request_is_pending_when_approval_required(
     location = await _create_location(db_session)
     employee = await _create_self_service_employee(db_session, location)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     token = await _employee_token(client)
@@ -113,7 +114,7 @@ async def test_pending_vacation_does_not_neutralize_timesheet_day(
     location = await _create_location(db_session)
     employee = await _create_self_service_employee(db_session, location)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     token = await _employee_token(client)
@@ -133,7 +134,7 @@ async def test_admin_can_decide_pending_absence(client: AsyncClient, db_session:
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     employee_token = await _employee_token(client)
@@ -184,7 +185,7 @@ async def test_supervisor_cannot_decide_absence_outside_own_team(
     await db_session.refresh(own_team)
     db_session.add(SupervisorTeamAssignment(team_id=own_team.id, hr_user_id=supervisor.id))
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     employee_token = await _employee_token(client)
@@ -211,7 +212,7 @@ async def test_pending_absence_does_not_count_against_leave_entitlement(
     employee = await _create_self_service_employee(db_session, location)
     await _create_admin_hr_user(db_session)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
-    settings_row.vacation_approval_required = True
+    await require_vacation_approval(db_session)
     await db_session.commit()
 
     employee_token = await _employee_token(client)

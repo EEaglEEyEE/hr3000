@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # Wildcard + On-Demand-TLS, Freigabe über app/api/tls.py). Leer = nur die fest
     # eingetragenen Hosts (HR_HOSTS/KIOSK_HOSTS).
     tenant_base_domain: str | None = None
+    # Testumgebung auf demselben Server (scripts/staging.sh): Hosts unter dieser Domain (z.B.
+    # "test.hr3000.de" -> demo.test.hr3000.de, kiosk.demo.test.hr3000.de) leitet Caddy an die
+    # Staging-Container weiter; über Zertifikate entscheidet das Staging-Backend (staging_tls_ask_url).
+    # Nur in der Produktions-.env setzen, leer = keine Testumgebung.
+    staging_base_domain: str | None = None
+    staging_tls_ask_url: str = "http://staging-backend:8000/internal/tls-allowed"
     # Selbstregistrierung von Firmen auf der Website (hr3000.de/registrieren, api/public.py).
     # Wirkt nur mit gesetzter Plattform-Domain. Grenzen gegen Missbrauch (u.a. damit Bots nicht
     # das Let's-Encrypt-Kontingent der Domain verbrauchen): je IP und plattformweit pro Tag.

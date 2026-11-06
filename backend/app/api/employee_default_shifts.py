@@ -59,6 +59,7 @@ async def list_default_shifts(
     "/employees/{employee_id}/default-shifts",
     response_model=EmployeeDefaultShiftResponse,
     status_code=201,
+    deprecated=True,
 )
 async def create_default_shift(
     employee_id: int,
@@ -66,13 +67,14 @@ async def create_default_shift(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> EmployeeDefaultShiftResponse:
-    """Effective-dated wie das frühere WorkTimeModel (siehe
-    app/api/work_time_models.py, git-Historie): ein neuer Default, der nach
-    dem Start des aktuell offenen Defaults beginnt, schließt diesen
-    automatisch zum Vortag ab. Zusätzlich: ArbZG-Ruhezeitprüfung über die
-    gesamte Laufzeit (siehe check_rest_period_for_default), da ein Default
-    im Gegensatz zu einem ShiftPlanEntry sofort und unbegrenzt in die
-    Zukunft wirkt."""
+    """Ältere Zuordnung "Standard-Schicht" (Soll und Pause aus der Schichtvorlage). Neu: PUT
+    /employees/{id}/work-time-model mit optionaler Schichtvorlage für die Uhrzeiten.
+
+    Effective-dated: ein neuer Default, der nach dem Start des aktuell offenen Defaults beginnt,
+    schließt diesen automatisch zum Vortag ab. Zusätzlich: ArbZG-Ruhezeitprüfung über die
+    gesamte Laufzeit (siehe check_rest_period_for_default), da ein Default im Gegensatz zu einem
+    ShiftPlanEntry sofort und unbegrenzt in die Zukunft wirkt. Die Kernzeit übernimmt er von der
+    bisher gültigen Fassung."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     template = await _get_template_in_tenant(db, payload.shift_template_id, actor.tenant_id)
     if payload.valid_to is not None and payload.valid_to < payload.valid_from:
@@ -84,6 +86,8 @@ async def create_default_shift(
     )
     existing = result.scalars().all()
     open_default = next((d for d in existing if d.valid_to is None), None)
+    before = sorted((d for d in existing if d.valid_from <= payload.valid_from), key=lambda d: d.valid_from)
+    inherit = before[-1] if before else None
 
     if open_default is not None and payload.valid_from > open_default.valid_from:
         open_default.valid_to = payload.valid_from - timedelta(days=1)
@@ -116,6 +120,10 @@ async def create_default_shift(
         flexible=payload.flexible,
         on_demand=payload.on_demand,
         monthly_cap_minutes=payload.monthly_cap_minutes if payload.on_demand else None,
+        core_time_mode=inherit.core_time_mode if inherit else None,
+        core_time_start=inherit.core_time_start if inherit else None,
+        core_time_end=inherit.core_time_end if inherit else None,
+        core_time_days=inherit.core_time_days if inherit else None,
     )
     db.add(default)
     await invalidate_balance(db, employee_id, payload.valid_from)
@@ -127,6 +135,7 @@ async def create_default_shift(
 @router.patch(
     "/employees/{employee_id}/default-shifts/{default_id}",
     response_model=EmployeeDefaultShiftResponse,
+    deprecated=True,
 )
 async def update_default_shift(
     employee_id: int,
@@ -154,11 +163,12 @@ async def update_default_shift(
     elif payload.clear_valid_to:
         default.valid_to = None
 
-    template = await db.get(ShiftTemplate, default.shift_template_id)
-    check_max_daily_working_time(template.start_time, template.end_time)
-    await check_rest_period_for_default(
-        db, employee_id, template, default.weekdays_mask, default.valid_from, default.valid_to
-    )
+    if default.shift_template_id is not None:
+        template = await db.get(ShiftTemplate, default.shift_template_id)
+        check_max_daily_working_time(template.start_time, template.end_time)
+        await check_rest_period_for_default(
+            db, employee_id, template, default.weekdays_mask, default.valid_from, default.valid_to
+        )
     # Auch der neue Zeitraum (z.B. verlängertes/geöffnetes Ende) darf keinen gesperrten Monat berühren.
     await _ensure_default_unlocked(db, employee_id, default.valid_from, default.valid_to)
     await invalidate_balance(db, employee_id, default.valid_from)
@@ -168,7 +178,7 @@ async def update_default_shift(
     return EmployeeDefaultShiftResponse.model_validate(default)
 
 
-@router.delete("/employees/{employee_id}/default-shifts/{default_id}", status_code=204)
+@router.delete("/employees/{employee_id}/default-shifts/{default_id}", status_code=204, deprecated=True)
 async def delete_default_shift(
     employee_id: int,
     default_id: int,

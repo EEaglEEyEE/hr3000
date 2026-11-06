@@ -78,8 +78,9 @@ async def test_datev_file_and_preview(client: AsyncClient, db_session: AsyncSess
     await client.patch(
         "/settings",
         headers=admin,
-        json={"datev_consultant_number": "1234567", "datev_client_number": "10001", "datev_hours_wage_type": "1000"},
+        json={"datev_consultant_number": "1234567", "datev_client_number": "10001"},
     )
+    assert (await client.put("/wage-types", headers=admin, json={"items": {"WORKED": "1000"}})).status_code == 200
     night = await client.post(
         "/surcharge-rules",
         headers=admin,
@@ -129,7 +130,7 @@ async def test_datev_file_and_preview(client: AsyncClient, db_session: AsyncSess
     assert preview.status_code == 200
     body = preview.json()
     assert body["lines"][0] == {
-        "personnel_number": "12", "name": "Hourly, Hanna", "wage_type": "1000", "key": "01", "value": 11.0, "label": "Ist-Stunden"
+        "personnel_number": "12", "name": "Hourly, Hanna", "wage_type": "1000", "key": "01", "value": 11.0, "label": "Gearbeitete Stunden"
     }
     warnings = "\n".join(body["warnings"])
     assert "Odd, Olga: Personalnummer „A-7“ ist nicht rein numerisch" in warnings
@@ -143,4 +144,55 @@ async def test_datev_hours_without_wage_type_warns(client: AsyncClient, db_sessi
     await _work(client, admin, hourly, "2026-08-10", "08:00", "12:00")
     body = (await client.get("/payroll-export/datev/preview", headers=admin, params=_params([hourly]))).json()
     assert body["lines"] == []
-    assert any("Keine Lohnart für Ist-Stunden" in w and "Hourly, Hanna" in w for w in body["warnings"])
+    assert any("Keine Lohnart für gearbeitete Stunden" in w and "Hourly, Hanna" in w for w in body["warnings"])
+
+
+async def test_datev_transfers_only_worked_hours(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Gutschriften (Urlaub, Feiertag …) sind keine gearbeiteten Stunden – sie stehen als Hinweis in
+    der Vorschau statt in der Datei. Ohne Vergütung gibt es einen Hinweis statt stillem Weglassen."""
+    (hourly, _, _), admin, _ = await _setup(db_session, client)
+    await client.patch(
+        "/settings", headers=admin, json={"datev_consultant_number": "1234567", "datev_client_number": "10001"}
+    )
+    assert (await client.put("/wage-types", headers=admin, json={"items": {"WORKED": "1000"}})).status_code == 200
+    r = await client.put(
+        f"/employees/{hourly.id}/work-time-model", headers=admin, json={"weekly_hours": 40, "weekdays": [0, 1, 2, 3, 4], "valid_from": "2026-08-01"}
+    )
+    assert r.status_code == 200, r.text
+    await _work(client, admin, hourly, "2026-08-03", "08:00", "12:00")
+    vacation = await client.post(
+        "/absences", headers=admin, json={"employee_id": hourly.id, "type": "VACATION", "date_from": "2026-08-04", "date_to": "2026-08-04"}
+    )
+    assert vacation.status_code == 201, vacation.text
+    no_pay = Employee(location_id=hourly.location_id, first_name="Nora", last_name="Nopay", employee_number="14", auto_break_enabled=False)
+    db_session.add(no_pay)
+    await db_session.commit()
+    await db_session.refresh(no_pay)
+    await _work(client, admin, no_pay, "2026-08-03", "08:00", "12:00")
+
+    body = (await client.get("/payroll-export/datev/preview", headers=admin, params=_params([hourly, no_pay]))).json()
+    hours = [line for line in body["lines"] if line["wage_type"] == "1000"]
+    assert [(line["personnel_number"], line["value"]) for line in hours] == [("12", 4.0)]  # nur gestempelt
+    warnings = "\n".join(body["warnings"])
+    assert "Hourly, Hanna: 8,00 Std. Urlaub ohne Lohnart nicht übertragen" in warnings
+    assert "Nopay, Nora: keine Vergütung hinterlegt" in warnings
+
+    # Mit Lohnart je Zeitart: Urlaub als eigene Stunden-Zeile, ausgezahlte Überstunden ebenso
+    r = await client.put("/wage-types", headers=admin, json={"items": {"VACATION": "1100", "OVERTIME_PAYOUT": "1500"}})
+    assert r.status_code == 200 and {i["item"]: i["wage_type"] for i in r.json()["items"]}["VACATION"] == "1100"
+    payout = await client.post(
+        f"/employees/{hourly.id}/balance-adjustments",
+        headers=admin,
+        json={"kind": "PAYOUT", "minutes": -90, "effective_date": "2026-08-31", "note": "August"},
+    )
+    assert payout.status_code == 201, payout.text
+    body = (await client.get("/payroll-export/datev/preview", headers=admin, params=_params([hourly]))).json()
+    lines = {line["wage_type"]: (line["value"], line["label"]) for line in body["lines"]}
+    assert lines["1000"] == (4.0, "Gearbeitete Stunden")
+    assert lines["1100"] == (8.0, "Urlaub")
+    assert lines["1500"] == (1.5, "Ausgezahlte Überstunden")
+    assert not any("Urlaub ohne Lohnart" in w for w in body["warnings"])
+    # Lohnart wieder entfernen = wieder Hinweis
+    await client.put("/wage-types", headers=admin, json={"items": {"VACATION": ""}})
+    body = (await client.get("/payroll-export/datev/preview", headers=admin, params=_params([hourly]))).json()
+    assert "1100" not in {line["wage_type"] for line in body["lines"]}

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
 import { useUpdateSettingsMutation, type Settings } from '../../api/queries/settings'
 import { DAY_FLAG_LABELS } from '../../lib/labels'
+import { formatDate } from '../../lib/format'
 import {
   CoreTimeDaysEditor,
   coreTimeDaysFromApi,
@@ -15,6 +16,9 @@ import { Input } from '../ui/input'
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 /** Rahmen einer Einstellungs-Karte mit Titel, Beschreibung und Rückmeldung. */
+/** Pünktlichkeits-Hinweise – geschaltet unter „Kernarbeitszeit & Gleitzeit“, nicht bei den übrigen Sonderfällen. */
+const PUNCTUALITY_FLAGS = ['LATE_ARRIVAL', 'EARLY_LEAVE', 'OUTSIDE_FLEX_FRAME']
+
 export function SettingsCard({
   title,
   description,
@@ -111,15 +115,7 @@ export function EmployeeDefaultsCard({ settings }: { settings: Settings }) {
       message={message}
       error={error}
     >
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={settings.default_auto_break}
-          onChange={(e) => void save({ default_auto_break: e.target.checked })}
-        />
-        Automatische Pausenregelung aktiv (gesetzliche Pause wird beim Ausstempeln gebucht, wenn keine gestempelt wurde)
-      </label>
+      <p className="text-xs text-slate-500">„Pausen automatisch stempeln“ für neue Mitarbeiter: unter „Pausenregeln“.</p>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -163,17 +159,45 @@ export function EmployeeDefaultsCard({ settings }: { settings: Settings }) {
   )
 }
 
-/** Berechnungsregeln: Urlaub, "Zu klären"-Sonderfälle, Nachtschicht. */
-export function RulesCard({ settings }: { settings: Settings }) {
-  const { save, message, error } = useSettingsSave()
-  const [span, setSpan] = useState(String(settings.max_shift_span_hours))
+/** Urlaub: Standard-Jahresurlaub und wie der Anspruch je Jahr berechnet wird. */
+export function VacationRulesCard({ settings }: { settings: Settings }) {
+  const { save, message, error, pending } = useSettingsSave()
+  const [days, setDays] = useState(String(settings.default_annual_vacation_days))
 
-  useEffect(() => setSpan(String(settings.max_shift_span_hours)), [settings.max_shift_span_hours])
-
-  const disabled = new Set(settings.disabled_day_flags)
+  useEffect(() => setDays(String(settings.default_annual_vacation_days)), [settings.default_annual_vacation_days])
 
   return (
-    <SettingsCard title="Regeln" message={message} error={error}>
+    <SettingsCard
+      title="Urlaubsanspruch"
+      description="Der Anspruch je Jahr wird aus dem Jahresurlaub laut Vertrag berechnet, sonst aus dem Standard-Jahresurlaub (bezogen auf die 5-Tage-Woche). Fest eingetragene Jahreswerte am Mitarbeiter ändern sich dadurch nicht."
+      message={message}
+      error={error}
+    >
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="default_annual_vacation_days" className="text-sm">
+          Standard-Jahresurlaub (Tage)
+        </label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="default_annual_vacation_days"
+            type="number"
+            min={0}
+            max={365}
+            step={0.5}
+            className="w-32"
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending || Number(days) === settings.default_annual_vacation_days}
+            onClick={() => void save({ default_annual_vacation_days: Number(days) || 0 })}
+          >
+            Übernehmen
+          </Button>
+        </div>
+      </div>
       <label className="flex items-start gap-2 text-sm">
         <input
           type="checkbox"
@@ -183,6 +207,32 @@ export function RulesCard({ settings }: { settings: Settings }) {
         />
         Urlaubsanspruch für Teilzeit anteilig berechnen (Vollzeit-Anspruch × Arbeitstage ÷ 5)
       </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={settings.prorate_partial_year_vacation}
+          onChange={(e) => void save({ prorate_partial_year_vacation: e.target.checked })}
+        />
+        Teilurlaub bei Eintritt oder Austritt im Jahr berechnen (anteilig nach Beschäftigungstagen, gesetzlicher
+        Mindesturlaub bleibt, wenn er voll zusteht)
+      </label>
+    </SettingsCard>
+  )
+}
+
+/** Welche Tage unter „Zu klären“ erscheinen (Sonderfälle, Arbeitstage ohne Stempelung). */
+export function OpenDayChecksCard({ settings }: { settings: Settings }) {
+  const { save, message, error } = useSettingsSave()
+  const disabled = new Set(settings.disabled_day_flags)
+
+  return (
+    <SettingsCard
+      title="Prüfungen für „Zu klären“"
+      description="Dieselben Tage zählen beim Monatsabschluss, im Monatsbericht und im Lohn-Export als offen."
+      message={message}
+      error={error}
+    >
       <div className="flex flex-col gap-1">
         <span className="text-sm">Diese Sonderfälle unter „Zu klären“ anzeigen:</span>
         <label className="flex items-center gap-2 pl-1 text-sm">
@@ -199,7 +249,9 @@ export function RulesCard({ settings }: { settings: Settings }) {
             geht ins Minus. Für Teilzeit ohne feste Tage passt das Arbeitszeitmodell „Flexibel ohne feste Tage“.
           </p>
         )}
-        {Object.entries(DAY_FLAG_LABELS).map(([flag, label]) => (
+        {Object.entries(DAY_FLAG_LABELS)
+          .filter(([flag]) => !PUNCTUALITY_FLAGS.includes(flag))
+          .map(([flag, label]) => (
           <label key={flag} className="flex items-center gap-2 pl-1 text-sm">
             <input
               type="checkbox"
@@ -214,7 +266,21 @@ export function RulesCard({ settings }: { settings: Settings }) {
             {label}
           </label>
         ))}
+        <p className="pl-1 text-xs text-slate-500">Zu spät, zu früh und Gleitzeit-Rahmen: unter „Arbeitszeit“ → „Kernarbeitszeit &amp; Gleitzeit“.</p>
       </div>
+    </SettingsCard>
+  )
+}
+
+/** Maximale Schichtlänge: ab wann ein offenes „Kommen“ als vergessenes „Gehen“ gilt. */
+export function MaxShiftSpanCard({ settings }: { settings: Settings }) {
+  const { save, message, error } = useSettingsSave()
+  const [span, setSpan] = useState(String(settings.max_shift_span_hours))
+
+  useEffect(() => setSpan(String(settings.max_shift_span_hours)), [settings.max_shift_span_hours])
+
+  return (
+    <SettingsCard title="Maximale Schichtlänge" message={message} error={error}>
       <div className="flex flex-col gap-1">
         <span className="text-sm">
           Maximale Schichtlänge (Stunden): Ein „Gehen“ am Folgetag gehört bis dahin noch zur Schicht (Nachtschicht).
@@ -238,54 +304,139 @@ export function RulesCard({ settings }: { settings: Settings }) {
   )
 }
 
-/** RFID-Pflicht am Kiosk. */
-export function RfidSettingsCard({ settings }: { settings: Settings }) {
+type KioskLoginMode = 'TAP' | 'TAP_PIN' | 'TAP_OR_CHIP' | 'PIN_OR_CHIP' | 'CHIP_ONLY'
+
+/** Die Anmeldung am Tablet als eine Auswahl – jede Option steht für eine Kombination der Felder
+ * require_pin_for_punch, kiosk_rfid_enabled und rfid_required (die Tablets lesen weiter diese). */
+const KIOSK_LOGIN_MODES: {
+  mode: KioskLoginMode
+  title: string
+  description: string
+  fields: Partial<Pick<Settings, 'require_pin_for_punch' | 'kiosk_rfid_enabled' | 'rfid_required'>>
+}[] = [
+  {
+    mode: 'TAP',
+    title: 'Kachel antippen',
+    description: 'Ohne PIN und ohne Chip.',
+    fields: { require_pin_for_punch: false, kiosk_rfid_enabled: false, rfid_required: false },
+  },
+  {
+    mode: 'TAP_PIN',
+    title: 'Kachel antippen + PIN',
+    description: 'Wer noch keinen PIN hat, kann erst stempeln, wenn einer vergeben oder selbst festgelegt ist.',
+    fields: { require_pin_for_punch: true, kiosk_rfid_enabled: false, rfid_required: false },
+  },
+  {
+    mode: 'TAP_OR_CHIP',
+    title: 'Kachel antippen oder Chip vorhalten',
+    description:
+      'Ein Chip öffnet den Mitarbeiter direkt; oben gibt es die Leiste „Aktion wählen, dann Chip vorhalten“ (Terminalmodus).',
+    fields: { require_pin_for_punch: false, kiosk_rfid_enabled: true, rfid_required: false },
+  },
+  {
+    mode: 'PIN_OR_CHIP',
+    title: 'Chip vorhalten oder Kachel + PIN',
+    description: 'Ein gültiger Chip ersetzt den PIN.',
+    fields: { require_pin_for_punch: true, kiosk_rfid_enabled: true, rfid_required: false },
+  },
+  {
+    mode: 'CHIP_ONLY',
+    title: 'Nur Chip',
+    description:
+      'Oben die Aktion wählen (Kommen, Gehen, Pause …), dann den Chip vorhalten – mehrere Mitarbeiter nacheinander, nach 10 s ohne Scan ist keine Aktion mehr gewählt. Kacheln lösen keine Stempelung aus.',
+    fields: { kiosk_rfid_enabled: true, rfid_required: true },
+  },
+]
+
+export function kioskLoginMode(settings: Pick<Settings, 'require_pin_for_punch' | 'kiosk_rfid_enabled' | 'rfid_required'>): KioskLoginMode {
+  // Ohne Chip-Funktion wirkt die RFID-Pflicht am Tablet nicht (kiosk-app: rfidEnabled && rfid_required).
+  if (settings.kiosk_rfid_enabled && settings.rfid_required) return 'CHIP_ONLY'
+  if (settings.kiosk_rfid_enabled) return settings.require_pin_for_punch ? 'PIN_OR_CHIP' : 'TAP_OR_CHIP'
+  return settings.require_pin_for_punch ? 'TAP_PIN' : 'TAP'
+}
+
+/** Anmeldung am Tablet: eine Auswahl statt fünf Schalter, dazu die Selbst-Einrichtung von PIN und Chip. */
+export function KioskLoginCard({ settings }: { settings: Settings }) {
   const { save, message, error, pending } = useSettingsSave()
+  const mode = kioskLoginMode(settings)
+  const usesChip = mode === 'TAP_OR_CHIP' || mode === 'PIN_OR_CHIP' || mode === 'CHIP_ONLY'
+  const usesPin = mode === 'TAP_PIN' || mode === 'PIN_OR_CHIP'
+  // Die eigene Chip-Registrierung wird mit dem PIN bestätigt – daher auch dann relevant.
+  const pinSetupRelevant = usesPin || (usesChip && settings.kiosk_card_self_registration)
+
   return (
-    <div className="flex flex-col gap-2">
-      <SettingsToggle
-        checked={settings.kiosk_rfid_enabled}
-        disabled={pending}
-        onChange={(checked) => void save({ kiosk_rfid_enabled: checked })}
-        title="Chips/RFID am Tablet nutzen"
-      >
-        Zeigt am Tablet die Leiste „Aktion wählen, dann Chip vorhalten“ (Terminalmodus) und öffnet einen Mitarbeiter
-        direkt, wenn ohne gewählte Aktion ein Chip vorgehalten wird. Aus = Stempeln nur über die Kacheln; ein Chip
-        ersetzt dann auch nicht mehr den PIN.
-      </SettingsToggle>
-      <SettingsToggle
-        checked={settings.kiosk_card_self_registration}
-        disabled={pending || !settings.kiosk_rfid_enabled}
-        onChange={(checked) => void save({ kiosk_card_self_registration: checked })}
-        title="Mitarbeiter registrieren ihren Chip selbst"
-      >
-        Am Tablet den eigenen Namen antippen, „Eigenen Chip registrieren“ wählen (bei RFID-Pflicht direkt), mit dem
-        eigenen PIN bestätigen und den Chip vorhalten. Nur für Mitarbeiter mit PIN; ein vorhandener Chip wird ersetzt, jede Registrierung steht im
-        Audit-Log.
-      </SettingsToggle>
-      <SettingsToggle
-        checked={settings.rfid_required}
-        disabled={pending || !settings.kiosk_rfid_enabled}
-        onChange={(checked) => void save({ rfid_required: checked })}
-        title="RFID-Pflicht"
-      >
-        Stempeln nur mit Chip/Karte. Am Tablet wird oben die Aktion gewählt (Kommen, Gehen, Pause …) und dann der Chip
-        vorgehalten – mehrere Mitarbeiter können nacheinander scannen, nach 10 s ohne Scan ist keine Aktion mehr
-        gewählt. Kacheln lösen dann keine Stempelung aus. Chips werden am Mitarbeiter unter „Karten-UID“ hinterlegt.
-      </SettingsToggle>
-      {message && <p className="text-sm text-emerald-700">{message}</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </div>
+    <SettingsCard
+      title="Anmeldung am Tablet"
+      description="Wie sich Mitarbeiter am Tablet ausweisen, bevor sie stempeln. Chips werden am Mitarbeiter unter „Chip-UID“ hinterlegt."
+      message={message}
+      error={error}
+    >
+      <div role="radiogroup" aria-label="Anmeldung am Tablet" className="flex flex-col gap-2">
+        {KIOSK_LOGIN_MODES.map((option) => (
+          <label key={option.mode} className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="kiosk_login_mode"
+              className="mt-1"
+              checked={mode === option.mode}
+              disabled={pending}
+              onChange={() => void save(option.fields)}
+            />
+            <span>
+              <span className="block font-medium text-slate-800">{option.title}</span>
+              <span className="block text-slate-500">{option.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {usesChip && (
+        <label className="flex items-start gap-2 border-t border-slate-100 pt-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={settings.kiosk_card_self_registration}
+            disabled={pending}
+            onChange={(e) => void save({ kiosk_card_self_registration: e.target.checked })}
+          />
+          <span>
+            <span className="block font-medium text-slate-800">Mitarbeiter registrieren ihren Chip selbst</span>
+            <span className="block text-slate-500">
+              Am Tablet den eigenen Namen antippen, „Eigenen Chip registrieren“ wählen (bei „Nur Chip“ direkt), mit dem
+              eigenen PIN bestätigen und den Chip vorhalten. Ein vorhandener Chip wird ersetzt, jede Registrierung steht
+              im Audit-Log.
+            </span>
+          </span>
+        </label>
+      )}
+      {pinSetupRelevant && (
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={settings.kiosk_pin_self_setup}
+            disabled={pending}
+            onChange={(e) => void save({ kiosk_pin_self_setup: e.target.checked })}
+          />
+          <span>
+            <span className="block font-medium text-slate-800">PIN beim ersten Mal selbst festlegen</span>
+            <span className="block text-slate-500">
+              Wer noch keinen PIN hat, legt ihn am Tablet selbst fest (zweimal eingeben). Bei vergessenem PIN setzt HR ihn
+              am Mitarbeiter zurück oder vergibt selbst einen. Jede Festlegung steht im Audit-Log.
+            </span>
+          </span>
+        </label>
+      )}
+    </SettingsCard>
   )
 }
 
-/** PIN zum Zurücksetzen eines Kiosk-Tablets. */
+/** PIN zum Zurücksetzen eines Tablets. */
 export function KioskAdminPinCard({ settings }: { settings: Settings }) {
   const { save, message, error } = useSettingsSave()
   const [pin, setPin] = useState('')
   return (
     <SettingsCard
-      title="Kiosk-Admin-PIN"
+      title="Tablet-Admin-PIN"
       description={
         <>
           Wird am Tablet zum Zurücksetzen des Geräts abgefragt. Ohne PIN ist das Zurücksetzen am Tablet gesperrt.{' '}
@@ -308,7 +459,7 @@ export function KioskAdminPinCard({ settings }: { settings: Settings }) {
         <Button
           size="sm"
           disabled={pin.length < 4}
-          onClick={() => void save({ kiosk_admin_pin: pin }, 'Kiosk-Admin-PIN gespeichert.').then(() => setPin(''))}
+          onClick={() => void save({ kiosk_admin_pin: pin }, 'Tablet-Admin-PIN gespeichert.').then(() => setPin(''))}
         >
           {settings.kiosk_admin_pin_set ? 'PIN ändern' : 'PIN festlegen'}
         </Button>
@@ -316,7 +467,7 @@ export function KioskAdminPinCard({ settings }: { settings: Settings }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void save({ kiosk_admin_pin: '' }, 'Kiosk-Admin-PIN entfernt.')}
+            onClick={() => void save({ kiosk_admin_pin: '' }, 'Tablet-Admin-PIN entfernt.')}
           >
             Entfernen
           </Button>
@@ -453,7 +604,8 @@ export function KioskDisplayCard({ settings }: { settings: Settings }) {
           checked={settings.kiosk_break_buttons}
           onChange={(e) => void save({ kiosk_break_buttons: e.target.checked })}
         />
-        Pausen-Buttons anzeigen (aus = Pausen nur über die automatische Pausenregelung)
+        Pausen-Buttons anzeigen (aus = Pausen werden am Tablet und im Web-Login nicht gestempelt; abgezogen wird nach
+        den Pausenregeln)
       </label>
       <label className="flex items-start gap-2 text-sm">
         <input
@@ -666,7 +818,7 @@ export function CoreTimeCard({ settings }: { settings: Settings }) {
   return (
     <SettingsCard
       title="Kernarbeitszeit & Gleitzeit"
-      description="Optional. Auffälligkeiten erscheinen als Sonderfall unter „Zu klären“ (oben einzeln abschaltbar); an den Stunden ändert sich nichts. Je Mitarbeiter abweichend einstellbar (Mitarbeiter → Bearbeiten)."
+      description="Optional. Hinweise erscheinen als Sonderfall unter „Zu klären“ (oben einzeln abschaltbar); an den Stunden ändert sich nichts. Je Mitarbeiter abweichend einstellbar (Mitarbeiter → Bearbeiten)."
       message={message}
       error={error}
     >
@@ -679,20 +831,28 @@ export function CoreTimeCard({ settings }: { settings: Settings }) {
         clearLabel="Keine Kernzeit"
       />
       <CoreTimeByWeekday settings={settings} save={save} />
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={settings.punctuality_check}
-          onChange={(e) => void save({ punctuality_check: e.target.checked })}
-        />
-        <span>
-          Pünktlichkeit prüfen: zu spät kommen bzw. zu früh gehen unter „Zu klären“ melden
-          <span className="block text-xs text-slate-500">
-            Maßstab ist die geplante Schicht (Schichtplanung mit Uhrzeiten), sonst die Kernzeit.
-          </span>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm">Unter „Zu klären“ melden:</span>
+        {PUNCTUALITY_FLAGS.map((flag) => (
+          <label key={flag} className="flex items-center gap-2 pl-1 text-sm">
+            <input
+              type="checkbox"
+              checked={!new Set(settings.disabled_day_flags).has(flag)}
+              onChange={(e) => {
+                const next = new Set(settings.disabled_day_flags)
+                if (e.target.checked) next.delete(flag)
+                else next.add(flag)
+                void save({ disabled_day_flags: [...next] })
+              }}
+            />
+            {DAY_FLAG_LABELS[flag]}
+          </label>
+        ))}
+        <span className="pl-1 text-xs text-slate-500">
+          Maßstab ist die geplante Schicht (Schichtplanung mit Uhrzeiten), sonst die Kernzeit. Hinweise gibt es erst ab dem
+          Tag der letzten Änderung{settings.punctuality_from ? ` (${formatDate(settings.punctuality_from)})` : ''}.
         </span>
-      </label>
+      </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span>Toleranz</span>
         <Input

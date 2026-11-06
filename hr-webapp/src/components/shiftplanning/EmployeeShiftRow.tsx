@@ -19,6 +19,14 @@ interface EmployeeShiftRowProps {
   onError: (message: string) => void
 }
 
+/** Tag ohne Schichtvorlage: Soll des Arbeitszeitmodells statt eines Schichtnamens. */
+function modelLabel(day: EffectiveShiftDay): string {
+  if (day.shift_template_id) return 'Schicht'
+  if (day.flexible) return 'flexibel'
+  if (day.target_minutes) return `${(day.target_minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })} h`
+  return 'Schicht'
+}
+
 function dayChipClassName(day: EffectiveShiftDay | undefined): string {
   if (!day) return 'bg-white border-slate-200'
   if (!day.is_workday) return 'bg-indigo-50 border-indigo-200 text-indigo-700'
@@ -127,13 +135,13 @@ export function EmployeeShiftRow({
                   draggableChip && 'cursor-grab active:cursor-grabbing',
                 )}
               >
-                {!day || (!day.plan_exists && day.is_workday) ? (
+                {!day || (!day.plan_exists && day.is_workday && !day.shift_template_id) ? (
                   <span className="text-slate-400">–</span>
                 ) : !day.is_workday ? (
                   <span>Frei</span>
                 ) : (
                   <>
-                    <span className="font-medium">{template?.name ?? 'Schicht'}</span>
+                    <span className="font-medium">{template?.name ?? modelLabel(day)}</span>
                     {template?.start_time && template.end_time && (
                       <span className="text-slate-500">
                         {template.start_time.slice(0, 5)}–{template.end_time.slice(0, 5)}

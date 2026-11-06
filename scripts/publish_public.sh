@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Zieht das öffentliche Repo github.com/EEaglEEyEE/hr3000 (AGPL-3.0) auf den Stand von main nach.
 #
-# Arbeitsrepo bleibt das private EEaglEEyEE/HR3000. Veröffentlicht wird nur, was in PUBLIC_PATHS
+# Arbeitsrepo bleibt das private EEaglEEyEE/HR3000-intern. Veröffentlicht wird nur, was in PUBLIC_PATHS
 # steht (Positivliste – neue interne Dateien landen nie versehentlich öffentlich): kein CLAUDE.md,
 # keine Betriebsdoku (docs/betrieb.md), keine alten Konzepte. Jede Änderung wird ein Commit im
 # öffentlichen Repo.
@@ -17,14 +17,18 @@ SRC=$(cd "${1:-$(dirname "$0")/..}" && pwd)
 PUBLIC_PATHS=(
   backend hr-webapp kiosk-app website scripts
   docs/README.md docs/handbuch-admin.md docs/handbuch-mitarbeiter.md docs/aenderungen.md docs/technik.md
-  Caddyfile docker-compose.yml .env.example .gitignore LICENSE README.md
+  Caddyfile docker-compose.yml docker-compose.staging.yml .env.example .gitignore LICENSE README.md
 )
 # Sicherheitsnetz: diese Begriffe dürfen im öffentlichen Stand nicht vorkommen (interne Konten/Infra).
 # Aus Teilstücken zusammengesetzt, damit dieses Skript (selbst öffentlich) nicht auf sich anschlägt.
 FORBIDDEN='u3132''59|Ca''to |OneDrive-''Schwabenhaus|/Users/''johannes|BEGIN [A-Z ]*PRIV''ATE KEY'
 
 if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -z "${DEPLOY_KEY:-}" ]; then
-  echo "Kein Secret PUBLIC_REPO_DEPLOY_KEY hinterlegt – übersprungen (siehe docs/betrieb.md)."
+  # Grün bleiben (kein Fehler bei jedem Push), aber sichtbar: Warnung am Lauf und in der Zusammenfassung.
+  # Sonst bleibt unbemerkt, dass der öffentliche Spiegel (AGPL) hinter dem laufenden Stand zurückbleibt.
+  msg="Kein Secret PUBLIC_REPO_DEPLOY_KEY hinterlegt – öffentliches Repo NICHT nachgezogen (siehe docs/betrieb.md, Abschnitt 10)."
+  echo "::warning title=Öffentliches Repo nicht aktualisiert::$msg"
+  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && echo "⚠️ $msg" >> "$GITHUB_STEP_SUMMARY"
   exit 0
 fi
 

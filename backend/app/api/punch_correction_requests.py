@@ -27,7 +27,7 @@ from app.services.audit_service import log_action
 from app.services.notification_service import notify_correction_decided, notify_correction_requested
 from app.services.period_service import ensure_period_open
 from app.services.team_scope_service import ensure_employee_visible
-from app.services.timesheet_service import employee_timezone, maybe_auto_insert_break, recalculate_day, today_in
+from app.services.timesheet_service import employee_timezone, recalculate_day, refresh_auto_breaks, today_in
 
 router = APIRouter(tags=["punch_correction_requests"])
 
@@ -165,10 +165,8 @@ async def decide_correction_request(
     await notify_correction_decided(db, actor.tenant_id, employee, row.work_date, payload.approve)
     await db.commit()
 
-    for punch in created:
-        await db.refresh(punch)
-        if punch.punch_type == PunchType.GO:
-            await maybe_auto_insert_break(db, employee, punch, tz)
+    if created:
+        await refresh_auto_breaks(db, employee, row.work_date, tz)
     if created:
         await recalculate_day(db, employee, row.work_date)
     await db.refresh(row)

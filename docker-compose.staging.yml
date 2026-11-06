@@ -1,0 +1,76 @@
+# Testumgebung neben der Produktion auf demselben Server – Aufruf nur über scripts/staging.sh.
+# Eigene Datenbank (nur Demo-Daten), kein eigener Caddy: die Produktion leitet Hosts unter
+# STAGING_BASE_DOMAIN über ihr Docker-Netz (PROD_NETWORK) an diese Container weiter (siehe Caddyfile).
+name: hr3000-staging
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "2"
+
+services:
+  backend:
+    logging: *default-logging
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+asyncmy://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      DOCUMENTS_DIR: /app/data/documents
+      DEMO_SEED_ALLOWED: "1"
+    volumes:
+      - documents_data:/app/data/documents
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      default: {}
+      edge:
+        aliases: [staging-backend]
+    restart: unless-stopped
+
+  mysql:
+    logging: *default-logging
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: --innodb-buffer-pool-size=128M --max-connections=50
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  hr-webapp:
+    logging: *default-logging
+    build: ./hr-webapp
+    networks:
+      default: {}
+      edge:
+        aliases: [staging-hr-webapp]
+    restart: unless-stopped
+
+  kiosk-app:
+    logging: *default-logging
+    build: ./kiosk-app
+    networks:
+      default: {}
+      edge:
+        aliases: [staging-kiosk-app]
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true
+    name: ${PROD_NETWORK:-hr3000_default}
+
+volumes:
+  mysql_data:
+  documents_data:

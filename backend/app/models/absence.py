@@ -31,9 +31,9 @@ class AbsenceApprovalStatus(str, enum.Enum):
 
 
 class Absence(Base):
-    """Urlaub/Krankheit. Optionaler Genehmigungsworkflow (siehe
-    AppSettings.vacation_approval_required) – ohne diese Einstellung wie
-    bisher direkt final (APPROVED)."""
+    """Urlaub/Krankheit. Optionaler Genehmigungsworkflow je Abwesenheitsart
+    (AbsenceTypeDefinition.requires_approval) – ohne Genehmigungspflicht direkt
+    final (APPROVED)."""
 
     __tablename__ = "absences"
 

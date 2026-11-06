@@ -8,7 +8,7 @@ from app.models.base import Base
 
 class DayReview(Base):
     """HR hat einen Tag aus "Zu klären" geprüft und als erledigt markiert – er verschwindet dann
-    aus der Liste und blockiert den Monatsabschluss nicht mehr. Das gilt für Sonderfälle (z.B.
+    aus der Liste und blockiert den Monatsabschluss nicht mehr, solange sich der Tag nicht ändert. Das gilt für Sonderfälle (z.B.
     außerplanmäßig gestempelt) wie für fehlende/widersprüchliche Stempelungen; an der Berechnung
     ändert das nichts (keine automatische Ergänzung fehlender Zeiten, siehe CLAUDE.md)."""
 
@@ -23,3 +23,6 @@ class DayReview(Base):
     reviewed_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
     reviewed_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
     reviewed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Stand des Tages beim Abhaken (siehe timesheet_service.day_fingerprint); ändert sich der Tag,
+    # gilt "Erledigt" nicht mehr. Leer = älterer Eintrag, gilt weiter.
+    fingerprint: Mapped[str | None] = mapped_column(String(250), nullable=True)

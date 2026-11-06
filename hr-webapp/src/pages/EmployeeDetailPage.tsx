@@ -24,7 +24,7 @@ import { useFeaturesQuery } from '../api/queries/workTimeModel'
 export function EmployeeDetailPage() {
   const { employeeId } = useParams<{ employeeId: string }>()
   const id = Number(employeeId)
-  const { isAdmin, isFullHr } = useAuth()
+  const { isAdmin, isFullHr, canPayroll } = useAuth()
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
   const employeeQuery = useEmployeeQuery(id)
@@ -127,17 +127,15 @@ export function EmployeeDetailPage() {
         locations={locationsQuery.data ?? []}
       />
 
+      {/* Sechs Reiter: Arbeitszeit = Modell + Schichtplanung, Personalakte = Vertrag, Dokumente, Checklisten */}
       <Tabs defaultValue="punches">
         <TabsList>
           <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
           <TabsTrigger value="calendar">Kalender</TabsTrigger>
           <TabsTrigger value="timesheet">Saldenübersicht</TabsTrigger>
           <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
-          <TabsTrigger value="worktime">Arbeitszeitmodell</TabsTrigger>
-          {isFullHr && <TabsTrigger value="employment">Vertrag{isAdmin ? ' & Vergütung' : ''}</TabsTrigger>}
-          {isFullHr && <TabsTrigger value="documents">Dokumente</TabsTrigger>}
-          {isFullHr && <TabsTrigger value="checklists">Checklisten</TabsTrigger>}
-          {shiftPlanningEnabled && <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>}
+          <TabsTrigger value="worktime">Arbeitszeit</TabsTrigger>
+          {isFullHr && <TabsTrigger value="file">Personalakte</TabsTrigger>}
         </TabsList>
         <TabsContent value="punches">
           <PunchHistoryTab employeeId={id} readOnly={!isFullHr} />
@@ -152,26 +150,34 @@ export function EmployeeDetailPage() {
           <AbsencesTab employeeId={id} entitlementReadOnly={!isFullHr} />
         </TabsContent>
         <TabsContent value="worktime">
-          <WorkTimeModelTab employeeId={id} canEdit={isFullHr} />
+          <div className="flex flex-col gap-8">
+            <WorkTimeModelTab employeeId={id} canEdit={isFullHr} />
+            {shiftPlanningEnabled && (
+              <section className="flex flex-col gap-3 border-t border-slate-200 pt-6">
+                <h2 className="text-base font-semibold text-slate-900">Schichtplanung</h2>
+                <ShiftPlanTab employeeId={id} readOnly={!isFullHr} />
+              </section>
+            )}
+          </div>
         </TabsContent>
         {isFullHr && (
-          <TabsContent value="employment">
-            <EmploymentTab employeeId={id} isAdmin={isAdmin} />
-          </TabsContent>
-        )}
-        {isFullHr && (
-          <TabsContent value="checklists">
-            <EmployeeChecklistsTab employeeId={id} />
-          </TabsContent>
-        )}
-        {isFullHr && (
-          <TabsContent value="documents">
-            <DocumentsTab employeeId={id} isAdmin={isAdmin} />
-          </TabsContent>
-        )}
-        {shiftPlanningEnabled && (
-          <TabsContent value="shiftplan">
-            <ShiftPlanTab employeeId={id} />
+          <TabsContent value="file">
+            <Tabs defaultValue="employment">
+              <TabsList>
+                <TabsTrigger value="employment">Vertrag{canPayroll ? ' & Vergütung' : ''}</TabsTrigger>
+                <TabsTrigger value="documents">Dokumente</TabsTrigger>
+                <TabsTrigger value="checklists">Checklisten</TabsTrigger>
+              </TabsList>
+              <TabsContent value="employment">
+                <EmploymentTab employeeId={id} isAdmin={canPayroll} />
+              </TabsContent>
+              <TabsContent value="documents">
+                <DocumentsTab employeeId={id} isAdmin={isAdmin} />
+              </TabsContent>
+              <TabsContent value="checklists">
+                <EmployeeChecklistsTab employeeId={id} />
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         )}
       </Tabs>

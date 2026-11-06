@@ -30,6 +30,8 @@ class HrUser(Base):
     email: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[HrRole] = mapped_column(Enum(HrRole))
+    # Berechtigung „Vergütung & Lohn-Export“ für Rolle HR (Admins haben sie immer)
+    payroll_access: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Nur bei Selbstregistrierung mit Mailversand: Anmeldung erst nach Klick auf den
     # Bestätigungslink (api/public.verify_email). Alle übrigen Konten: False.
     email_verification_pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

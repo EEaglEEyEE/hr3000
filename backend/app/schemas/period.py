@@ -29,6 +29,9 @@ class PeriodClosureResponse(BaseModel):
 class PeriodSubmitRequest(BaseModel):
     # Erlaubt das Vorlegen trotz offener/fehlerhafter Tage (diese sind im Nachweis rot markiert).
     ignore_open_days: bool = False
+    # Erlaubt das Vorlegen trotz offener Abwesenheits- bzw. Korrekturanträge im Monat (danach sind
+    # sie wegen der Sperre nicht mehr entscheidbar, bis der Monat wieder offen ist).
+    ignore_open_requests: bool = False
 
 
 class PeriodDisputeRequest(BaseModel):
@@ -36,14 +39,16 @@ class PeriodDisputeRequest(BaseModel):
 
 
 class PeriodCloseRequest(BaseModel):
-    # Abschluss ohne Bestätigung des Mitarbeiters (z.B. keine Reaktion) – wird im Audit-Log vermerkt.
-    without_confirmation: bool = False
+    # Abschluss durch HR ist immer ohne Bestätigung des Mitarbeiters (die Bestätigung schließt selbst
+    # ab) – wird im Audit-Log vermerkt. Feld nur noch aus Kompatibilität.
+    without_confirmation: bool = True
 
 
 class PeriodBulkSubmitRequest(BaseModel):
     year: int = Field(ge=2000, le=2100)
     month: int = Field(ge=1, le=12)
     ignore_open_days: bool = False
+    ignore_open_requests: bool = False
 
 
 class PeriodOverviewRow(BaseModel):

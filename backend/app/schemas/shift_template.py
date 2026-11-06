@@ -16,6 +16,8 @@ class ShiftTemplateCreateRequest(BaseModel):
     fixed_break_end: time | None = None
     # Feste Minuten Pause (ab der ersten Arbeitsminute), nur bei FLEXIBLE; 0/leer = Pausenregeln des Mandanten.
     min_break_minutes: int | None = Field(default=None, ge=0, le=240)
+    # Ab welcher Arbeitszeit die festen Minuten gelten (Minuten; 0 = ab der ersten Minute).
+    min_break_after_minutes: int = Field(default=0, ge=0, le=960)
     target_minutes: int = Field(default=0, ge=0)
     target_period: TargetPeriod = TargetPeriod.DAILY
     location_id: int | None = None
@@ -35,6 +37,7 @@ class ShiftTemplateUpdateRequest(BaseModel):
     fixed_break_start: time | None = None
     fixed_break_end: time | None = None
     min_break_minutes: int | None = Field(default=None, ge=0, le=240)
+    min_break_after_minutes: int | None = Field(default=None, ge=0, le=960)
     target_minutes: int | None = Field(default=None, ge=0)
     target_period: TargetPeriod | None = None
     location_id: int | None = None
@@ -54,8 +57,8 @@ class ShiftTemplateResponse(BaseModel):
     fixed_break_start: time | None
     fixed_break_end: time | None
     min_break_minutes: int | None
+    min_break_after_minutes: int = 0
     target_minutes: int
     target_period: TargetPeriod
     location_id: int | None
-    is_work_time_model: bool
     archived: bool = False

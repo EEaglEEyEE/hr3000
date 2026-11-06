@@ -1,11 +1,13 @@
-/** Kernarbeitszeit & Gleitzeit: Einstellungen des Mandanten und Abweichung je Mitarbeiter. */
+/** Kernarbeitszeit & Gleitzeit: Einstellungen des Mandanten und Abweichung je Fassung des
+ *  Arbeitszeitmodells. */
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { EmployeeFormDialog } from '../employees/EmployeeFormDialog'
 import { settings } from '../../test/fixtures'
 import { ApiFailure, loginAs, mockApi, renderWithProviders, type ApiCall, type ApiInit } from '../../test/utils'
-import { CoreTimeCard, RulesCard } from './DefaultsSettingsCard'
+import { WorkTimeModelTab } from '../workTimeModel/WorkTimeModelTab'
+import { CoreTimeCard, OpenDayChecksCard } from './DefaultsSettingsCard'
 
 function settingsRoutes(initial = settings()) {
   let current = { ...initial }
@@ -34,8 +36,8 @@ describe('Einstellungen: Kernarbeitszeit & Gleitzeit', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Übernehmen' })[0])
     await waitFor(() => expect(lastPatch(calls)).toMatchObject({ core_time_start: '09:00', core_time_end: '15:00' }))
 
-    await userEvent.click(screen.getByRole('checkbox', { name: /Pünktlichkeit prüfen/ }))
-    await waitFor(() => expect(lastPatch(calls)).toMatchObject({ punctuality_check: true }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /Zu spät gekommen/ }))
+    await waitFor(() => expect(lastPatch(calls)).toMatchObject({ disabled_day_flags: ['LATE_ARRIVAL'] }))
 
     const tolerance = screen.getByLabelText('Toleranz in Minuten')
     await userEvent.clear(tolerance)
@@ -108,78 +110,102 @@ describe('Einstellungen: Kernarbeitszeit & Gleitzeit', () => {
     await waitFor(() => expect(lastPatch(calls)).toMatchObject({ core_time_days: null }))
   })
 
-  it('die neuen Sonderfälle lassen sich unter "Regeln" einzeln abschalten', async () => {
+  it('die Pünktlichkeits-Hinweise stehen nur bei der Kernarbeitszeit, nicht bei den Regeln', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     const calls = mockApi(settingsRoutes())
-    renderWithProviders(<RulesCard settings={settings()} />)
-    const late = screen.getByRole('checkbox', { name: /Zu spät gekommen/ })
-    expect(late).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /Zu früh gegangen/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /Gleitzeit-Rahmenzeit/ })).toBeChecked()
-    await userEvent.click(late)
-    await waitFor(() => expect(lastPatch(calls)).toMatchObject({ disabled_day_flags: ['LATE_ARRIVAL'] }))
+    const { unmount } = renderWithProviders(<CoreTimeCard settings={settings({ disabled_day_flags: ['EARLY_LEAVE'] })} />)
+    expect(screen.getByRole('checkbox', { name: /Zu spät gekommen/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Zu früh gegangen/ })).not.toBeChecked()
+    await userEvent.click(screen.getByRole('checkbox', { name: /Gleitzeit-Rahmenzeit/ }))
+    await waitFor(() => expect(lastPatch(calls)).toMatchObject({ disabled_day_flags: ['EARLY_LEAVE', 'OUTSIDE_FLEX_FRAME'] }))
+    unmount()
+    renderWithProviders(<OpenDayChecksCard settings={settings()} />)
+    expect(screen.queryByRole('checkbox', { name: /Zu spät gekommen/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /Außerplanmäßig gestempelt/ })).toBeInTheDocument()
   })
 })
 
-describe('Mitarbeiter: eigene Kernzeit', () => {
+describe('Mitarbeiter: Kernzeit im Arbeitszeitmodell', () => {
   const LOCATIONS = [{ id: 1, name: 'Zentrale', timezone: 'Europe/Berlin' }] as never
+  const model = {
+    employee_id: 7,
+    configured: true,
+    valid_from: '2026-11-01',
+    weekly_minutes: 2400,
+    daily_minutes: 480,
+    weekdays: [0, 1, 2, 3, 4],
+    day_minutes: [480, 480, 480, 480, 480, 0, 0],
+    uneven: false,
+    flexible: false,
+    on_demand: false,
+    monthly_cap_minutes: null,
+    monthly_minutes: null,
+    target_from_template: false,
+    break_minutes: null,
+    break_after_minutes: 0,
+    break_start: null,
+    break_end: null,
+    break_from_template: false,
+    shift_template_id: null,
+    shift_template_name: null,
+    shift_start: null,
+    shift_end: null,
+    core_time_mode: 'TENANT',
+    core_time_start: null,
+    core_time_end: null,
+    core_time_days: null,
+  }
 
   function routes() {
     return {
-      'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true, default_auto_break: true, default_show_birthday: true },
-      'GET /teams': [],
-      'POST /employees': (init: ApiInit) => ({ id: 9, ...(init.body as object) }),
+      'GET /employees/{employee_id}/work-time-model': model,
+      'GET /employees/{employee_id}/work-time-model/history': [{ ...model, id: 4, valid_to: null }],
+      'GET /shift-templates': [],
+      'PUT /employees/{employee_id}/work-time-model': model,
     }
   }
 
-  async function fillBasics() {
-    await userEvent.type(screen.getByLabelText('Vorname'), 'Paula')
-    await userEvent.type(screen.getByLabelText('Nachname'), 'Pünktlich')
-    await userEvent.type(screen.getByLabelText(/Personalnummer/), 'P1')
+  function lastPut(calls: ApiCall[]) {
+    return calls.filter((call) => call.method === 'PUT').at(-1)?.init.body as Record<string, unknown>
+  }
+
+  async function renderModel() {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi(routes())
+    renderWithProviders(<WorkTimeModelTab employeeId={7} canEdit />)
+    await screen.findByText('40 Std.')  // geladen und Formular vorbelegt
+    return calls
   }
 
   it('sendet "wie in den Einstellungen" als Standard', async () => {
-    loginAs({ kind: 'hr', role: 'ADMIN' })
-    const calls = mockApi(routes())
-    const onOpenChange = vi.fn()
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={onOpenChange} locations={LOCATIONS} />)
-    await fillBasics()
+    const calls = await renderModel()
+    expect(screen.getByText('Kernarbeitszeit: wie in den Einstellungen')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
-    expect(calls.find((call) => call.method === 'POST')?.init.body).toMatchObject({ core_time_mode: 'TENANT' })
-    expect(calls.find((call) => call.method === 'POST')?.init.body).not.toHaveProperty('core_time_start')
+    await waitFor(() => expect(lastPut(calls)).toMatchObject({ core_time_mode: 'TENANT', weekly_hours: 40 }))
+    expect(lastPut(calls)).not.toHaveProperty('core_time_start')
   })
 
   it('sendet eine eigene Kernzeit mit Uhrzeiten', async () => {
-    loginAs({ kind: 'hr', role: 'ADMIN' })
-    const calls = mockApi(routes())
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
-    await fillBasics()
+    const calls = await renderModel()
     await userEvent.selectOptions(screen.getByLabelText('Kernarbeitszeit / Pünktlichkeit'), 'CUSTOM')
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
     await userEvent.type(screen.getByLabelText('Eigene Kernzeit von'), '10:00')
     await userEvent.type(screen.getByLabelText('Eigene Kernzeit bis'), '14:00')
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
-    expect(calls.find((call) => call.method === 'POST')?.init.body).toMatchObject({
-      core_time_mode: 'CUSTOM',
-      core_time_start: '10:00',
-      core_time_end: '14:00',
-    })
+    await waitFor(() =>
+      expect(lastPut(calls)).toMatchObject({ core_time_mode: 'CUSTOM', core_time_start: '10:00', core_time_end: '14:00' }),
+    )
   })
 
   it('sendet eine eigene Kernzeit je Wochentag', async () => {
-    loginAs({ kind: 'hr', role: 'ADMIN' })
-    const calls = mockApi(routes())
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
-    await fillBasics()
+    const calls = await renderModel()
     await userEvent.selectOptions(screen.getByLabelText('Kernarbeitszeit / Pünktlichkeit'), 'CUSTOM')
     await userEvent.click(screen.getByRole('checkbox', { name: 'Je Wochentag unterschiedlich' }))
     expect(screen.queryByLabelText('Eigene Kernzeit von')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('checkbox', { name: 'Di Kernzeit' }))
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
-    const body = calls.find((call) => call.method === 'POST')?.init.body as Record<string, unknown>
-    expect(body).toMatchObject({ core_time_mode: 'CUSTOM' })
+    await waitFor(() => expect(lastPut(calls)).toMatchObject({ core_time_mode: 'CUSTOM' }))
+    const body = lastPut(calls)
     expect(body).not.toHaveProperty('core_time_start')
     const days = body.core_time_days as unknown[]
     expect(days).toHaveLength(7)
@@ -187,11 +213,34 @@ describe('Mitarbeiter: eigene Kernzeit', () => {
     expect(days[1]).toBeNull()
   })
 
-  it('blendet die Uhrzeiten bei "Keine Prüfung" aus', async () => {
+  it('blendet die Uhrzeiten bei "Keine Prüfung" aus und zeigt die Kernzeit im Verlauf', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
-    mockApi(routes())
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    mockApi({
+      ...routes(),
+      'GET /employees/{employee_id}/work-time-model/history': [
+        { ...model, id: 4, valid_to: null, core_time_mode: 'CUSTOM', core_time_start: '10:00:00', core_time_end: '14:00:00' },
+      ],
+    })
+    renderWithProviders(<WorkTimeModelTab employeeId={7} canEdit />)
+    expect(await screen.findByText(/eigene Kernzeit 10:00–14:00/)).toBeInTheDocument()
     await userEvent.selectOptions(screen.getByLabelText('Kernarbeitszeit / Pünktlichkeit'), 'NONE')
     expect(screen.queryByLabelText('Eigene Kernzeit von')).not.toBeInTheDocument()
+  })
+
+  it('der Mitarbeiter-Dialog fragt keine Kernzeit mehr ab', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi({
+      'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true, default_auto_break: true, default_show_birthday: true },
+      'GET /teams': [],
+      'POST /employees': (init: ApiInit) => ({ id: 9, ...(init.body as object) }),
+    })
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    expect(screen.queryByLabelText('Kernarbeitszeit / Pünktlichkeit')).not.toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Vorname'), 'Paula')
+    await userEvent.type(screen.getByLabelText('Nachname'), 'Pünktlich')
+    await userEvent.type(screen.getByLabelText(/Personalnummer/), 'P1')
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST')).toBe(true))
+    expect(calls.find((call) => call.method === 'POST')?.init.body).not.toHaveProperty('core_time_mode')
   })
 })

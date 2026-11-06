@@ -1,11 +1,12 @@
 """Migration aus einem Altsystem: Werte bestehender Mitarbeiter per CSV übernehmen (Vorschau,
 dann übernehmen), siehe app/services/migration_import_service.py – und Einstellungen eines
 Mandanten als Datei exportieren/importieren (z.B. aus einer Test- in die echte Firma)."""
+import re
 from datetime import date, datetime, time
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,13 +26,18 @@ from app.models import (
     BreakRule,
     BreakRuleKind,
     Employee,
+    PayComponentKind,
+    PayComponentType,
     SurchargeRule,
+    WageTypeItem,
 )
 from app.schemas.absence_type import AbsenceTypeCreateRequest
 from app.schemas.break_rule import BreakRuleCreateRequest
 from app.schemas.employee import BulkImportRowError
 from app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 from app.schemas.surcharge import SurchargeRuleCreateRequest
+from app.schemas.wage_type import WAGE_TYPE_LABELS
+from app.services.wage_type_service import set_wage_types, wage_type_map
 from app.services.absence_type_service import list_absence_types
 from app.services.settings_service import get_or_create_settings
 from app.services.surcharge_service import active_rules
@@ -41,6 +47,7 @@ from app.services.leave_service import get_or_create_entitlement
 from app.services.migration_import_service import MigrationRow, parse_migration_csv
 from app.services.period_service import ensure_open_from, ensure_period_open
 from app.services.team_scope_service import ensure_employee_visible
+from app.services.timesheet_service import balance_start
 
 router = APIRouter(tags=["migration"])
 
@@ -95,6 +102,16 @@ async def _check_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
         ).first()
         if duplicate is not None:
             raise AppError(409, "OPENING_BALANCE_EXISTS", "Zum Stichtag gibt es schon einen Gleitzeit-Übertrag (bereits übernommen?).")
+        # Rechnet das Konto schon vor dem Stichtag (Kontobeginn in den Einstellungen oder frühere
+        # Stempelungen), kämen diese Tage zum Übertrag aus dem Altsystem noch dazu.
+        start = await balance_start(db, row.employee)
+        if start is not None and start < cutover:
+            raise AppError(
+                409,
+                "BALANCE_STARTS_BEFORE_CUTOVER",
+                f"Das Gleitzeitkonto rechnet schon ab {start:%d.%m.%Y} – diese Tage kämen zum Übertrag dazu. "
+                "Bitte „Gleitzeitkonten führen ab“ auf den Stichtag setzen oder den Stichtag anpassen.",
+            )
 
 
 async def _apply_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover: date) -> None:
@@ -116,16 +133,14 @@ async def _apply_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
         entitlement = await get_or_create_entitlement(db, employee.id, cutover.year, actor.tenant_id)
         if row.entitled_days is not None:
             entitlement.entitled_days = row.entitled_days
+            entitlement.entitled_manual = True
         if row.carried_over_days is not None:
             entitlement.carried_over_days = row.carried_over_days
             entitlement.carried_over_manual = True
     _audit(db, actor, AuditAction.BALANCE_ADJUSTED, employee.id, f"Migration zum {cutover.isoformat()}: {', '.join(row.changes)}")
     await db.commit()
     if row.model is not None:
-        data = row.model.model_dump(exclude_none=True)
-        if not data.get("weekdays"):
-            data.pop("weekdays", None)  # "nach Aufwand" hat keine Arbeitstage
-        await set_work_time_model(employee.id, WorkTimeModelSetRequest(**data, valid_from=cutover), actor, db)
+        await set_work_time_model(employee.id, WorkTimeModelSetRequest.from_input(row.model, cutover), actor, db)
 
 
 @router.post("/migration/employee-values", response_model=MigrationImportResult)
@@ -189,14 +204,14 @@ async def import_employee_values(
 # Übertragbar sind fachliche Einstellungen. Nicht übertragen werden firmenbezogene Werte: Mailserver
 # (inkl. Passwort), Tablet-Admin-PIN, "Gleitzeitkonten führen ab", DATEV-Berater-/Mandantennummer.
 PORTABLE_SETTINGS = (
-    "require_pin_for_punch", "vacation_approval_required", "default_bundesland", "default_annual_vacation_days",
+    "require_pin_for_punch", "default_bundesland", "default_annual_vacation_days",
     "show_birthdays_in_calendar", "shift_planning_enabled", "default_auto_break", "default_show_birthday",
-    "default_day_minutes", "prorate_part_time_vacation", "vacation_carry_over_auto", "vacation_carry_over_max_days",
-    "vacation_carry_over_expiry", "disabled_day_flags", "report_days_without_punches", "datev_hours_wage_type",
-    "max_shift_span_hours", "core_time_start", "core_time_end", "core_time_days", "punctuality_check",
+    "default_day_minutes", "prorate_part_time_vacation", "prorate_partial_year_vacation", "vacation_carry_over_auto", "vacation_carry_over_max_days",
+    "vacation_carry_over_expiry", "disabled_day_flags", "report_days_without_punches",
+    "max_shift_span_hours", "core_time_start", "core_time_end", "core_time_days", "legal_break_minimum", "break_precise_from", "break_capped_from",
     "late_tolerance_minutes", "flex_frame_start", "flex_frame_end", "rfid_required", "kiosk_rfid_enabled",
     "kiosk_card_self_registration", "kiosk_pin_self_setup", "kiosk_show_balance", "kiosk_show_vacation",
-    "kiosk_break_buttons", "kiosk_errand_buttons", "portal_punching_enabled", "absence_requests_enabled",
+    "kiosk_break_buttons", "kiosk_errand_buttons", "portal_punching_enabled", "absence_requests_enabled", "absence_four_eyes",
     "kiosk_greeting", "kiosk_sort", "kiosk_theme", "kiosk_screen_on_from", "kiosk_screen_on_until",
 )
 
@@ -209,9 +224,17 @@ class PortableBreakRule(BaseModel):
     end_time: time | None = None
 
 
+class PortablePayComponentType(BaseModel):
+    kind: PayComponentKind
+    name: str = Field(min_length=1, max_length=100)
+    wage_type: str | None = Field(default=None, pattern=r"^[0-9]{1,6}$")
+    active: bool = True
+
+
 class TenantSettingsFile(BaseModel):
     """Datei "Einstellungen exportieren": fachliche Einstellungen, aktuelle Pausenregeln,
-    Abwesenheitsarten und Zuschlagsregeln. Beim Import wird alles erneut validiert."""
+    Abwesenheitsarten, Zuschlagsregeln, Lohnarten je Zeitart und Zulagenarten. Beim Import wird alles
+    erneut validiert. Ältere Dateien (mit settings.datev_hours_wage_type) gehen weiterhin."""
 
     format: Literal["hr3000-settings"] = "hr3000-settings"
     version: Literal[1] = 1
@@ -220,6 +243,18 @@ class TenantSettingsFile(BaseModel):
     break_rules: list[PortableBreakRule] = Field(default_factory=list, max_length=50)
     absence_types: list[AbsenceTypeCreateRequest] = Field(default_factory=list, max_length=100)
     surcharge_rules: list[SurchargeRuleCreateRequest] = Field(default_factory=list, max_length=100)
+    wage_types: dict[WageTypeItem, str] = Field(default_factory=dict, max_length=len(WageTypeItem))
+    pay_component_types: list[PortablePayComponentType] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def _old_hours_wage_type(self) -> "TenantSettingsFile":
+        legacy = self.settings.pop("datev_hours_wage_type", None)
+        if legacy and WageTypeItem.WORKED not in self.wage_types:
+            self.wage_types[WageTypeItem.WORKED] = legacy
+        for item, value in self.wage_types.items():
+            if not re.fullmatch(r"[0-9]{1,6}", value or ""):
+                raise ValueError(f"Lohnart für {item.value} ungültig.")
+        return self
 
 
 class SettingsImportResult(BaseModel):
@@ -245,7 +280,12 @@ async def export_tenant_settings(
         )
     ).scalars().all()
     absence_types = await list_absence_types(db, actor.tenant_id)
-    surcharges = await active_rules(db, actor.tenant_id)
+    # je Regel nur die offene (neueste) Fassung
+    surcharges = [r for r in await active_rules(db, actor.tenant_id) if r.valid_to is None]
+    wage_types = await wage_type_map(db, actor.tenant_id)
+    component_types = (
+        await db.execute(select(PayComponentType).where(PayComponentType.tenant_id == actor.tenant_id).order_by(PayComponentType.name))
+    ).scalars().all()
     await db.commit()
     return TenantSettingsFile(
         exported_at=datetime.now(),
@@ -287,6 +327,10 @@ async def export_tenant_settings(
             )
             for r in surcharges
         ],
+        wage_types=dict(wage_types),
+        pay_component_types=[
+            PortablePayComponentType(kind=t.kind, name=t.name, wage_type=t.wage_type, active=t.active) for t in component_types
+        ],
     )
 
 
@@ -294,14 +338,15 @@ def _settings_update(values: dict[str, Any]) -> SettingsUpdateRequest:
     """Übertragbare Werte als Änderung; leere Zeitfenster werden ausdrücklich entfernt."""
     data = {key: values[key] for key in PORTABLE_SETTINGS if key in values}
     for start, flag in (("core_time_start", "clear_core_time"), ("flex_frame_start", "clear_flex_frame"),
-                        ("kiosk_screen_on_from", "clear_kiosk_screen_hours")):
+                        ("kiosk_screen_on_from", "clear_kiosk_screen_hours"), ("break_precise_from", "clear_break_precise"),
+                        ("break_capped_from", "clear_break_capped")):
         if start in data and data[start] is None:
             data[flag] = True
     if "vacation_carry_over_max_days" in data and data["vacation_carry_over_max_days"] is None:
         data["clear_vacation_carry_over_max_days"] = True
     if data.get("vacation_carry_over_expiry") is None and "vacation_carry_over_expiry" in data:
         data["vacation_carry_over_expiry"] = ""
-    for key in ("kiosk_greeting", "datev_hours_wage_type"):
+    for key in ("kiosk_greeting",):
         if key in data and data[key] is None:
             data[key] = ""
     if "default_day_minutes" in data and data["default_day_minutes"] is None:
@@ -374,6 +419,17 @@ async def import_tenant_settings(
     }
     new_surcharges = [r for r in payload.surcharge_rules if r.name.strip().lower() not in surcharge_names]
     changes += [f"Zuschlag {r.name}" for r in new_surcharges]
+    current_wage_types = await wage_type_map(db, actor.tenant_id)
+    wage_type_updates = {item: value for item, value in payload.wage_types.items() if current_wage_types.get(item) != value}
+    changes += [f"Lohnart {WAGE_TYPE_LABELS[item]}: {value}" for item, value in wage_type_updates.items()]
+    type_names = {
+        (kind, name.strip().lower())
+        for kind, name in (
+            await db.execute(select(PayComponentType.kind, PayComponentType.name).where(PayComponentType.tenant_id == actor.tenant_id))
+        ).all()
+    }
+    new_component_types = [t for t in payload.pay_component_types if (t.kind, t.name.strip().lower()) not in type_names]
+    changes += [f"Zulagenart {t.name}" for t in new_component_types]
 
     if apply:
         await update_settings(update, actor, db)
@@ -386,7 +442,16 @@ async def import_tenant_settings(
         for absence in await _new_absence_types(db, actor.tenant_id, payload.absence_types):
             await create_absence_type(absence, actor, db)
         for surcharge in new_surcharges:
-            await create_surcharge_rule(surcharge, actor, db)
+            # wie Pausenregeln: ab heute (vorgelegte/abgeschlossene Monate bleiben unberührt)
+            await create_surcharge_rule(surcharge.model_copy(update={"valid_from": today}), actor, db)
+        await set_wage_types(db, actor.tenant_id, dict(wage_type_updates))
+        for component_type in new_component_types:
+            db.add(
+                PayComponentType(
+                    tenant_id=actor.tenant_id, kind=component_type.kind, name=component_type.name.strip(),
+                    wage_type=component_type.wage_type, active=component_type.active,
+                )
+            )
         _audit(db, actor, AuditAction.SETTINGS_CHANGED, 0, f"Einstellungen aus Datei übernommen: {len(changes)} Änderung(en)")
         await db.commit()
     return SettingsImportResult(applied=apply, changes=changes, skipped=skipped)

@@ -19,6 +19,15 @@ def _format_day_header(day: date) -> str:
     return f"{_WEEKDAY_LABELS_DE[day.weekday()]} {day.strftime('%d.%m.%Y')}"
 
 
+def _model_label(plan) -> str | None:
+    """Tag ohne Schichtvorlage: Soll des Arbeitszeitmodells statt eines Schichtnamens."""
+    if plan.flexible_weekly_minutes is not None:
+        return "flexibel"
+    if plan.target_minutes:
+        return f"{plan.target_minutes / 60:g} h".replace(".", ",")
+    return None
+
+
 async def render_shift_plan_pdf(
     db: AsyncSession, employees: list[Employee], date_from: date, date_to: date
 ) -> bytes:
@@ -46,7 +55,7 @@ async def render_shift_plan_pdf(
                 {
                     "is_workday": plan.is_workday,
                     "plan_exists": plan.plan_exists,
-                    "template_name": template.name if template else None,
+                    "template_name": template.name if template else _model_label(plan) if plan.plan_exists else None,
                     "start_time": (
                         template.start_time.strftime("%H:%M")
                         if template and template.start_time

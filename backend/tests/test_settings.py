@@ -29,7 +29,6 @@ async def test_settings_default_to_pin_not_required(
     assert response.status_code == 200
     assert response.json() == {
         "require_pin_for_punch": False,
-        "vacation_approval_required": False,
         "default_bundesland": None,
         "default_annual_vacation_days": 0.0,
         "show_birthdays_in_calendar": False,
@@ -40,10 +39,11 @@ async def test_settings_default_to_pin_not_required(
         "default_show_birthday": True,
         "default_day_minutes": None,
         "prorate_part_time_vacation": True,
+        "prorate_partial_year_vacation": True,
         "vacation_carry_over_auto": False,
         "vacation_carry_over_max_days": None,
         "vacation_carry_over_expiry": None,
-        "disabled_day_flags": [],
+        "disabled_day_flags": ["EARLY_LEAVE", "LATE_ARRIVAL"],
         "report_days_without_punches": True,
         "max_shift_span_hours": 16,
         "kiosk_admin_pin_set": False,
@@ -57,13 +57,16 @@ async def test_settings_default_to_pin_not_required(
         "kiosk_errand_buttons": False,
         "portal_punching_enabled": False,
         "absence_requests_enabled": True,
+        "absence_four_eyes": False,
         "datev_consultant_number": None,
         "datev_client_number": None,
-        "datev_hours_wage_type": None,
         "core_time_start": None,
         "core_time_end": None,
         "core_time_days": None,
-        "punctuality_check": False,
+        "punctuality_from": None,
+        "legal_break_minimum": True,
+        "break_precise_from": None,
+        "break_capped_from": None,
         "late_tolerance_minutes": 5,
         "flex_frame_start": None,
         "flex_frame_end": None,
@@ -132,6 +135,13 @@ async def test_admin_can_set_default_annual_vacation_days(
 
     get_response = await client.get("/settings", headers={"Authorization": f"Bearer {token}"})
     assert get_response.json()["default_annual_vacation_days"] == 30.0
+
+    # Teilurlaub bei Ein-/Austritt abschaltbar (bestehende Mandanten: aus)
+    patch_response = await client.patch(
+        "/settings", headers={"Authorization": f"Bearer {token}"}, json={"prorate_partial_year_vacation": False}
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.json()["prorate_partial_year_vacation"] is False
 
 
 async def test_admin_can_toggle_show_birthdays_in_calendar(

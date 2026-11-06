@@ -110,14 +110,16 @@ export function useUpdateEmployeeHrRoleMutation() {
     mutationFn: async ({
       employeeId,
       hrRole,
+      payrollAccess,
     }: {
       employeeId: number
       hrRole: HrRole | null
+      payrollAccess?: boolean
     }) =>
       unwrap(
         await apiClient.PATCH('/employees/{employee_id}/hr-role', {
           params: { path: { employee_id: employeeId } },
-          body: { hr_role: hrRole },
+          body: { hr_role: hrRole, ...(payrollAccess === undefined ? {} : { payroll_access: payrollAccess }) },
         }),
       ),
     onSuccess: () => {

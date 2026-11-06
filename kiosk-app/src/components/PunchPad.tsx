@@ -47,7 +47,7 @@ export function PunchPad({
           {employee.first_name} {employee.last_name}
         </h1>
         {identifiedViaCard && (
-          <span className="text-xs uppercase tracking-wide text-emerald-400">Per Karte identifiziert</span>
+          <span className="text-xs uppercase tracking-wide text-emerald-400">Per Chip erkannt</span>
         )}
         {pinConfirmed && (
           <span className="text-xs uppercase tracking-wide text-emerald-400">PIN bestätigt</span>

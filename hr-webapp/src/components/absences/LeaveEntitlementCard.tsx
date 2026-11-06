@@ -32,14 +32,21 @@ export function LeaveEntitlementCard({
   }, [entitlementQuery.data])
 
   async function handleSave() {
-    // Übertrag nur mitschicken, wenn geändert – sonst würde ein automatischer Übertrag festgeschrieben.
+    // Nur Geändertes mitschicken – sonst würden berechneter Anspruch bzw. automatischer Übertrag
+    // festgeschrieben.
+    const entitledChanged = entitledDays !== entitlementQuery.data?.entitled_days
     const carriedChanged = carriedOverDays !== entitlementQuery.data?.carried_over_days
-    await updateEntitlement.mutateAsync({
-      entitled_days: entitledDays,
-      ...(carriedChanged ? { carried_over_days: carriedOverDays } : {}),
-    })
+    if (entitledChanged || carriedChanged) {
+      await updateEntitlement.mutateAsync({
+        ...(entitledChanged ? { entitled_days: entitledDays } : {}),
+        ...(carriedChanged ? { carried_over_days: carriedOverDays } : {}),
+      })
+    }
     setEditing(false)
   }
+
+  // Berechneter Anspruch (null = nach Aufwand, HR trägt ein)
+  const computed = entitlementQuery.data?.suggested_entitled_days ?? null
 
   return (
     <Card className="max-w-md">
@@ -61,7 +68,9 @@ export function LeaveEntitlementCard({
         {entitlementQuery.data && !editing && (
           <div className="flex flex-col gap-2">
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <span className="text-slate-500">Anspruch</span>
+              <span className="text-slate-500">
+                Anspruch{entitlementQuery.data.entitled_manual ? ' (fest eingetragen)' : computed !== null ? ' (berechnet)' : ''}
+              </span>
               <span className="text-right">{formatDays(entitlementQuery.data.entitled_days)} Tage</span>
               <span className="text-slate-500">
                 Übertrag Vorjahr{entitlementQuery.data.carried_over_auto ? ' (automatisch)' : ''}
@@ -99,22 +108,27 @@ export function LeaveEntitlementCard({
                 Gezählt werden nur Arbeitstage laut Arbeitszeitmodell ({entitlementQuery.data.workdays_per_week} pro Woche).
               </p>
             )}
-            {!readOnly &&
-              entitlementQuery.data.suggested_entitled_days !== null &&
-              entitlementQuery.data.suggested_entitled_days !== entitlementQuery.data.entitled_days && (
-                <div className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
-                  Anteiliger Anspruch laut Arbeitszeitmodell: {entitlementQuery.data.suggested_entitled_days} Tage.{' '}
-                  <button
-                    type="button"
-                    className="font-medium underline"
-                    onClick={() =>
-                      void updateEntitlement.mutateAsync({ entitled_days: entitlementQuery.data!.suggested_entitled_days! })
-                    }
-                  >
-                    Übernehmen
-                  </button>
-                </div>
-              )}
+            {!entitlementQuery.data.entitled_manual && computed !== null && (
+              <p className="text-xs text-slate-500">
+                Berechnet aus {formatDays(entitlementQuery.data.annual_vacation_days)} Tagen Jahresurlaub (Vertrag bzw.
+                Standard, 5-Tage-Woche) – je nach Einstellung anteilig für Teilzeit und für Ein- oder Austritt im Jahr.
+              </p>
+            )}
+            {!entitlementQuery.data.entitled_manual && computed === null && (
+              <p className="text-xs text-slate-500">Arbeitszeitmodell „Nach Aufwand“: Anspruch bitte eintragen.</p>
+            )}
+            {!readOnly && entitlementQuery.data.entitled_manual && computed !== null && computed !== entitlementQuery.data.entitled_days && (
+              <div className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+                Berechnet wären {formatDays(computed)} Tage.{' '}
+                <button
+                  type="button"
+                  className="font-medium underline"
+                  onClick={() => void updateEntitlement.mutateAsync({ entitled_auto: true })}
+                >
+                  Wieder berechnen
+                </button>
+              </div>
+            )}
             {!readOnly && (
               <Button variant="outline" size="sm" className="mt-2 self-start" onClick={() => setEditing(true)}>
                 Bearbeiten
@@ -148,6 +162,18 @@ export function LeaveEntitlementCard({
                 />
               </div>
             </div>
+            <p className="text-xs text-slate-500">
+              Ein geänderter Anspruch gilt fest für {year}; ohne Änderung wird er weiter berechnet.
+            </p>
+            {entitlementQuery.data.entitled_manual && computed !== null && (
+              <button
+                type="button"
+                className="self-start text-xs text-sky-700 underline"
+                onClick={() => void updateEntitlement.mutateAsync({ entitled_auto: true }).then(() => setEditing(false))}
+              >
+                Anspruch wieder berechnen ({formatDays(computed)} Tage)
+              </button>
+            )}
             {!entitlementQuery.data.carried_over_auto && (
               <button
                 type="button"

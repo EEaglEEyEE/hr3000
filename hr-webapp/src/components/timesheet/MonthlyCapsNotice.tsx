@@ -5,14 +5,19 @@ import { cn } from '../../lib/utils'
 
 const hours = (minutes: number) => formatMinutesAsHours(minutes).replace('+', '')
 
-/** Zu klären: Aushilfen "nach Aufwand", die ihre Monatsgrenze erreichen (≥ 90 %) oder überschreiten. */
+/** Zu klären → „Monatsgrenzen“: Aushilfen "nach Aufwand", die ihre Monatsgrenze erreichen (≥ 90 %) oder überschreiten. */
 export function MonthlyCapsNotice() {
   const capsQuery = useMonthlyCapsQuery()
   const rows = capsQuery.data ?? []
-  if (rows.length === 0) return null
+  if (capsQuery.isLoading) return <p className="text-slate-500">Lädt…</p>
+  if (rows.length === 0) {
+    return <p className="text-sm text-slate-500">Keine Aushilfe „nach Aufwand“ nahe an ihrer Monatsgrenze.</p>
+  }
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50/50 p-4">
-      <p className="text-sm font-medium text-slate-900">Monatsgrenzen (laufender Monat)</p>
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-slate-500">
+        Aushilfen „nach Aufwand“, die im laufenden Monat ihre Monatsgrenze erreichen (ab 90 %) oder überschreiten.
+      </p>
       <div className="flex flex-col gap-1.5">
         {rows.map((row) => {
           const share = Math.round((row.actual_minutes / row.cap_minutes) * 100)

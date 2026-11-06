@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.pay_component import AllowanceUnit, PayComponentKind
 
@@ -17,14 +17,18 @@ class PayComponentCreateRequest(BaseModel):
     (zu einem Datum, z.B. Weihnachtsgeld)."""
 
     kind: PayComponentKind
-    name: str = Field(min_length=1, max_length=100)
+    # Art aus dem Katalog („Lohnarten“) – oder type_name: Art mit diesem Namen finden bzw. anlegen
+    type_id: int | None = Field(default=None, ge=1)
+    type_name: str | None = Field(
+        default=None, min_length=1, max_length=100, validation_alias=AliasChoices("type_name", "name")
+    )
     amount: float = Field(gt=0, le=1_000_000)
     unit: AllowanceUnit | None = None
     valid_from: date | None = None
     valid_to: date | None = None
     pay_date: date | None = None
-    # Lohnart für den DATEV-Export (nur Ziffern)
-    wage_type: str | None = Field(default=None, pattern=r"^\d{1,6}$")
+    # Lohnart einer neu angelegten Art (type_name); sonst gilt die Lohnart der Art
+    wage_type: str | None = Field(default=None, pattern=r"^[0-9]{1,6}$")
     note: str | None = Field(default=None, max_length=300)
 
     @field_validator("amount")
@@ -32,9 +36,11 @@ class PayComponentCreateRequest(BaseModel):
     def _amount_cents(cls, value: float) -> float:
         return _cents(value)
 
-    @field_validator("name")
+    @field_validator("type_name")
     @classmethod
-    def _strip(cls, value: str) -> str:
+    def _strip(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
         value = value.strip()
         if not value:
             raise ValueError("Bitte eine Bezeichnung angeben.")
@@ -42,6 +48,8 @@ class PayComponentCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _by_kind(self) -> "PayComponentCreateRequest":
+        if (self.type_id is None) == (self.type_name is None):
+            raise ValueError("Bitte eine Art wählen oder eine neue Art angeben.")
         if self.kind == PayComponentKind.ALLOWANCE:
             if self.unit is None or self.valid_from is None:
                 raise ValueError("Zulage: bitte Einheit und „Gültig ab“ angeben.")
@@ -56,12 +64,12 @@ class PayComponentCreateRequest(BaseModel):
 
 
 class PayComponentUpdateRequest(BaseModel):
-    """Zulage beenden/verlängern (valid_to, clear_valid_to = wieder unbefristet), Lohnart oder
-    Notiz ändern. Betrag/Art ändern = beenden und neu anlegen (nachvollziehbare Historie)."""
+    """Zulage beenden/verlängern (valid_to, clear_valid_to = wieder unbefristet) oder Notiz ändern.
+    Betrag/Art ändern = beenden und neu anlegen (nachvollziehbare Historie); die Lohnart steht an
+    der Art (Seite „Lohnarten“)."""
 
     valid_to: date | None = None
     clear_valid_to: bool = False
-    wage_type: str | None = Field(default=None, pattern=r"^\d{0,6}$")
     note: str | None = Field(default=None, max_length=300)
 
 
@@ -71,6 +79,8 @@ class PayComponentResponse(BaseModel):
     id: int
     employee_id: int
     kind: PayComponentKind
+    type_id: int
+    # Name und Lohnart der Art
     name: str
     amount: float
     unit: AllowanceUnit | None

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
@@ -9,24 +9,26 @@ import {
   type BreakRule,
   type BreakRuleUpdateRequest,
 } from '../api/queries/breakRules'
+import { useSettingsQuery, useUpdateSettingsMutation } from '../api/queries/settings'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { formatDate, todayIsoDate } from '../lib/format'
 
+/** Alles zu Pausen an einer Stelle: gesetzliche Mindestpause, Pausenstaffel, feste Pausenzeiten,
+ *  Berechnung und automatisches Stempeln. Je Mitarbeiter abweichend: Arbeitszeitmodell → „Pause“. */
 export function BreakRulesPage() {
   const rulesQuery = useBreakRulesQuery()
   const createRule = useCreateBreakRuleMutation()
   const updateRule = useUpdateBreakRuleMutation()
   const deleteRule = useDeleteBreakRuleMutation()
+  const settingsQuery = useSettingsQuery()
+  const updateSettings = useUpdateSettingsMutation()
+  const settings = settingsQuery.data
 
   const [minWorkMinutes, setMinWorkMinutes] = useState(360)
   const [deductMinutes, setDeductMinutes] = useState(30)
-  // Feste Pause des Betriebs: feste Minuten ab einer Arbeitszeit oder feste Uhrzeit.
-  const [fixedKind, setFixedKind] = useState<'FIXED_MINUTES' | 'FIXED_WINDOW'>('FIXED_WINDOW')
-  const [fixedThreshold, setFixedThreshold] = useState(0)
-  const [fixedMinutes, setFixedMinutes] = useState(30)
   const [windowStart, setWindowStart] = useState('12:00')
   const [windowEnd, setWindowEnd] = useState('12:30')
   // Gilt für Anlegen, Ändern und Beenden: frühere Tage behalten die alte Regel.
@@ -34,8 +36,8 @@ export function BreakRulesPage() {
   const [error, setError] = useState<string | null>(null)
 
   const rules = rulesQuery.data ?? []
-  const legal = rules.filter((rule) => rule.kind === 'LEGAL')
-  const fixed = rules.filter((rule) => rule.kind !== 'LEGAL')
+  const staffel = rules.filter((rule) => rule.kind !== 'FIXED_WINDOW')
+  const windows = rules.filter((rule) => rule.kind === 'FIXED_WINDOW')
 
   async function run(action: () => Promise<unknown>) {
     setError(null)
@@ -56,7 +58,7 @@ export function BreakRulesPage() {
     }
   }
 
-  async function handleCreateLegal(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateStaffel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await run(async () => {
       await createRule.mutateAsync({ kind: 'LEGAL', min_work_minutes: minWorkMinutes, deduct_minutes: deductMinutes, valid_from: validFrom })
@@ -65,24 +67,19 @@ export function BreakRulesPage() {
     })
   }
 
-  async function handleCreateFixed(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateWindow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    await run(() =>
-      createRule.mutateAsync(
-        fixedKind === 'FIXED_WINDOW'
-          ? { kind: 'FIXED_WINDOW', start_time: windowStart, end_time: windowEnd, valid_from: validFrom }
-          : { kind: 'FIXED_MINUTES', min_work_minutes: fixedThreshold, deduct_minutes: fixedMinutes, valid_from: validFrom },
-      ),
-    )
+    await run(() => createRule.mutateAsync({ kind: 'FIXED_WINDOW', start_time: windowStart, end_time: windowEnd, valid_from: validFrom }))
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-slate-900">Pausenregeln</h1>
         <p className="text-sm text-slate-500">
-          Wie viel Pause von der Anwesenheit abgezogen wird. Änderungen gelten ab dem gewählten Stichtag; Tage davor (und
-          bereits abgeschlossene Monate) rechnen mit den bisherigen Regeln.
+          Wie viel Pause von der Anwesenheit abgezogen wird – für alle Mitarbeiter. Je Mitarbeiter abweichend: im
+          Arbeitszeitmodell unter „Pause“ (bzw. in der Schichtvorlage). Änderungen gelten ab dem gewählten Stichtag; Tage
+          davor (und abgeschlossene Monate) rechnen weiter mit den bisherigen Regeln.
         </p>
       </div>
 
@@ -101,11 +98,27 @@ export function BreakRulesPage() {
         <div>
           <h2 className="font-medium text-slate-900">Gesetzliche Pausenstaffel</h2>
           <p className="text-sm text-slate-500">
-            Nach §4 ArbZG: ab wie vielen Arbeitsminuten mindestens wie viel Pause. Gestempelte Pausen zählen mit, nur was
-            fehlt, wird abgezogen bzw. – wenn beim Mitarbeiter aktiviert – automatisch gestempelt. Die Staffel gilt immer als
-            Untergrenze, auch neben festen Pausen.
+            Ab wie vielen Arbeitsminuten mindestens wie viel Pause. Gestempelte Pausen zählen mit, nur was fehlt, wird abgezogen
+            bzw. – wenn beim Mitarbeiter eingeschaltet – automatisch gestempelt. Strengere Werte des Betriebs (z. B. 30 Min. schon
+            ab 4 Std.) einfach als weitere Zeile.
           </p>
         </div>
+        {settings && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={settings.legal_break_minimum}
+              onChange={(e) => void run(() => updateSettings.mutateAsync({ legal_break_minimum: e.target.checked }))}
+            />
+            <span>
+              Gesetzliche Mindestpause nicht unterschreiten (§ 4 ArbZG: mehr als 6 Std. → 30 Min., mehr als 9 Std. → 45 Min.)
+              <span className="block text-xs text-slate-500">
+                Aus nur bei abweichender Regelung, z. B. Tarifvertrag nach § 7 ArbZG – dann lässt sich die Staffel frei ändern.
+              </span>
+            </span>
+          </label>
+        )}
         {rulesQuery.data && (
           <Table>
             <TableHeader>
@@ -117,7 +130,7 @@ export function BreakRulesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {legal.map((rule) => (
+              {staffel.map((rule) => (
                 <TableRow key={rule.id}>
                   <TableCell>
                     <NumberCell value={rule.min_work_minutes} onCommit={(value) => update(rule, { min_work_minutes: value })} />
@@ -131,7 +144,7 @@ export function BreakRulesPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {legal.length === 0 && (
+              {staffel.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-slate-500">
                     Noch keine Pausenregel angelegt.
@@ -141,29 +154,14 @@ export function BreakRulesPage() {
             </TableBody>
           </Table>
         )}
-
-        <form className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={handleCreateLegal}>
+        <form className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={handleCreateStaffel}>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="min_work_minutes">Ab Arbeitsminuten</Label>
-            <Input
-              id="min_work_minutes"
-              type="number"
-              min={0}
-              className="w-32"
-              value={minWorkMinutes}
-              onChange={(event) => setMinWorkMinutes(Number(event.target.value) || 0)}
-            />
+            <Input id="min_work_minutes" type="number" min={0} className="w-32" value={minWorkMinutes} onChange={(e) => setMinWorkMinutes(Number(e.target.value) || 0)} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="deduct_minutes">Pausenabzug (Minuten)</Label>
-            <Input
-              id="deduct_minutes"
-              type="number"
-              min={0}
-              className="w-32"
-              value={deductMinutes}
-              onChange={(event) => setDeductMinutes(Number(event.target.value) || 0)}
-            />
+            <Input id="deduct_minutes" type="number" min={0} className="w-32" value={deductMinutes} onChange={(e) => setDeductMinutes(Number(e.target.value) || 0)} />
           </div>
           <Button type="submit" disabled={createRule.isPending}>
             <Plus className="h-4 w-4" />
@@ -174,44 +172,30 @@ export function BreakRulesPage() {
 
       <section className="flex flex-col gap-3">
         <div>
-          <h2 className="font-medium text-slate-900">Feste Pausen des Betriebs</h2>
+          <h2 className="font-medium text-slate-900">Feste Pausenzeiten</h2>
           <p className="text-sm text-slate-500">
-            Für alle Mitarbeiter, auch ohne Pausenstempelung. <strong>Feste Uhrzeit</strong> (z. B. 12:00–12:30): abgezogen,
-            soweit der Mitarbeiter in dieser Zeit da war. <strong>Feste Minuten</strong>: ab einer Arbeitszeit mindestens so viel
-            Pause; gestempelte Pausen zählen mit. Ein Arbeitszeitmodell oder eine Schichtvorlage mit eigener Pause ersetzt diese
-            Regeln für den Mitarbeiter.
+            Z. B. 12:00–12:30: abgezogen, soweit der Mitarbeiter in dieser Zeit da war – auch ohne Pausenstempelung. Gestempelte
+            Pausen in dieser Zeit zählen nicht doppelt; die Pausenstaffel gilt zusätzlich als Mindestwert.
           </p>
         </div>
-        {rulesQuery.data && fixed.length > 0 && (
+        {windows.length > 0 && (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Art</TableHead>
-                <TableHead>Regel</TableHead>
+                <TableHead>Pausenzeit</TableHead>
                 <TableHead>Gültig</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {fixed.map((rule) => (
+              {windows.map((rule) => (
                 <TableRow key={rule.id}>
-                  <TableCell className="text-sm">{rule.kind === 'FIXED_WINDOW' ? 'Feste Uhrzeit' : 'Feste Minuten'}</TableCell>
                   <TableCell>
-                    {rule.kind === 'FIXED_WINDOW' ? (
-                      <div className="flex items-center gap-2 text-sm">
-                        <TimeCell label="Pause von" value={rule.start_time} onCommit={(value) => update(rule, { start_time: value })} />
-                        bis
-                        <TimeCell label="Pause bis" value={rule.end_time} onCommit={(value) => update(rule, { end_time: value })} />
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2 text-sm">
-                        ab
-                        <NumberCell value={rule.min_work_minutes} onCommit={(value) => update(rule, { min_work_minutes: value })} />
-                        Arbeitsminuten mindestens
-                        <NumberCell value={rule.deduct_minutes} onCommit={(value) => update(rule, { deduct_minutes: value })} />
-                        Minuten
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 text-sm">
+                      <TimeCell label="Pause von" value={rule.start_time} onCommit={(value) => update(rule, { start_time: value })} />
+                      bis
+                      <TimeCell label="Pause bis" value={rule.end_time} onCommit={(value) => update(rule, { end_time: value })} />
+                    </div>
                   </TableCell>
                   <TableCell className="text-sm text-slate-600">{validity(rule)}</TableCell>
                   <TableCell>
@@ -222,75 +206,97 @@ export function BreakRulesPage() {
             </TableBody>
           </Table>
         )}
-
-        <form className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={handleCreateFixed}>
-          <div className="flex flex-wrap gap-2 text-sm">
-            {(
-              [
-                ['FIXED_WINDOW', 'Feste Uhrzeit'],
-                ['FIXED_MINUTES', 'Feste Minuten'],
-              ] as const
-            ).map(([kind, label]) => (
-              <Button
-                key={kind}
-                type="button"
-                size="sm"
-                variant={fixedKind === kind ? 'default' : 'outline'}
-                aria-pressed={fixedKind === kind}
-                onClick={() => setFixedKind(kind)}
-              >
-                {label}
-              </Button>
-            ))}
+        <form className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={handleCreateWindow}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="window_start">Pause von</Label>
+            <Input id="window_start" type="time" className="w-32" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} />
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            {fixedKind === 'FIXED_WINDOW' ? (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="window_start">Pause von</Label>
-                  <Input id="window_start" type="time" className="w-32" value={windowStart} onChange={(e) => setWindowStart(e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="window_end">Pause bis</Label>
-                  <Input id="window_end" type="time" className="w-32" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="fixed_threshold">Ab Arbeitsminuten</Label>
-                  <Input
-                    id="fixed_threshold"
-                    type="number"
-                    min={0}
-                    className="w-32"
-                    value={fixedThreshold}
-                    onChange={(event) => setFixedThreshold(Number(event.target.value) || 0)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="fixed_minutes">Pause (Minuten)</Label>
-                  <Input
-                    id="fixed_minutes"
-                    type="number"
-                    min={1}
-                    className="w-32"
-                    value={fixedMinutes}
-                    onChange={(event) => setFixedMinutes(Number(event.target.value) || 0)}
-                  />
-                </div>
-              </>
-            )}
-            <Button
-              type="submit"
-              disabled={createRule.isPending || (fixedKind === 'FIXED_WINDOW' ? !(windowStart && windowEnd && windowStart < windowEnd) : fixedMinutes < 1)}
-            >
-              <Plus className="h-4 w-4" />
-              Feste Pause hinzufügen (ab {formatDate(validFrom)})
-            </Button>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="window_end">Pause bis</Label>
+            <Input id="window_end" type="time" className="w-32" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
           </div>
+          <Button type="submit" disabled={createRule.isPending || !(windowStart && windowEnd && windowStart < windowEnd)}>
+            <Plus className="h-4 w-4" />
+            Pausenzeit hinzufügen (ab {formatDate(validFrom)})
+          </Button>
         </form>
       </section>
+
+      {settings && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-medium text-slate-900">Berechnung</h2>
+          <DatedSwitch
+            label="Pausen genau nach § 4 ArbZG rechnen"
+            hint="Die Pausenpflicht richtet sich nach der Arbeitszeit ohne Pausen, und gestempelte Pausen zählen erst ab 15 Minuten. Bisher: nach Anwesenheit, jede gestempelte Pause zählt."
+            from={settings.break_precise_from}
+            onEnable={(day) => run(() => updateSettings.mutateAsync({ break_precise_from: day }))}
+            onDisable={() => run(() => updateSettings.mutateAsync({ clear_break_precise: true }))}
+          />
+          <DatedSwitch
+            label="Pausenabzug höchstens bis zur Schwelle"
+            hint="Wer z. B. 6:10 Std. ohne Pause arbeitet, behält 6:00 Std. statt 5:40 Std. – der Abzug drückt die Arbeitszeit nie unter die Schwelle der Staffel."
+            from={settings.break_capped_from}
+            onEnable={(day) => run(() => updateSettings.mutateAsync({ break_capped_from: day }))}
+            onDisable={() => run(() => updateSettings.mutateAsync({ clear_break_capped: true }))}
+          />
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={settings.default_auto_break}
+              onChange={(e) => void run(() => updateSettings.mutateAsync({ default_auto_break: e.target.checked }))}
+            />
+            <span>
+              Pausen automatisch stempeln – Standard für neue Mitarbeiter
+              <span className="block text-xs text-slate-500">
+                Die fehlende Pause wird beim Ausstempeln als Buchung eingetragen (je Mitarbeiter im Mitarbeiter-Dialog
+                änderbar). Abgezogen wird sie in jedem Fall.
+              </span>
+            </span>
+          </label>
+        </section>
+      )}
+    </div>
+  )
+}
+
+/** Schalter mit „gilt ab“: an = ab dem gewählten Tag, aus = wieder wie bisher (nicht in abgeschlossenen Monaten). */
+function DatedSwitch({
+  label,
+  hint,
+  from,
+  onEnable,
+  onDisable,
+}: {
+  label: string
+  hint: string
+  from: string | null | undefined
+  onEnable: (day: string) => Promise<void> | void
+  onDisable: () => Promise<void> | void
+}) {
+  const [day, setDay] = useState(from ?? todayIsoDate())
+  useEffect(() => setDay(from ?? todayIsoDate()), [from])
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={Boolean(from)}
+          onChange={(e) => void (e.target.checked ? onEnable(day) : onDisable())}
+        />
+        <span>
+          {label}
+          {from ? ` – gilt ab ${formatDate(from)}` : ''}
+          <span className="block text-xs text-slate-500">{hint}</span>
+        </span>
+      </label>
+      {!from && (
+        <div className="flex items-center gap-2 pl-6">
+          <span className="text-slate-500">gilt ab</span>
+          <Input type="date" aria-label={`${label} gilt ab`} className="w-44" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
+        </div>
+      )}
     </div>
   )
 }

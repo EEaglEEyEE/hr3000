@@ -132,6 +132,7 @@ describe('Kacheln "Zu erledigen" und "Heute"', () => {
     renderWithProviders(<Dashboard />)
     const tile = (await screen.findByText('Urlaubsanträge')).closest('a') as HTMLElement
     await waitFor(() => expect(within(tile).getByText('2')).toBeInTheDocument())
+    expect(tile).toHaveAttribute('href', '/zu-klaeren/urlaubsantraege')
   })
 
   it('zählt offene Tage und überschrittene Monatsgrenzen in "Zu klären"', async () => {

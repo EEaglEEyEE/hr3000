@@ -14,6 +14,8 @@ class ContractCreateRequest(BaseModel):
     fixed_term_end: date | None = None
     notice_period: str | None = Field(default=None, max_length=100)
     notes: str | None = Field(default=None, max_length=1000)
+    # Jahresurlaub (Tage, bezogen auf die 5-Tage-Woche); leer = Standard der Firma
+    annual_vacation_days: float | None = Field(default=None, ge=0, le=365)
 
     @model_validator(mode="after")
     def _consistent_dates(self) -> "ContractCreateRequest":
@@ -36,6 +38,8 @@ class ContractUpdateRequest(BaseModel):
     clear_valid_to: bool = False
     clear_probation_end: bool = False
     clear_fixed_term_end: bool = False
+    annual_vacation_days: float | None = Field(default=None, ge=0, le=365)
+    clear_annual_vacation_days: bool = False
 
 
 class ContractResponse(BaseModel):
@@ -51,6 +55,7 @@ class ContractResponse(BaseModel):
     fixed_term_end: date | None
     notice_period: str | None
     notes: str | None
+    annual_vacation_days: float | None = None
 
 
 class CompensationCreateRequest(BaseModel):

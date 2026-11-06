@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import Actor, get_current_admin_principal, get_current_full_hr_principal
+from app.api.deps import Actor, get_current_full_hr_principal, get_current_payroll_principal
 from app.db import get_db
 from app.errors import AppError
 from app.models import AuditAction, Compensation, ContractType, Employee, EmploymentContract, PayComponent, PayComponentKind
@@ -16,6 +16,7 @@ from app.schemas.employment import (
     ContractUpdateRequest,
 )
 from app.schemas.pay_component import PayComponentCreateRequest, PayComponentResponse, PayComponentUpdateRequest
+from app.services.wage_type_service import component_type, find_or_create_component_type
 from app.services.audit_service import log_action
 from app.services.period_service import ensure_open_from, ensure_period_open, ensure_range_open
 from app.services.effective_dating import apply_new_period
@@ -119,6 +120,10 @@ async def update_contract(
         contract.valid_to = payload.valid_to
     elif payload.clear_valid_to:
         contract.valid_to = None
+    if payload.annual_vacation_days is not None:
+        contract.annual_vacation_days = payload.annual_vacation_days
+    elif payload.clear_annual_vacation_days:
+        contract.annual_vacation_days = None
 
     # Verlängern/Öffnen darf keinen Zeitraum eines anderen Vertrags überdecken.
     new_end = contract.valid_to or date.max
@@ -160,7 +165,7 @@ async def delete_contract(
 @router.get("/employees/{employee_id}/compensation", response_model=list[CompensationResponse])
 async def list_compensation(
     employee_id: int,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[CompensationResponse]:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
@@ -176,7 +181,7 @@ async def list_compensation(
 async def create_compensation(
     employee_id: int,
     payload: CompensationCreateRequest,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> CompensationResponse:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
@@ -198,7 +203,7 @@ async def create_compensation(
 async def delete_compensation(
     employee_id: int,
     compensation_id: int,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
@@ -237,7 +242,7 @@ async def _get_component(db: AsyncSession, employee_id: int, component_id: int) 
 @router.get("/employees/{employee_id}/pay-components", response_model=list[PayComponentResponse])
 async def list_pay_components(
     employee_id: int,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[PayComponentResponse]:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
@@ -254,12 +259,23 @@ async def list_pay_components(
 async def create_pay_component(
     employee_id: int,
     payload: PayComponentCreateRequest,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> PayComponentResponse:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
-    component = PayComponent(tenant_id=actor.tenant_id, employee_id=employee_id, **payload.model_dump())
-    await _ensure_component_open(db, component)
+    component = PayComponent(
+        tenant_id=actor.tenant_id, employee_id=employee_id, **payload.model_dump(exclude={"type_id", "type_name", "wage_type"})
+    )
+    await _ensure_component_open(db, component)  # vor dem Anlegen einer neuen Art
+    if payload.type_id is not None:
+        kind_type = await component_type(db, actor.tenant_id, payload.type_id)
+        if kind_type.kind != payload.kind:
+            raise AppError(400, "PAY_COMPONENT_TYPE_KIND", "Die Art passt nicht (Zulage bzw. Einmalzahlung).")
+    else:
+        kind_type = await find_or_create_component_type(db, actor.tenant_id, payload.kind, payload.type_name, payload.wage_type)
+    if not kind_type.active:
+        raise AppError(400, "PAY_COMPONENT_TYPE_INACTIVE", f"Die Art „{kind_type.name}“ ist inaktiv (Seite „Lohnarten“).")
+    component.type = kind_type
     db.add(component)
     when = (
         f"ab {payload.valid_from.isoformat()}" if payload.kind == PayComponentKind.ALLOWANCE else f"am {payload.pay_date.isoformat()}"
@@ -276,7 +292,7 @@ async def update_pay_component(
     employee_id: int,
     component_id: int,
     payload: PayComponentUpdateRequest,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> PayComponentResponse:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
@@ -297,9 +313,6 @@ async def update_pay_component(
                 await ensure_range_open(db, employee_id, first_changed, max(component.valid_to, new_to))
             component.valid_to = new_to
             changes.append(f"bis {new_to.isoformat()}" if new_to else "unbefristet")
-    if payload.wage_type is not None:
-        component.wage_type = payload.wage_type or None
-        changes.append("Lohnart")
     if payload.note is not None:
         component.note = payload.note.strip() or None
         changes.append("Notiz")
@@ -314,7 +327,7 @@ async def update_pay_component(
 async def delete_pay_component(
     employee_id: int,
     component_id: int,
-    actor: Actor = Depends(get_current_admin_principal),
+    actor: Actor = Depends(get_current_payroll_principal),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)

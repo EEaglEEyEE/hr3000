@@ -40,6 +40,8 @@ class EffectiveDayPlan:
     flexible_weekly_minutes: int | None = None
     # Nach Aufwand: Stempelungen zählen als Ist, es gibt kein Soll (wie ohne Planung, aber gewollt).
     on_demand: bool = False
+    # Fassung der Arbeitszeit an diesem Tag (auch bei Tagesausnahmen) – für Pause und Kernzeit.
+    version: "EmployeeDefaultShift | None" = None
 
 
 _UNCONFIGURED = EffectiveDayPlan(True, False, None, None, None, None, False)
@@ -87,20 +89,6 @@ def _weekday_rank_in_month(work_date: date, weekdays_mask: int) -> tuple[int, in
     return matching_days.index(work_date), len(matching_days)
 
 
-def _resolve_target_minutes(template: ShiftTemplate, work_date: date, weekdays_mask: int) -> int:
-    """target_minutes eines EmployeeDefaultShift-Tages, abhängig vom
-    Bezugszeitraum der Vorlage (siehe TargetPeriod) – DAILY unverändert,
-    WEEKLY/MONTHLY verteilen den Vorlagenwert gleichmäßig auf die
-    zutreffenden Wochentage."""
-    if template.target_period == TargetPeriod.WEEKLY:
-        rank, count = _weekday_rank_in_mask(work_date.weekday(), weekdays_mask)
-    elif template.target_period == TargetPeriod.MONTHLY:
-        rank, count = _weekday_rank_in_month(work_date, weekdays_mask)
-    else:
-        return template.target_minutes
-    return _distribute_period_minutes(template.target_minutes, rank, count)
-
-
 async def shift_planning_enabled_for_employee(db: AsyncSession, employee_id: int) -> bool:
     """Ob der Mandant des Mitarbeiters die Schichtplanung aktiviert hat
     (AppSettings.shift_planning_enabled). Ohne Einstellungszeile gilt: aus."""
@@ -112,12 +100,35 @@ async def shift_planning_enabled_for_employee(db: AsyncSession, employee_id: int
     return bool(result.scalar_one_or_none())
 
 
+async def _active_version(db: AsyncSession, employee_id: int, work_date: date) -> EmployeeDefaultShift | None:
+    result = await db.execute(
+        select(EmployeeDefaultShift).where(
+            EmployeeDefaultShift.employee_id == employee_id,
+            EmployeeDefaultShift.valid_from <= work_date,
+        )
+    )
+    # Es gibt zu jedem Zeitpunkt höchstens eine aktive Fassung pro Mitarbeiter (Overlap-Check in
+    # app/api/employee_default_shifts.py bzw. app/api/work_time_model.py).
+    candidates = [d for d in result.scalars().all() if d.valid_to is None or d.valid_to >= work_date]
+    return candidates[0] if candidates else None
+
+
+def version_target(version: EmployeeDefaultShift, template: ShiftTemplate | None) -> tuple[int, TargetPeriod]:
+    """Soll der Fassung (Minuten, Bezugszeitraum): eigenes Soll, sonst das der Schichtvorlage."""
+    if version.target_minutes is not None:
+        return version.target_minutes, version.target_period or TargetPeriod.WEEKLY
+    if template is not None:
+        return template.target_minutes, template.target_period
+    return 0, TargetPeriod.DAILY
+
+
 async def resolve_effective_shift(db: AsyncSession, employee_id: int, work_date: date) -> EffectiveDayPlan:
-    """Zentrale Auflösung der Tagesplanung: ShiftPlanEntry für das exakte
-    Datum falls vorhanden, sonst der zu diesem Wochentag passende
-    EmployeeDefaultShift, sonst "unkonfiguriert" (siehe plan_exists oben).
-    Wird von calculate_day UND von den Ruhezeit-Prüfungen unten verwendet –
-    eine Auflösung, keine drei Kopien der Logik."""
+    """Zentrale Auflösung der Tagesplanung: ShiftPlanEntry für das exakte Datum falls vorhanden,
+    sonst die zu diesem Wochentag passende Fassung (EmployeeDefaultShift), sonst "unkonfiguriert"
+    (siehe plan_exists oben). Wird von calculate_day UND von den Ruhezeit-Prüfungen unten verwendet –
+    eine Auflösung, keine drei Kopien der Logik. Die Fassung des Tages hängt immer am Ergebnis
+    (version) – für Pause und Kernzeit."""
+    version = await _active_version(db, employee_id, work_date)
     entry = None
     # Tagesausnahmen/Dienstplan-Einträge wirken nur bei aktivierter Schichtplanung;
     # bereits gespeicherte bleiben erhalten, werden aber ignoriert, solange aus.
@@ -129,13 +140,23 @@ async def resolve_effective_shift(db: AsyncSession, employee_id: int, work_date:
         )
         entry = result.scalar_one_or_none()
     if entry is not None:
-        if not entry.is_workday:
-            return EffectiveDayPlan(False, True, None, None, None, None, True)
         template = (
             await db.get(ShiftTemplate, entry.shift_template_id)
             if entry.shift_template_id is not None
             else None
         )
+        if version is not None and (version.on_demand or version.flexible):
+            # Ohne Tagessoll (nach Aufwand / flexibel): ein geplanter Einsatz liefert nur die Uhrzeiten,
+            # das Soll bleibt beim Modell (kein Minus durch geplante Tage, kein "fest" durch ein Frei).
+            base = await _plan_from_version(db, version, work_date)
+            base.is_workday = entry.is_workday  # nur Anzeige ("Frei"), das Soll bleibt beim Modell
+            base.shift_template_id = entry.shift_template_id
+            base.start_time = template.start_time if template and entry.is_workday else None
+            base.end_time = template.end_time if template and entry.is_workday else None
+            base.from_entry = True
+            return base
+        if not entry.is_workday:
+            return EffectiveDayPlan(False, True, None, None, None, None, True, version=version)
         return EffectiveDayPlan(
             True,
             True,
@@ -144,47 +165,49 @@ async def resolve_effective_shift(db: AsyncSession, employee_id: int, work_date:
             template.start_time if template else None,
             template.end_time if template else None,
             True,
+            version=version,
         )
-
-    result = await db.execute(
-        select(EmployeeDefaultShift).where(
-            EmployeeDefaultShift.employee_id == employee_id,
-            EmployeeDefaultShift.valid_from <= work_date,
-        )
-    )
-    # Es gibt zu jedem Zeitpunkt höchstens eine aktive Default-Zuordnung pro
-    # Mitarbeiter (siehe app/api/employee_default_shifts.py Overlap-Check) –
-    # daher hier keine weitere Auswahl nötig, nur die Gültigkeit filtern.
-    candidates = [
-        d for d in result.scalars().all() if d.valid_to is None or d.valid_to >= work_date
-    ]
-    default = candidates[0] if candidates else None
-    if default is None:
+    if version is None:
         return _UNCONFIGURED
+    return await _plan_from_version(db, version, work_date)
 
-    if default.on_demand:
+
+async def _plan_from_version(db: AsyncSession, version: EmployeeDefaultShift, work_date: date) -> EffectiveDayPlan:
+    template = await db.get(ShiftTemplate, version.shift_template_id) if version.shift_template_id is not None else None
+    if version.on_demand:
         # plan_exists=False: kein Soll, kein "frei laut Plan", kein "außerplanmäßig".
-        return EffectiveDayPlan(True, False, None, default.shift_template_id, None, None, False, on_demand=True)
+        return EffectiveDayPlan(True, False, None, version.shift_template_id, None, None, False, on_demand=True, version=version)
 
-    if default.flexible:
-        template = await db.get(ShiftTemplate, default.shift_template_id)
+    total, period = version_target(version, template)
+    if version.flexible:
         return EffectiveDayPlan(
-            True, True, None, template.id, None, None, False, flexible_weekly_minutes=template.target_minutes
+            True, True, None, version.shift_template_id, None, None, False, flexible_weekly_minutes=total, version=version
         )
 
     weekday_bit = 1 << work_date.weekday()
-    per_day = default.day_minutes_list
-    if not (default.weekdays_mask & weekday_bit) or (per_day is not None and per_day[work_date.weekday()] <= 0):
-        return EffectiveDayPlan(False, True, None, None, None, None, False)
+    per_day = version.day_minutes_list
+    if not (version.weekdays_mask & weekday_bit) or (per_day is not None and per_day[work_date.weekday()] <= 0):
+        return EffectiveDayPlan(False, True, None, None, None, None, False, version=version)
 
-    template = await db.get(ShiftTemplate, default.shift_template_id)
-    target_minutes = (
-        per_day[work_date.weekday()]
-        if per_day is not None
-        else _resolve_target_minutes(template, work_date, default.weekdays_mask)
-    )
+    if per_day is not None:
+        target_minutes = per_day[work_date.weekday()]
+    elif period == TargetPeriod.WEEKLY:
+        rank, count = _weekday_rank_in_mask(work_date.weekday(), version.weekdays_mask)
+        target_minutes = _distribute_period_minutes(total, rank, count)
+    elif period == TargetPeriod.MONTHLY:
+        rank, count = _weekday_rank_in_month(work_date, version.weekdays_mask)
+        target_minutes = _distribute_period_minutes(total, rank, count)
+    else:
+        target_minutes = total
     return EffectiveDayPlan(
-        True, True, target_minutes, template.id, template.start_time, template.end_time, False
+        True,
+        True,
+        target_minutes,
+        version.shift_template_id,
+        template.start_time if template else None,
+        template.end_time if template else None,
+        False,
+        version=version,
     )
 
 

@@ -18,7 +18,7 @@ export const PUNCH_TYPE_LABELS: Record<PunchType, string> = {
 }
 
 export const PUNCH_SOURCE_LABELS: Record<PunchSource, string> = {
-  KIOSK: 'Kiosk',
+  KIOSK: 'Tablet',
   MANUAL_HR: 'HR manuell',
   AUTO_BREAK: 'Automatisch (Pause)',
   PORTAL: 'Web-Login',
@@ -92,7 +92,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   DOCUMENT_DELETED: 'Dokument gelöscht',
   DOCUMENT_ACCESSED: 'Dokument abgerufen',
   PERIOD_SUBMITTED: 'Monatsnachweis zur Bestätigung vorgelegt',
-  PERIOD_CONFIRMED: 'Monatsnachweis bestätigt',
+  PERIOD_CONFIRMED: 'Monatsnachweis bestätigt (abgeschlossen)',
   PERIOD_DISPUTED: 'Monatsnachweis beanstandet',
   PERIOD_CLOSED: 'Monat abgeschlossen',
   PERIOD_REOPENED: 'Monat wieder geöffnet',
@@ -161,7 +161,6 @@ export const DOCUMENT_CATEGORY_LABELS: Record<components['schemas']['DocumentRes
 
 export const PERIOD_STATUS_LABELS: Record<components['schemas']['PeriodClosureResponse']['status'], string> = {
   SUBMITTED: 'Zur Bestätigung vorgelegt',
-  CONFIRMED: 'Vom Mitarbeiter bestätigt',
   DISPUTED: 'Widerspruch',
   CLOSED: 'Abgeschlossen',
 }
@@ -171,7 +170,6 @@ export const PERIOD_STATUS_VARIANT: Record<
   BadgeProps['variant']
 > = {
   SUBMITTED: 'warning',
-  CONFIRMED: 'info',
   DISPUTED: 'danger',
   CLOSED: 'success',
 }
@@ -192,7 +190,7 @@ export const CHECKLIST_KIND_LABELS: Record<components['schemas']['ChecklistRespo
 export const CHECKLIST_ROLE_LABELS: Record<components['schemas']['ChecklistRole'], string> = {
   HR: 'HR',
   IT: 'IT',
-  SUPERVISOR: 'Vorgesetzte/r',
+  SUPERVISOR: 'Teamleiter/in',
   EMPLOYEE: 'Mitarbeiter/in',
   OTHER: 'Sonstige',
 }

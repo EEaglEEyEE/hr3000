@@ -10,6 +10,7 @@ import {
   type PayComponent,
   type PayComponentCreateRequest,
 } from '../../api/queries/employment'
+import { usePayComponentTypesQuery } from '../../api/queries/wageTypes'
 import { formatDate, todayIsoDate } from '../../lib/format'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
@@ -154,6 +155,8 @@ function PayComponentDialog({
   onClose: () => void
 }) {
   const create = useCreatePayComponentMutation(employeeId)
+  // Arten aus dem Katalog („Lohnarten“): passende Art wählen oder eine neue anlegen
+  const typesQuery = usePayComponentTypesQuery()
   const allowance = kind === 'ALLOWANCE'
   const [name, setName] = useState(allowance ? '' : 'Weihnachtsgeld')
   const [amount, setAmount] = useState('')
@@ -164,9 +167,16 @@ function PayComponentDialog({
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  const types = (typesQuery.data ?? []).filter((t) => t.kind === kind)
+  const existing = types.find((t) => t.name.toLowerCase() === name.trim().toLowerCase())
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    if (existing && !existing.active) {
+      setError(`Die Art „${existing.name}“ ist inaktiv – unter „Lohnarten“ wieder aktivieren oder eine andere wählen.`)
+      return
+    }
     const parsed = Number(amount.replace(',', '.'))
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError('Bitte einen Betrag größer 0 angeben.')
@@ -174,9 +184,8 @@ function PayComponentDialog({
     }
     const payload: PayComponentCreateRequest = {
       kind,
-      name: name.trim(),
+      ...(existing ? { type_id: existing.id } : { type_name: name.trim(), wage_type: wageType.trim() || null }),
       amount: parsed,
-      wage_type: wageType.trim() || null,
       note: note.trim() || null,
       ...(allowance ? { unit, valid_from: from, valid_to: to || null } : { pay_date: from }),
     }
@@ -201,10 +210,25 @@ function PayComponentDialog({
               id="pc_name"
               required
               maxLength={100}
+              list="pc_types"
               placeholder={allowance ? 'z. B. Fahrtkostenzuschuss' : 'z. B. Weihnachtsgeld'}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+            <datalist id="pc_types">
+              {types
+                .filter((t) => t.active)
+                .map((t) => (
+                  <option key={t.id} value={t.name} />
+                ))}
+            </datalist>
+            <p className="text-xs text-slate-500">
+              {existing
+                ? `Art aus „Lohnarten“ – Lohnart ${existing.wage_type ?? 'nicht hinterlegt'}.`
+                : name.trim()
+                  ? 'Neue Art – wird unter „Lohnarten“ angelegt und steht dann bei allen Mitarbeitern zur Auswahl.'
+                  : 'Vorhandene Art wählen oder einen neuen Namen eingeben.'}
+            </p>
           </div>
           {allowance && (
             <div className="flex flex-wrap gap-2 text-sm">
@@ -232,10 +256,12 @@ function PayComponentDialog({
               <Label htmlFor="pc_amount">{allowance ? (unit === 'PER_HOUR' ? 'Betrag je Stunde (EUR)' : 'Betrag je Monat (EUR)') : 'Betrag (EUR)'}</Label>
               <Input id="pc_amount" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pc_wage_type">Lohnart (optional)</Label>
-              <Input id="pc_wage_type" inputMode="numeric" maxLength={6} value={wageType} onChange={(e) => setWageType(e.target.value)} />
-            </div>
+            {!existing && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="pc_wage_type">Lohnart (optional)</Label>
+                <Input id="pc_wage_type" inputMode="numeric" maxLength={6} value={wageType} onChange={(e) => setWageType(e.target.value)} />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">

@@ -8,6 +8,8 @@ class HrUserCreateRequest(BaseModel):
     email: EmailStr
     password: NewPassword
     role: HrRole = HrRole.HR
+    # Berechtigung „Vergütung & Lohn-Export“ (nur Rolle HR; Admins haben sie immer)
+    payroll_access: bool = False
 
 
 class HrUserResponse(BaseModel):
@@ -16,3 +18,4 @@ class HrUserResponse(BaseModel):
     id: int
     email: str
     role: HrRole
+    payroll_access: bool = False

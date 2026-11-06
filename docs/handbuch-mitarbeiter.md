@@ -34,9 +34,11 @@ Stand: 04.11.2026.
   - „Saldenübersicht“
   - „Abwesenheiten“: Mit „Neue Abwesenheit“ beantragst du z. B. Urlaub, auch halbtags. Das
     geht nur, wenn die Firma Anträge erlaubt; sonst meldest du Urlaub direkt bei HR.
-  - „Schichtplanung“: dein Schichtplan (nur, wenn deine Firma Schichtplanung nutzt)
-  - „Monatsabschluss“: Monatsbericht ansehen („PDF ansehen“), dann „Bestätigen“ oder
-    „Widersprechen“ mit Begründung.
+  - „Schichtplanung“: deine regelmäßige Arbeitszeit (Arbeitszeitmodell mit Soll, Uhrzeiten, Pause
+    und Kernzeit) und abweichende Tage der nächsten 30 Tage (nur, wenn deine Firma Schichtplanung
+    nutzt)
+  - „Monatsabschluss“: Monatsbericht ansehen („PDF ansehen“), dann „Bestätigen“ (damit ist der
+    Monat abgeschlossen) oder „Widersprechen“ mit Begründung.
   - „Dokumente“: für dich freigegebene Dokumente
 - Oben findest du „Monatsbericht“, die Benachrichtigungen (Glocke), „Passwort ändern“ und „Abmelden“.
 

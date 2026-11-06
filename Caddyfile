@@ -57,6 +57,36 @@
 #    bewusst NICHT: Liegt er unter der Plattform-Domain (admin.hr3000.de), bedient ihn der
 #    Sammel-Block unten (ein fester Host unter der Plattform-Domain bekäme von Caddy kein
 #    eigenes Zertifikat); liegt er woanders, muss er zusätzlich in HR_HOSTS stehen.
+# Testumgebung (scripts/staging.sh): eigene Container im Compose-Projekt "hr3000-staging", über das
+# Docker-Netz der Produktion unter staging-backend / staging-hr-webapp / staging-kiosk-app erreichbar.
+# Hosts unter STAGING_BASE_DOMAIN (z.B. demo.test.hr3000.de); ohne Eintrag in der .env greift nichts.
+(staging_api) {
+	handle_path /api/* {
+		@internal path /internal/*
+		respond @internal 404
+		reverse_proxy staging-backend:8000
+	}
+}
+(staging_hr_app) {
+	import security_headers
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+	header X-Robots-Tag "noindex, nofollow"
+	encode zstd gzip
+	import staging_api
+	handle {
+		reverse_proxy staging-hr-webapp:80
+	}
+}
+(staging_kiosk_app) {
+	import security_headers
+	header Permissions-Policy "camera=(self), microphone=(), geolocation=(self)"
+	header X-Robots-Tag "noindex, nofollow"
+	encode zstd gzip
+	import staging_api
+	handle {
+		reverse_proxy staging-kiosk-app:80
+	}
+}
 {$HR_HOSTS} {
 	import hr_app
 }
@@ -75,6 +105,14 @@
 https:// {
 	tls {
 		on_demand
+	}
+	@staging_kiosk expression `{host}.endsWith(".{$STAGING_BASE_DOMAIN:staging.invalid}") && {host}.startsWith("kiosk.")`
+	handle @staging_kiosk {
+		import staging_kiosk_app
+	}
+	@staging expression `{host}.endsWith(".{$STAGING_BASE_DOMAIN:staging.invalid}")`
+	handle @staging {
+		import staging_hr_app
 	}
 	@kiosk expression `{host}.startsWith("kiosk.")`
 	handle @kiosk {

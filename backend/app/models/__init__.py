@@ -22,7 +22,9 @@ from app.models.employee import Employee
 from app.models.employee_default_shift import EmployeeDefaultShift
 from app.models.employee_location_period import EmployeeLocationPeriod
 from app.models.employment import Compensation, ContractType, EmploymentContract, PayType
-from app.models.pay_component import AllowanceUnit, PayComponent, PayComponentKind
+from app.models.pay_component import AllowanceUnit, PayComponent, PayComponentKind, PayComponentType
+from app.models.wage_type import WageTypeItem, WageTypeMapping
+from app.models.payroll_export_log import PayrollExportLog
 from app.models.holiday import Holiday, holiday_locations
 from app.models.hr_user import HrRole, HrUser
 from app.models.leave_entitlement import LeaveEntitlement
@@ -53,6 +55,10 @@ __all__ = [
     "AllowanceUnit",
     "PayComponent",
     "PayComponentKind",
+    "PayComponentType",
+    "PayrollExportLog",
+    "WageTypeItem",
+    "WageTypeMapping",
     "ContractType",
     "EmploymentContract",
     "PayType",

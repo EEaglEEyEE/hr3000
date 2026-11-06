@@ -99,6 +99,38 @@ async def import_holidays_for_location(
     return imported, skipped
 
 
+async def _scope_default_state_holidays(
+    db: AsyncSession, tenant_id: int, default: Bundesland, locations, years: tuple[int, ...], today: date
+) -> list[date]:
+    """Liegen Standorte in verschiedenen Bundesländern, gelten die (früher firmenweit) importierten
+    gesetzlichen Feiertage des Standard-Bundeslands künftig nur noch für dessen Standorte. Betrifft
+    nur kommende Tage und nur Feiertage, die genau dem gesetzlichen Kalender entsprechen – eigene
+    Feiertage der Firma bleiben firmenweit."""
+    keep = [loc for loc in locations if loc.bundesland in (None, default.value)]
+    changed: list[date] = []
+    for year in years:
+        computed = public_holidays(year, default)
+        rows = (
+            await db.execute(
+                select(Holiday).where(
+                    Holiday.tenant_id == tenant_id,
+                    Holiday.date >= max(today, date(year, 1, 1)),
+                    Holiday.date <= date(year, 12, 31),
+                )
+            )
+        ).scalars().all()
+        for holiday in rows:
+            if location_scope(holiday) is not None or computed.get(holiday.date) != holiday.name:
+                continue
+            if keep:
+                holiday.locations = list(keep)
+            else:
+                await db.delete(holiday)
+            changed.append(holiday.date)
+    await db.flush()
+    return changed
+
+
 async def ensure_holidays_imported_for_tenant(db: AsyncSession, tenant_id: int) -> None:
     """Sorgt für einen einzelnen Mandanten für das laufende und das kommende
     Jahr für vollständige Feiertage – standortübergreifend, falls
@@ -110,15 +142,21 @@ async def ensure_holidays_imported_for_tenant(db: AsyncSession, tenant_id: int) 
     imported_dates: list[date] = []
 
     settings_row = await get_or_create_settings(db, tenant_id)
-    if settings_row.default_bundesland is not None:
+    locations = (await db.execute(select(Location).where(Location.tenant_id == tenant_id))).scalars().all()
+    default = settings_row.default_bundesland
+    # Firmenweit (für alle Standorte) nur, solange kein Standort in einem anderen Bundesland liegt –
+    # sonst bekäme er fremde Feiertage. Dann je Standort: eigenes Bundesland oder das Standard-Bundesland.
+    mixed = any(loc.bundesland is not None and loc.bundesland != default for loc in locations)
+    if default is not None and mixed:
+        imported_dates += await _scope_default_state_holidays(db, tenant_id, Bundesland(default), locations, years, today)
+    if default is not None and not mixed:
         for year in years:
             imported, _ = await import_holidays_for_location(db, tenant_id, year, location_id=None)
             imported_dates += [h.date for h in imported]
 
-    result = await db.execute(
-        select(Location).where(Location.tenant_id == tenant_id, Location.bundesland.is_not(None))
-    )
-    for location in result.scalars().all():
+    for location in locations:
+        if location.bundesland is None and (default is None or not mixed):
+            continue  # hat schon die firmenweiten bzw. kann nichts auflösen
         for year in years:
             imported, _ = await import_holidays_for_location(db, tenant_id, year, location_id=location.id)
             imported_dates += [h.date for h in imported]

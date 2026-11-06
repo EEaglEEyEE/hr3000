@@ -35,6 +35,8 @@ class EmploymentContract(Base):
     probation_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     fixed_term_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     notice_period: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Jahresurlaub laut Vertrag (Tage, bezogen auf die 5-Tage-Woche); leer = Standard der Firma
+    annual_vacation_days: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

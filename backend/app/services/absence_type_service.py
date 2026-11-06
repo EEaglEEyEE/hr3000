@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
 from app.models import AbsenceType, AbsenceTypeDefinition
-from app.services.settings_service import get_or_create_settings
 
 # Anzeigename je Kategorie (für Abwesenheiten ohne eigene Art)
 CATEGORY_LABELS: dict[AbsenceType, str] = {
@@ -43,14 +42,13 @@ async def list_absence_types(db: AsyncSession, tenant_id: int) -> list[AbsenceTy
     ).scalars().all()
     if rows:
         return list(rows)
-    settings_row = await get_or_create_settings(db, tenant_id)
     created = [
         AbsenceTypeDefinition(
             tenant_id=tenant_id,
             name=name,
             color=color,
             category=category,
-            requires_approval=category == AbsenceType.VACATION and settings_row.vacation_approval_required,
+            requires_approval=False,
             employee_can_request=True,
             certificate_from_day=certificate,
             active=True,

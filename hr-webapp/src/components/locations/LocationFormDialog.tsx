@@ -20,6 +20,17 @@ interface LocationFormDialogProps {
 
 const NO_BUNDESLAND = '__none__'
 
+/** Zeitzonen zur Auswahl (Browser-Liste, sonst die üblichen in Europa). Das Backend prüft streng. */
+const TIMEZONES: string[] = (() => {
+  try {
+    const all = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone')
+    if (all && all.length > 0) return all
+  } catch {
+    // ältere Browser
+  }
+  return ['Europe/Berlin', 'Europe/Vienna', 'Europe/Zurich', 'Europe/Amsterdam', 'Europe/Paris', 'Europe/London', 'Europe/Warsaw', 'Europe/Prague']
+})()
+
 export function LocationFormDialog({ open, onOpenChange, location }: LocationFormDialogProps) {
   const isEditMode = location !== undefined
   const createLocation = useCreateLocationMutation()
@@ -86,10 +97,16 @@ export function LocationFormDialog({ open, onOpenChange, location }: LocationFor
             <Input
               id="location_timezone"
               required
+              list="location_timezones"
               placeholder="z.B. Europe/Berlin"
               value={timezone}
               onChange={(event) => setTimezone(event.target.value)}
             />
+            <datalist id="location_timezones">
+              {TIMEZONES.map((zone) => (
+                <option key={zone} value={zone} />
+              ))}
+            </datalist>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Bundesland</Label>
@@ -108,7 +125,7 @@ export function LocationFormDialog({ open, onOpenChange, location }: LocationFor
             </Select>
             <p className="text-xs text-slate-500">
               Bestimmt, welche Feiertage automatisch für Mitarbeiter dieses Standorts importiert
-              werden (siehe Feiertage-Seite).
+              werden (siehe Einstellungen → „Feiertage“).
             </p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}

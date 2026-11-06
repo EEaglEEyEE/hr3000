@@ -41,6 +41,8 @@ export function ShiftTemplateFormDialog({
   const [fixedBreakStart, setFixedBreakStart] = useState('')
   const [fixedBreakEnd, setFixedBreakEnd] = useState('')
   const [minBreakMinutes, setMinBreakMinutes] = useState<number | ''>('')
+  // Ab welcher Arbeitszeit (Std.) die festen Minuten gelten; leer = ab der ersten Minute
+  const [minBreakAfterHours, setMinBreakAfterHours] = useState('')
   const [targetMinutes, setTargetMinutes] = useState(480)
   const [targetPeriod, setTargetPeriod] = useState<TargetPeriod>('DAILY')
   const [locationId, setLocationId] = useState(ALL_LOCATIONS)
@@ -56,6 +58,7 @@ export function ShiftTemplateFormDialog({
     setFixedBreakStart(template?.fixed_break_start?.slice(0, 5) ?? '')
     setFixedBreakEnd(template?.fixed_break_end?.slice(0, 5) ?? '')
     setMinBreakMinutes(template?.min_break_minutes ?? '')
+    setMinBreakAfterHours(template?.min_break_after_minutes ? String(template.min_break_after_minutes / 60).replace('.', ',') : '')
     setTargetMinutes(template?.target_minutes ?? 480)
     setTargetPeriod(template?.target_period ?? 'DAILY')
     setLocationId(template?.location_id ? String(template.location_id) : ALL_LOCATIONS)
@@ -76,6 +79,8 @@ export function ShiftTemplateFormDialog({
       fixed_break_end: breakMode === 'FIXED' ? fixedBreakEnd || null : null,
       // 0 = keine eigene Pause (es gelten die Pausenregeln); leer lassen entfernt eine bisherige.
       min_break_minutes: breakMode === 'FLEXIBLE' ? (minBreakMinutes === '' ? 0 : minBreakMinutes) : null,
+      min_break_after_minutes:
+        breakMode === 'FLEXIBLE' && minBreakAfterHours.trim() ? Math.round(Number(minBreakAfterHours.replace(',', '.')) * 60) || 0 : 0,
       target_minutes: targetMinutes,
       target_period: targetPeriod,
       location_id: selectedLocationId,
@@ -103,13 +108,17 @@ export function ShiftTemplateFormDialog({
 
   const isSubmitting = createTemplate.isPending || updateTemplate.isPending
   const targetChanged = isEditMode && (targetMinutes !== template.target_minutes || targetPeriod !== template.target_period)
+  // Wochen-/Monatssoll nur noch bei älteren Vorlagen, die es schon haben (sonst im Arbeitszeitmodell).
+  const legacyPeriod = isEditMode && template.target_period !== 'DAILY'
   const breakChanged =
     isEditMode &&
     (breakMode !== template.break_mode ||
       (breakMode === 'FIXED'
         ? fixedBreakStart !== (template.fixed_break_start?.slice(0, 5) ?? '') ||
           fixedBreakEnd !== (template.fixed_break_end?.slice(0, 5) ?? '')
-        : (minBreakMinutes || 0) !== (template.min_break_minutes || 0)))
+        : (minBreakMinutes || 0) !== (template.min_break_minutes || 0) ||
+          (minBreakAfterHours.trim() ? Math.round(Number(minBreakAfterHours.replace(',', '.')) * 60) : 0) !==
+            (template.min_break_after_minutes || 0)))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,31 +162,30 @@ export function ShiftTemplateFormDialog({
             migrierten Altdaten.
           </p>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Zieltyp</Label>
-            <Select value={targetPeriod} onValueChange={(value) => setTargetPeriod(value as TargetPeriod)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="DAILY">Tagessoll</SelectItem>
-                <SelectItem value="WEEKLY">Wochensoll</SelectItem>
-                <SelectItem value="MONTHLY">Monatssoll</SelectItem>
-              </SelectContent>
-            </Select>
-            {targetPeriod !== 'DAILY' && (
+          {legacyPeriod && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Zieltyp</Label>
+              <Select value={targetPeriod} onValueChange={(value) => setTargetPeriod(value as TargetPeriod)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DAILY">Tagessoll</SelectItem>
+                  <SelectItem value="WEEKLY">Wochensoll</SelectItem>
+                  <SelectItem value="MONTHLY">Monatssoll</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-xs text-slate-500">
-                Das Soll gilt für die ganze {targetPeriod === 'WEEKLY' ? 'Woche' : 'Kalendermonat'} und wird
-                gleichmäßig auf die in der Standard-Schicht ausgewählten Wochentage verteilt. Nur als
-                Standard-Schicht zuweisbar, nicht als einzelner Ausnahme-Tag im Kalender.
+                Ältere Vorlage mit Wochen- bzw. Monatssoll (gilt für Mitarbeiter, deren Soll noch aus der Vorlage kommt).
+                Wochen- und Monatsstunden gehören heute ins Arbeitszeitmodell des Mitarbeiters.
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="target_minutes">
               {targetPeriod === 'DAILY'
-                ? 'Soll pro Tag (Minuten)'
+                ? 'Soll pro Schichttag (Minuten)'
                 : targetPeriod === 'WEEKLY'
                   ? 'Soll pro Woche (Minuten)'
                   : 'Soll pro Monat (Minuten)'}
@@ -238,24 +246,36 @@ export function ShiftTemplateFormDialog({
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="min_break_minutes">Feste Pause (Minuten, optional)</Label>
-              <Input
-                id="min_break_minutes"
-                type="number"
-                min={0}
-                max={240}
-                value={minBreakMinutes}
-                onChange={(event) =>
-                  setMinBreakMinutes(event.target.value === '' ? '' : Number(event.target.value))
-                }
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="min_break_minutes">Feste Pause (Minuten, optional)</Label>
+                <Input
+                  id="min_break_minutes"
+                  type="number"
+                  min={0}
+                  max={240}
+                  value={minBreakMinutes}
+                  onChange={(event) =>
+                    setMinBreakMinutes(event.target.value === '' ? '' : Number(event.target.value))
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="min_break_after">ab Arbeitszeit (Std., optional)</Label>
+                <Input
+                  id="min_break_after"
+                  inputMode="decimal"
+                  placeholder="ab der ersten Minute"
+                  value={minBreakAfterHours}
+                  onChange={(event) => setMinBreakAfterHours(event.target.value)}
+                />
+              </div>
             </div>
           )}
           <p className="-mt-2 text-xs text-slate-500">
             {breakMode === 'FIXED'
               ? 'Die Pausenzeit wird abgezogen, soweit der Mitarbeiter in dieser Zeit da war – auch ohne Pausenstempelung.'
-              : 'Feste Minuten werden an jedem Arbeitstag mindestens abgezogen. Leer = es gelten die Pausenregeln.'}{' '}
+              : 'Feste Minuten werden mindestens abgezogen (ab der angegebenen Arbeitszeit). Leer = es gelten die Pausenregeln.'}{' '}
             Die gesetzliche Pause gilt immer mindestens.
           </p>
 

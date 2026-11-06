@@ -10,14 +10,17 @@ from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_or
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
+    Absence,
+    AbsenceApprovalStatus,
     AuditAction,
+    CorrectionRequestStatus,
     DailySummary,
-    DayReview,
     DocumentCategory,
     Employee,
     EmployeeDocument,
     PeriodClosure,
     PeriodStatus,
+    PunchCorrectionRequest,
     SummaryStatus,
 )
 from app.schemas.period import (
@@ -33,6 +36,7 @@ from app.services.audit_service import log_action
 from app.services.team_scope_service import ensure_employee_visible
 from app.services.document_service import store_document
 from app.services.notification_service import notify_period_disputed, notify_period_submitted
+from app.services.timesheet_service import day_fingerprint, day_reviews, needs_review, review_valid, utc_today
 from app.services.period_service import (
     build_month_report,
     month_bounds,
@@ -102,8 +106,45 @@ async def list_period_closures(
     return [PeriodClosureResponse.model_validate(c) for c in result.scalars().all()]
 
 
+async def _open_requests(db: AsyncSession, employee: Employee, first: date, last: date) -> list[str]:
+    """Noch nicht entschiedene Anträge, die den Monat betreffen – nach dem Vorlegen sind sie wegen der
+    Sperre nicht mehr entscheidbar."""
+    absences = (
+        await db.execute(
+            select(func.count()).select_from(Absence).where(
+                Absence.employee_id == employee.id,
+                Absence.approval_status == AbsenceApprovalStatus.PENDING,
+                Absence.date_from <= last,
+                Absence.date_to >= first,
+            )
+        )
+    ).scalar_one()
+    corrections = (
+        await db.execute(
+            select(func.count()).select_from(PunchCorrectionRequest).where(
+                PunchCorrectionRequest.employee_id == employee.id,
+                PunchCorrectionRequest.status == CorrectionRequestStatus.PENDING,
+                PunchCorrectionRequest.work_date >= first,
+                PunchCorrectionRequest.work_date <= last,
+            )
+        )
+    ).scalar_one()
+    found = []
+    if absences:
+        found.append(f"{absences} Abwesenheitsantrag" + ("" if absences == 1 else "/-anträge"))
+    if corrections:
+        found.append(f"{corrections} Korrekturantrag" + ("" if corrections == 1 else "/-anträge"))
+    return found
+
+
 async def _submit(
-    db: AsyncSession, actor: Actor, employee: Employee, year: int, month: int, ignore_open_days: bool
+    db: AsyncSession,
+    actor: Actor,
+    employee: Employee,
+    year: int,
+    month: int,
+    ignore_open_days: bool,
+    ignore_open_requests: bool = False,
 ) -> PeriodClosure:
     validate_month(year, month)
     first, last = month_bounds(year, month)
@@ -116,6 +157,14 @@ async def _submit(
     if existing is not None and existing.status != PeriodStatus.DISPUTED:
         raise AppError(409, "PERIOD_ALREADY_SUBMITTED", "Der Monat wurde bereits vorgelegt oder abgeschlossen.")
 
+    if not ignore_open_requests:
+        requests = await _open_requests(db, employee, first, last)
+        if requests:
+            raise AppError(
+                409,
+                "OPEN_REQUESTS_PRESENT",
+                f"Für den Monat ist noch offen: {', '.join(requests)} – nach dem Vorlegen erst nach Wieder öffnen entscheidbar.",
+            )
     report = await build_month_report(db, employee, year, month)
     if report.open_days and not ignore_open_days:
         shown = ", ".join(d.strftime("%d.%m.") for d in report.open_days[:8])
@@ -164,7 +213,14 @@ async def _submit(
     await db.flush()
 
     _audit(db, actor, AuditAction.PERIOD_SUBMITTED, employee, f"Monatsnachweis {month_label(year, month)} vorgelegt")
-    await notify_period_submitted(db, employee.tenant_id, employee, month_label(year, month))
+    if not employee.login_email:
+        # Ohne Login kann niemand bestätigen: direkt abschließen (statt eines zweiten Klicks).
+        closure.status = PeriodStatus.CLOSED
+        closure.closed_at = now
+        closure.closed_without_confirmation = True
+        _audit(db, actor, AuditAction.PERIOD_CLOSED, employee, f"Monat {month_label(year, month)} abgeschlossen (Mitarbeiter ohne Login)")
+    else:
+        await notify_period_submitted(db, employee.tenant_id, employee, month_label(year, month))
     await db.commit()
     await db.refresh(closure)
     return closure
@@ -180,7 +236,9 @@ async def submit_period(
     db: AsyncSession = Depends(get_db),
 ) -> PeriodClosureResponse:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
-    closure = await _submit(db, actor, employee, year, month, bool(payload and payload.ignore_open_days))
+    closure = await _submit(
+        db, actor, employee, year, month, bool(payload and payload.ignore_open_days), bool(payload and payload.ignore_open_requests)
+    )
     return PeriodClosureResponse.model_validate(closure)
 
 
@@ -196,9 +254,13 @@ async def confirm_period(
     closure = await _get_closure(db, employee_id, year, month)
     if closure is None or closure.status != PeriodStatus.SUBMITTED:
         raise AppError(409, "PERIOD_NOT_SUBMITTED", "Für diesen Monat liegt kein Nachweis zur Bestätigung vor.")
-    closure.status = PeriodStatus.CONFIRMED
-    closure.confirmed_at = datetime.now(UTC).replace(tzinfo=None)
-    _audit(db, actor, AuditAction.PERIOD_CONFIRMED, employee, f"Monatsnachweis {month_label(year, month)} bestätigt")
+    # Die Bestätigung schließt den Monat ab (gleiche Wirkung wie früher "bestätigt" + "abschließen").
+    now = datetime.now(UTC).replace(tzinfo=None)
+    closure.status = PeriodStatus.CLOSED
+    closure.confirmed_at = now
+    closure.closed_at = now
+    closure.closed_without_confirmation = False
+    _audit(db, actor, AuditAction.PERIOD_CONFIRMED, employee, f"Monatsnachweis {month_label(year, month)} bestätigt und abgeschlossen")
     await db.commit()
     await db.refresh(closure)
     return PeriodClosureResponse.model_validate(closure)
@@ -236,14 +298,13 @@ async def close_period(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> PeriodClosureResponse:
+    """Vorgelegten Monat ohne Bestätigung des Mitarbeiters abschließen (die Bestätigung schließt
+    selbst ab)."""
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
     closure = await _get_closure(db, employee_id, year, month)
-    without = bool(payload and payload.without_confirmation)
-    if closure is None or closure.status not in (PeriodStatus.CONFIRMED, PeriodStatus.SUBMITTED):
+    if closure is None or closure.status != PeriodStatus.SUBMITTED:
         raise AppError(409, "PERIOD_NOT_CLOSABLE", "Der Monat kann nur nach Vorlage abgeschlossen werden.")
-    if closure.status == PeriodStatus.SUBMITTED and not without:
-        raise AppError(409, "CONFIRMATION_PENDING", "Der Mitarbeiter hat noch nicht bestätigt.")
-    closure.closed_without_confirmation = closure.status == PeriodStatus.SUBMITTED
+    closure.closed_without_confirmation = True
     closure.status = PeriodStatus.CLOSED
     closure.closed_at = datetime.now(UTC).replace(tzinfo=None)
     suffix = " (ohne Bestätigung des Mitarbeiters)" if closure.closed_without_confirmation else ""
@@ -261,14 +322,14 @@ async def reopen_period(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Zieht eine Vorlage zurück bzw. öffnet einen bestätigten/abgeschlossenen Monat wieder.
-    Bestätigte und abgeschlossene Monate darf nur ein Administrator öffnen."""
+    """Zieht eine Vorlage zurück bzw. öffnet einen abgeschlossenen Monat wieder. Abgeschlossene
+    Monate darf nur ein Administrator öffnen."""
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
     closure = await _get_closure(db, employee_id, year, month)
     if closure is None:
         raise AppError(404, "PERIOD_NOT_FOUND", "Für diesen Monat gibt es keinen Abschluss.")
-    if closure.status in (PeriodStatus.CONFIRMED, PeriodStatus.CLOSED) and not actor.is_admin_level:
-        raise AppError(403, "ADMIN_PERMISSION_REQUIRED", "Bestätigte oder abgeschlossene Monate darf nur ein Administrator wieder öffnen.")
+    if closure.status == PeriodStatus.CLOSED and not actor.is_admin_level:
+        raise AppError(403, "ADMIN_PERMISSION_REQUIRED", "Abgeschlossene Monate darf nur ein Administrator wieder öffnen.")
 
     if closure.document_id is not None:
         document = await db.get(EmployeeDocument, closure.document_id)
@@ -379,18 +440,14 @@ async def period_overview(
             )
         ).scalars().all():
             closures[closure.employee_id] = closure
-        reviewed = (
-            select(DayReview.id)
-            .where(DayReview.employee_id == DailySummary.employee_id, DayReview.work_date == DailySummary.work_date)
-            .exists()
-        )
+        # Dieselbe Regel "Tag offen" wie "Zu klären" (inkl. Fingerabdruck von "Erledigt").
+        today = utc_today()
+        reviews = await day_reviews(db, ids, first, last)
         rows = await db.execute(
-            select(DailySummary.employee_id, func.count())
-            .where(
+            select(DailySummary).where(
                 DailySummary.employee_id.in_(ids),
                 DailySummary.work_date >= first,
-                DailySummary.work_date <= last,
-                ~reviewed,
+                DailySummary.work_date <= min(last, today),
                 or_(
                     DailySummary.status.in_(
                         [SummaryStatus.OPEN_MISSING_PUNCH, SummaryStatus.ERROR, SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND]
@@ -398,9 +455,14 @@ async def period_overview(
                     DailySummary.flags.is_not(None),
                 ),
             )
-            .group_by(DailySummary.employee_id)
         )
-        open_counts = {employee_id: count for employee_id, count in rows.all()}
+        for summary in rows.scalars().all():
+            flags = summary.flags.split(",") if summary.flags else []
+            if not needs_review(summary.status, flags, summary.work_date, today):
+                continue
+            fingerprint = day_fingerprint(summary.status, summary.target_minutes, summary.actual_minutes, flags)
+            if not review_valid(reviews, summary.employee_id, summary.work_date, fingerprint):
+                open_counts[summary.employee_id] = open_counts.get(summary.employee_id, 0) + 1
 
     return [
         PeriodOverviewRow(
@@ -448,7 +510,7 @@ async def submit_all_periods(
             continue  # bereits vorgelegt/abgeschlossen – nicht erneut melden
         row = dict(employee_id=employee.id, first_name=employee.first_name, last_name=employee.last_name)
         try:
-            await _submit(db, actor, employee, payload.year, payload.month, payload.ignore_open_days)
+            await _submit(db, actor, employee, payload.year, payload.month, payload.ignore_open_days, payload.ignore_open_requests)
             results.append(PeriodBulkResultRow(**row, submitted=True))
         except AppError as exc:
             # Alle Prüfungen in _submit liegen vor dem ersten Schreibzugriff – ein Rollback ist hier

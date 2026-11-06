@@ -1,9 +1,15 @@
-from datetime import date
+from datetime import date, time
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.models.shift_template import BreakMode, TargetPeriod
+from app.schemas.core_time import CoreTimeDays
+
 
 class EmployeeDefaultShiftCreateRequest(BaseModel):
+    """Ältere Zuordnung "Standard-Schicht": Soll und Pause kommen aus der Schichtvorlage. Neu gibt es
+    dafür das Arbeitszeitmodell (PUT /employees/{id}/work-time-model) mit optionaler Schichtvorlage."""
+
     shift_template_id: int
     valid_from: date
     valid_to: date | None = None
@@ -34,7 +40,8 @@ class EmployeeDefaultShiftResponse(BaseModel):
 
     id: int
     employee_id: int
-    shift_template_id: int
+    # leer = Fassung ohne Schichtvorlage (Arbeitszeitmodell ohne feste Uhrzeiten)
+    shift_template_id: int | None
     valid_from: date
     valid_to: date | None
     weekdays_mask: int
@@ -42,3 +49,15 @@ class EmployeeDefaultShiftResponse(BaseModel):
     flexible: bool = False
     on_demand: bool = False
     monthly_cap_minutes: int | None = None
+    # Soll und Pause der Fassung (leer = aus der Schichtvorlage bzw. Pausenregeln)
+    target_minutes: int | None = None
+    target_period: TargetPeriod | None = None
+    break_mode: BreakMode | None = None
+    fixed_break_start: time | None = None
+    fixed_break_end: time | None = None
+    min_break_minutes: int | None = None
+    min_break_after_minutes: int = 0
+    core_time_mode: str | None = None
+    core_time_start: time | None = None
+    core_time_end: time | None = None
+    core_time_days: CoreTimeDays = None

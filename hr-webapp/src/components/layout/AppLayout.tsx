@@ -5,21 +5,12 @@ import {
   LogOut,
   Users,
   AlertCircle,
-  MapPin,
-  Tablet,
   CalendarDays,
-  CalendarHeart,
   CalendarRange,
-  Coffee,
-  Clock,
   Settings,
-  UserCog,
-  CalendarCheck,
-  ShieldAlert,
   FileSpreadsheet,
   LayoutGrid,
   ClipboardCheck,
-  Percent,
   ListChecks,
   BarChart3,
   UserCircle,
@@ -32,6 +23,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
 import { cn } from '../../lib/utils'
+import { allows, PAGE_ACCESS } from '../../lib/access'
 import { useFeaturesQuery } from '../../api/queries/workTimeModel'
 import { useCorrectionRequestsQuery } from '../../api/queries/correctionRequests'
 import { usePendingAbsencesQuery } from '../../api/queries/absences'
@@ -42,122 +34,35 @@ import { ThemeToggle } from './ThemeToggle'
 import { ChangePasswordButton } from '../account/ChangePasswordDialog'
 import { CancellationBanner } from '../account/AccountCancellation'
 
-// all = auch Supervisor, hr = Admin/HR, admin = nur Admin – das Backend erzwingt dasselbe.
-type Access = 'all' | 'hr' | 'admin'
-
 interface NavItem {
   to: string
   label: string
   icon: LucideIcon
-  access: Access
   shiftPlanning?: boolean
 }
 
+// Rechte je Seite stehen in lib/access.ts (PAGE_ACCESS) – dieselbe Quelle wie der Seitenschutz.
+// Konfiguration (Standorte, Teams, Feiertage, Tablets, Pausenregeln, Schichtvorlagen, Zuschläge,
+// Lohnarten, Audit-Log) liegt unter „Einstellungen“.
 const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Tagesgeschäft',
     items: [
-      { to: '/', label: 'Startseite', icon: House, access: 'all' },
-      { to: '/mitarbeiter', label: 'Mitarbeiter', icon: Users, access: 'all' },
-      {
-        to: '/uebersicht',
-        label: 'Anwesenheit',
-        icon: CalendarDays,
-        access: 'all',
-      },
-      {
-        to: '/team-kalender',
-        label: 'Kalender',
-        icon: LayoutGrid,
-        access: 'all',
-      },
-      {
-        to: '/zu-klaeren',
-        label: 'Zu klären',
-        icon: AlertCircle,
-        access: 'all',
-      },
-      {
-        to: '/urlaubsantraege',
-        label: 'Urlaubsanträge',
-        icon: CalendarCheck,
-        access: 'all',
-      },
+      { to: '/', label: 'Startseite', icon: House },
+      { to: '/mitarbeiter', label: 'Mitarbeiter', icon: Users },
+      { to: '/uebersicht', label: 'Anwesenheit', icon: CalendarDays },
+      { to: '/team-kalender', label: 'Kalender', icon: LayoutGrid },
+      { to: '/zu-klaeren', label: 'Zu klären', icon: AlertCircle },
     ],
   },
   {
-    title: 'Abrechnung',
+    title: 'Planung & Abrechnung',
     items: [
-      {
-        to: '/monatsabschluss',
-        label: 'Monatsabschluss',
-        icon: ClipboardCheck,
-        access: 'hr',
-      },
-      {
-        to: '/auswertungen',
-        label: 'Auswertungen',
-        icon: BarChart3,
-        access: 'hr',
-      },
-      {
-        to: '/lohn-export',
-        label: 'Lohn-Export',
-        icon: FileSpreadsheet,
-        access: 'admin',
-      },
-      { to: '/zuschlaege', label: 'Zuschläge', icon: Percent, access: 'admin' },
-    ],
-  },
-  {
-    title: 'Arbeitszeit',
-    items: [
-      {
-        to: '/pausenregeln',
-        label: 'Pausenregeln',
-        icon: Coffee,
-        access: 'admin',
-      },
-      {
-        to: '/schichtvorlagen',
-        label: 'Schichtvorlagen',
-        icon: Clock,
-        access: 'admin',
-        shiftPlanning: true,
-      },
-      {
-        to: '/schichtplan-kalender',
-        label: 'Schichtplan-Kalender',
-        icon: CalendarRange,
-        access: 'admin',
-        shiftPlanning: true,
-      },
-      {
-        to: '/feiertage',
-        label: 'Feiertage',
-        icon: CalendarHeart,
-        access: 'hr',
-      },
-    ],
-  },
-  {
-    title: 'Organisation',
-    items: [
-      { to: '/teams', label: 'Teams', icon: UserCog, access: 'admin' },
-      { to: '/standorte', label: 'Standorte', icon: MapPin, access: 'hr' },
-      { to: '/tablets', label: 'Tablets', icon: Tablet, access: 'hr' },
-      {
-        to: '/checklisten',
-        label: 'Checklisten',
-        icon: ListChecks,
-        access: 'hr',
-      },
-      {
-        to: '/audit-log',
-        label: 'Audit-Log',
-        icon: ShieldAlert,
-        access: 'admin',
-      },
+      { to: '/schichtplan-kalender', label: 'Schichtplan-Kalender', icon: CalendarRange, shiftPlanning: true },
+      { to: '/monatsabschluss', label: 'Monatsabschluss', icon: ClipboardCheck },
+      { to: '/auswertungen', label: 'Auswertungen', icon: BarChart3 },
+      { to: '/lohn-export', label: 'Lohn-Export', icon: FileSpreadsheet },
+      { to: '/checklisten', label: 'Checklisten', icon: ListChecks },
     ],
   },
 ]
@@ -171,22 +76,20 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   )
 
 export function AppLayout() {
-  const { logout, isAdmin, isFullHr, employeeId } = useAuth()
-  // Zu klären: offene Tage + offene Korrekturanträge (nur Admin/HR entscheidet diese).
+  const { logout, isAdmin, isFullHr, canPayroll, employeeId } = useAuth()
+  // Zu klären (Posteingang): offene Tage, Monatsgrenzen, Urlaubsanträge und Korrekturanträge (nur
+  // Admin/HR entscheidet diese).
   const openDays = useOpenDaysCount()
   const pendingCorrections = useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0
   const capsExceeded = (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length
-  const openCount = openDays + capsExceeded + (isFullHr ? pendingCorrections : 0)
+  const pendingAbsences = usePendingAbsencesQuery().data?.length ?? 0
+  const openCount = openDays + capsExceeded + pendingAbsences + (isFullHr ? pendingCorrections : 0)
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
-  // Urlaubsanträge ausgeschaltet: Menüpunkt nur, solange noch alte Anträge offen sind.
-  const pendingAbsences = usePendingAbsencesQuery().data?.length ?? 0
-  const showRequests = (featuresQuery.data?.absence_requests_enabled ?? true) || pendingAbsences > 0
 
   const allowed = (item: NavItem) =>
-    (item.access === 'all' || (item.access === 'hr' && isFullHr) || (item.access === 'admin' && isAdmin)) &&
-    (!item.shiftPlanning || shiftPlanningEnabled) &&
-    (item.to !== '/urlaubsantraege' || showRequests)
+    allows(PAGE_ACCESS[item.to] ?? 'all', { isAdmin, isFullHr, canPayroll }) &&
+    (!item.shiftPlanning || shiftPlanningEnabled)
   const groups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter(allowed),
@@ -305,7 +208,7 @@ export function AppLayout() {
               <span className={label}>Mein Bereich</span>
             </NavLink>
           )}
-          {isAdmin && (
+          {allows(PAGE_ACCESS['/einstellungen'], { isAdmin, isFullHr, canPayroll }) && (
             <NavLink to="/einstellungen" className={itemClass} title={collapsed ? 'Einstellungen' : undefined}>
               <Settings className="h-4 w-4 shrink-0" />
               <span className={label}>Einstellungen</span>
