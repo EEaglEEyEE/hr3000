@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -27,6 +27,8 @@ class PunchSource(str, enum.Enum):
 
 class Punch(Base):
     __tablename__ = "punches"
+    # Häufigste Abfrage: Stempelungen eines Mitarbeiters in einem Zeitraum (Tagesberechnung, Liste).
+    __table_args__ = (Index("ix_punches_employee_time", "employee_id", "timestamp_utc"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Denormalisiert wie location_id – Punch wird auf praktisch jedem Request

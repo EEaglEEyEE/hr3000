@@ -20,7 +20,7 @@ from app.models import (
     Tenant,
 )
 from app.services.absence_type_service import format_days, list_absence_types
-from app.services.settings_service import get_or_create_settings
+from app.services.settings_service import get_or_create_settings, tenant_logo_data_url
 from app.services.surcharge_service import compute_surcharges
 from app.services.timesheet_service import (
     absence_day_counts,
@@ -241,11 +241,7 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
     type_names = {t.id: t.name for t in await list_absence_types(db, employee.tenant_id)}
     report = MonthReport(
         employee=employee, tenant_name=tenant.name if tenant else "", year=year, month=month, days=[],
-        tenant_logo=(
-            f"data:{settings_row.logo_content_type};base64,{settings_row.logo_data}"
-            if settings_row.logo_data and settings_row.logo_content_type
-            else None
-        ),
+        tenant_logo=await tenant_logo_data_url(db, employee.tenant_id),
     )
     flexible_target = 0.0
     report_no_punch_days = settings_row.report_days_without_punches

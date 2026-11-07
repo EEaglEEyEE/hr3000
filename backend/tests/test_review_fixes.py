@@ -133,3 +133,23 @@ async def test_tenant_logo_upload_validation_and_public_branding(client: AsyncCl
     assert public["logo_data_url"] == ok.json()["logo_data_url"] and public["tenant_name"]
     assert (await client.delete("/settings/logo", headers=h["admin"])).status_code == 204
     assert (await client.get("/branding")).json()["logo_data_url"] is None
+
+
+async def test_settings_load_leaves_logo_unloaded(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Das Logo (bis ~340 KB Base64) wird beim normalen Laden der Einstellungen nicht mitgelesen –
+    z. B. beim Tablet-Abruf alle 30 s –, sondern nur gezielt für Branding und Monatsbericht."""
+    from sqlalchemy import inspect, select
+
+    from app.models import AppSettings
+    from app.services.settings_service import tenant_logo_data_url
+
+    _, _, h = await _setup(db_session, client)
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    ok = await client.put("/settings/logo", headers=h["admin"], files={"file": ("l.png", png, "image/png")})
+    assert ok.status_code == 200
+
+    db_session.expunge_all()
+    row = (await db_session.execute(select(AppSettings).where(AppSettings.logo_data.is_not(None)))).scalar_one()
+    assert "logo_data" in inspect(row).unloaded
+    assert await tenant_logo_data_url(db_session, row.tenant_id) == ok.json()["logo_data_url"]
+    assert await tenant_logo_data_url(db_session, row.tenant_id + 999) is None

@@ -30,6 +30,18 @@ async def get_or_create_settings(db: AsyncSession, tenant_id: int, commit: bool 
     return settings_row
 
 
+async def tenant_logo_data_url(db: AsyncSession, tenant_id: int) -> str | None:
+    """Firmenlogo als data:-URL oder None. `logo_data` ist deferred und wird nur hier gezielt gelesen."""
+    row = (
+        await db.execute(
+            select(AppSettings.logo_content_type, AppSettings.logo_data).where(AppSettings.tenant_id == tenant_id)
+        )
+    ).first()
+    if row is None or not row.logo_data or not row.logo_content_type:
+        return None
+    return f"data:{row.logo_content_type};base64,{row.logo_data}"
+
+
 async def seed_default_break_rules(db: AsyncSession, tenant_id: int, commit: bool = True) -> None:
     """Legt für einen neuen Mandanten die gesetzliche §4-ArbZG-Staffel an –
     im Gegensatz zu WorkTimeModelTemplate bewusst automatisch, da es sich um

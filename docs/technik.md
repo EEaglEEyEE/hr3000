@@ -228,6 +228,13 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Der Test `test_every_table_is_covered` schlägt an, wenn eine neue Tabelle keinen Firmenbezug
     hat. `test_purge_removes_everything_of_one_company_and_nothing_else` prüft die Löschung mit
     zwei befüllten Firmen.
+- **Datenbankzugriffe:**
+  - `punches` hat den Index `ix_punches_employee_time` (`employee_id`, `timestamp_utc`, Migration
+    0100) für die häufigste Abfrage: Stempelungen eines Mitarbeiters in einem Zeitraum.
+  - `AppSettings.logo_data` (Base64, bis ~340 KB) ist `deferred`: Es wird beim Laden der
+    Einstellungen nicht mitgelesen, sondern nur über `settings_service.tenant_logo_data_url`
+    (Branding, Monatsbericht). Wer das Logo braucht, nimmt diese Funktion, nie
+    `settings_row.logo_data` direkt – das scheitert in der async-Session.
 
 ## 4. Sicherheit
 

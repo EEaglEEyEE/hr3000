@@ -135,7 +135,11 @@ class AppSettings(Base):
 
     # Eigenes Firmenlogo (nur Anzeige in Web-App/Kiosk/Berichten, nicht als Favicon/App-Icon).
     logo_content_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    logo_data: Mapped[str | None] = mapped_column(Text().with_variant(MEDIUMTEXT(), "mysql"), nullable=True)
+    # deferred: bis ~340 KB Base64 – nicht bei jedem Laden der Einstellungen mitlesen (z. B. Tablet-Abruf
+    # alle 30 s); gelesen nur über settings_service.tenant_logo_data_url.
+    logo_data: Mapped[str | None] = mapped_column(
+        Text().with_variant(MEDIUMTEXT(), "mysql"), nullable=True, deferred=True
+    )
     # Eigener SMTP-Server des Mandanten für Benachrichtigungs- und Zugangsdaten-
     # Mails (siehe app/services/email_service.py). Ohne smtp_host gilt der
     # Plattform-SMTP aus den Umgebungsvariablen. Das Passwort wird nur

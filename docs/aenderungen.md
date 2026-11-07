@@ -3,6 +3,13 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 07.11.2026
+
+- **Betrieb:** Stempelungen eines Mitarbeiters werden über einen zusätzlichen Datenbank-Index
+  schneller gefunden, und das Firmenlogo wird nur noch geladen, wo es angezeigt wird (Anmeldeseite,
+  Tablet, Monatsbericht) – nicht mehr bei jedem Abruf der Einstellungen. Für Nutzer ändert sich
+  nichts.
+
 ## 06.11.2026
 
 - **Tablets bleiben bei Störungen gekoppelt:** Konnte sich ein Tablet beim Start nicht anmelden
