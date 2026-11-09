@@ -232,7 +232,7 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
           )}
           {overlaps.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-              <p className="font-medium">Im Team gleichzeitig abwesend:</p>
+              <p className="font-medium">In der Abteilung gleichzeitig abwesend:</p>
               <ul className="mt-1">
                 {overlaps.map((overlap, index) => (
                   <li key={`${overlap.employee_id}-${index}`}>

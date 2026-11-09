@@ -90,27 +90,28 @@ async def test_hr_can_edit_team_leader_without_touching_access(client: AsyncClie
 # --- A7: Standortliste für Teamleader -----------------------------------------------------------
 
 
-async def test_location_list_for_team_leader_is_team_scoped_without_chip_ids(client: AsyncClient, db_session: AsyncSession) -> None:
-    from app.models import Employee, SupervisorTeamAssignment, Team
+async def test_location_list_for_department_head_is_scoped_without_chip_ids(client: AsyncClient, db_session: AsyncSession) -> None:
+    from app.models import Employee
+    from org_helpers import department, supervisor_with_department
 
     location = await _location(db_session)
-    team_a, team_b = Team(name="A"), Team(name="B")
-    db_session.add_all([team_a, team_b])
+    mine = Employee(location_id=location.id, first_name="Mia", last_name="Mein", employee_number="1", nfc_uid="AAA")
+    other = Employee(location_id=location.id, first_name="Olf", last_name="Other", employee_number="2", nfc_uid="BBB")
+    db_session.add_all([mine, other])
     await db_session.commit()
-    mine = Employee(location_id=location.id, first_name="Mia", last_name="Mein", employee_number="1", team_id=team_a.id, nfc_uid="AAA")
-    other = Employee(location_id=location.id, first_name="Olf", last_name="Other", employee_number="2", team_id=team_b.id, nfc_uid="BBB")
-    lead = Account(email="lead@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
-    db_session.add_all([mine, other, lead])
-    await db_session.commit()
-    db_session.add(SupervisorTeamAssignment(account_id=lead.id, team_id=team_a.id))
-    await db_session.commit()
+    # Die Leitung (mit eigenem Chip) führt Abteilung A mit Mia; Olf arbeitet in B.
+    _, lead, lead_account = await supervisor_with_department(
+        db_session, location, department_name="A", members=(mine,), employee_number="9"
+    )
+    lead.nfc_uid = "LLL"
+    await department(db_session, "B", other)
     login = await client.post("/auth/login", json={"email": "lead@example.com", "password": "pw"})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     rows = (await client.get(f"/locations/{location.id}/employees", headers=headers)).json()
-    assert [(r["employee_number"], r["nfc_uid"]) for r in rows] == [("1", None)]
+    assert sorted((r["employee_number"], r["nfc_uid"]) for r in rows) == [("1", None), ("9", None)]
     admin = await _admin(db_session, client)
     rows = (await client.get(f"/locations/{location.id}/employees", headers=admin)).json()
-    assert {r["nfc_uid"] for r in rows} == {"AAA", "BBB"}
+    assert {r["nfc_uid"] for r in rows} == {"AAA", "BBB", "LLL"}
 
 
 # --- A8: Ganztägige Abwesenheiten überschneiden sich nicht; Krankheit im Urlaub ----------------------

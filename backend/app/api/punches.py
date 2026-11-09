@@ -26,7 +26,7 @@ from app.services.timesheet_service import (
     recalculate_day,
     shift_day_of,
 )
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.ws_manager import manager
 from app.services.period_service import ensure_period_open
 

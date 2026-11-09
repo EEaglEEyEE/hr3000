@@ -5,7 +5,10 @@ import type { components } from '../schema'
 export type Department = components['schemas']['DepartmentResponse']
 export type DepartmentCreateRequest = components['schemas']['DepartmentCreateRequest']
 export type DepartmentUpdateRequest = components['schemas']['DepartmentUpdateRequest']
+export type DepartmentLeader = components['schemas']['DepartmentLeaderResponse']
+export type DepartmentLeaderInput = components['schemas']['DepartmentLeaderInput']
 export type OrgChartPerson = components['schemas']['OrgChartPerson']
+export type OrgChartDepartment = components['schemas']['OrgChartDepartment']
 
 function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['departments'] })

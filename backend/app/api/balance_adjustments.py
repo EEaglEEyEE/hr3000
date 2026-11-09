@@ -11,7 +11,7 @@ from app.models import AdjustmentKind, AuditAction, BalanceAdjustment, Employee
 from app.schemas.balance_adjustment import BalanceAdjustmentCreateRequest, BalanceAdjustmentResponse, SetBalanceRequest
 from app.services.audit_service import log_action
 from app.services.period_service import ensure_period_open
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.timesheet_service import balance_as_of
 
 router = APIRouter(tags=["balance-adjustments"])

@@ -16,7 +16,6 @@ function features(defaultDayMinutes: number[] | null) {
       default_show_birthday: true,
       default_day_minutes: defaultDayMinutes,
     },
-    'GET /teams': [],
     'POST /employees': (init: ApiInit) => ({ id: 9, ...(init.body as object) }),
   }
 }
@@ -107,7 +106,7 @@ describe('Neuer Mitarbeiter', () => {
     const employee = {
       id: 7, location_id: 1, first_name: 'Hanna', last_name: 'Personal', employee_number: '1003', active: true,
       login_email: null, hr_role: null, hr_payroll_access: false, auto_break_enabled: true, has_pin: false, nfc_uid: null,
-      hire_date: null, termination_date: null, birth_date: null, show_birthday_in_calendar: true, team_id: null, anonymized_at: null,
+      hire_date: null, termination_date: null, birth_date: null, show_birthday_in_calendar: true, department_id: null, anonymized_at: null,
     } as never
     renderWithProviders(<EmployeeForm employee={employee} locations={LOCATIONS} />)
     expect((await screen.findByText(/Weitere Angaben/)).closest('details')).toHaveAttribute('open')

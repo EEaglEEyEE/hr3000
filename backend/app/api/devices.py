@@ -21,6 +21,7 @@ from app.schemas.device import (
     EnrollmentKeyCreatedResponse,
     EnrollmentKeyCreateRequest,
     EnrollmentKeyResponse,
+    PairingCodeRequest,
     PairingCodeResponse,
     PinSetupRequest,
 )
@@ -405,13 +406,23 @@ async def get_kiosk_config(
 async def create_pairing_code(
     device_id: int,
     request: Request,
+    payload: PairingCodeRequest | None = None,
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> PairingCodeResponse:
-    """Kurzer Code (15 Min., einmalig) zum Einrichten eines Tablets ohne das lange Token abzutippen."""
+    """Kurzer Code (15 Min., einmalig) zum Einrichten eines Tablets ohne das lange Token abzutippen.
+    Ist das Tablet schon mit einem Gerät verbunden, nur mit replace_bound (Tablet-Tausch): sonst würde
+    ein zweites Gerät den Eintrag übernehmen und das verbundene unbemerkt abmelden."""
     device = await db.get(Device, device_id)
     if device is None or device.tenant_id != actor.tenant_id:
         raise AppError(404, "DEVICE_NOT_FOUND", "Gerät nicht gefunden.")
+    if device.installation_hash is not None and not (payload is not None and payload.replace_bound):
+        raise AppError(
+            409,
+            "DEVICE_BOUND",
+            f"Das Tablet „{device.name}“ ist schon mit einem Gerät verbunden. Ein QR-Code koppelt ein anderes Gerät "
+            "und meldet das bisherige ab. Für ein zusätzliches Tablet bitte „Neues Tablet“ anlegen.",
+        )
     code = new_pairing_code()
     device.pairing_code_hash = pairing_code_hash(code)
     device.pairing_code_expires_at = datetime.now(UTC).replace(tzinfo=None) + PAIRING_CODE_TTL

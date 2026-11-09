@@ -46,7 +46,7 @@ from app.services.audit_service import log_action
 from app.services.leave_service import get_or_create_entitlement
 from app.services.migration_import_service import MigrationRow, parse_migration_csv
 from app.services.period_service import ensure_open_from, ensure_period_open
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.timesheet_service import balance_start
 
 router = APIRouter(tags=["migration"])

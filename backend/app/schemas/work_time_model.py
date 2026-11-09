@@ -3,8 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.schemas.break_rule import check_window
-from app.schemas.core_time import CoreTimeDays, CoreTimeMode, check_core_time
+from app.schemas.break_rule import MAX_BREAK_WINDOWS, BreakWindow, check_window, check_windows
+from app.schemas.core_time import CoreTimeDays, CoreTimeMode, FlexFrameDays, check_core_time, day_windows
 
 # Gleitzeit-Rahmen eines Arbeitszeitmodells: TENANT = wie in den Einstellungen, CUSTOM = eigener,
 # NONE = kein Rahmen.
@@ -37,6 +37,9 @@ class WorkTimeModelInput(BaseModel):
     break_after_hours: float | None = Field(default=None, ge=0, le=16)
     break_start: time | None = None
     break_end: time | None = None
+    # Mehrere feste Pausenzeiten (z.B. 09:00–09:15 und 12:00–12:30) statt break_start/break_end;
+    # eine einzelne wird zu break_start/break_end.
+    break_windows: list[BreakWindow] | None = Field(default=None, min_length=1, max_length=MAX_BREAK_WINDOWS)
     # Uhrzeiten aus einer Schichtvorlage (optional): Beginn/Ende für Schichtplan, Pünktlichkeit und
     # Ruhezeit-Prüfung. Das Soll bleibt das des Modells; ohne eigene Pause gilt die der Vorlage.
     shift_template_id: int | None = Field(default=None, ge=1)
@@ -47,6 +50,14 @@ class WorkTimeModelInput(BaseModel):
     core_time_end: time | None = None
     # Eigene Kernzeit je Wochentag (nur bei CUSTOM); null = jeden Tag dieselbe.
     core_time_days: CoreTimeDays = None
+    # Gleitzeit-Rahmen dieser Fassung; leer = unverändert (wie die bisherige Fassung, sonst wie in den
+    # Einstellungen). Arbeitszeitmodelle setzen ihn immer (Standard: wie in den Einstellungen).
+    flex_frame_mode: FlexFrameMode | None = None
+    flex_frame_start: time | None = None
+    flex_frame_end: time | None = None
+    # Eigener Rahmen je Wochentag (nur bei CUSTOM, Tag ohne Eintrag = an diesem Tag kein Rahmen);
+    # null = jeden Tag derselbe.
+    flex_frame_days: FlexFrameDays = None
 
     @model_validator(mode="after")
     def _core_time(self) -> "WorkTimeModelInput":
@@ -54,7 +65,41 @@ class WorkTimeModelInput(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _flex_frame(self) -> "WorkTimeModelInput":
+        if self.flex_frame_mode != "CUSTOM":
+            self.flex_frame_start = self.flex_frame_end = None
+            self.flex_frame_days = None
+            return self
+        if self.flex_frame_days is not None:
+            self.flex_frame_start = self.flex_frame_end = None  # je Tag geprüft, siehe FlexFrameDay
+        elif self.flex_frame_start is None or self.flex_frame_end is None:
+            raise ValueError("Für einen eigenen Gleitzeit-Rahmen bitte Beginn und Ende angeben.")
+        elif self.flex_frame_start >= self.flex_frame_end:
+            raise ValueError("Gleitzeit-Rahmen: der Beginn muss vor dem Ende liegen.")
+        if self.core_time_mode == "CUSTOM":
+            core = day_windows(self.core_time_days, self.core_time_start, self.core_time_end)
+            frame = day_windows(self.flex_frame_days, self.flex_frame_start, self.flex_frame_end)
+            if any(c and f and not (f[0] <= c[0] and c[1] <= f[1]) for c, f in zip(core, frame)):
+                per_day = self.core_time_days is not None or self.flex_frame_days is not None
+                raise ValueError(
+                    "Die Kernzeit muss an jedem Tag innerhalb des Gleitzeit-Rahmens liegen."
+                    if per_day
+                    else "Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen."
+                )
+        return self
+
+    @model_validator(mode="after")
     def _break(self) -> "WorkTimeModelInput":
+        if self.break_windows is not None:
+            if self.break_start is not None or self.break_end is not None:
+                raise ValueError("Feste Pausenzeiten entweder als Liste oder als eine Pausenzeit angeben.")
+            if self.break_minutes is not None:
+                raise ValueError("Pause entweder als feste Minuten oder als feste Uhrzeit angeben.")
+            ordered = check_windows([(w.start, w.end) for w in self.break_windows])
+            if len(ordered) == 1:
+                (self.break_start, self.break_end), self.break_windows = ordered[0], None
+            else:
+                self.break_windows = [BreakWindow(start=start, end=end) for start, end in ordered]
         if self.break_start is not None or self.break_end is not None:
             if self.break_minutes is not None:
                 raise ValueError("Pause entweder als feste Minuten oder als feste Uhrzeit angeben.")
@@ -70,13 +115,23 @@ class WorkTimeModelInput(BaseModel):
         return round(self.break_after_hours * 60) if self.break_after_hours else 0
 
     @property
+    def break_window_list(self) -> list[tuple[time, time]]:
+        """Alle festen Pausenzeiten (leer = keine feste Uhrzeit)."""
+        if self.break_windows is not None:
+            return [(w.start, w.end) for w in self.break_windows]
+        if self.break_start is not None and self.break_end is not None:
+            return [(self.break_start, self.break_end)]
+        return []
+
+    @property
     def break_label(self) -> str:
         """Namenszusatz der Vorlage bzw. Audit-Text, z.B. ", Pause 30 Min. ab 6 Std." / ", Pause 12:00–12:30"."""
         if self.break_minutes is not None:
             after = f" ab {self.break_after_hours:g} Std." if self.break_after_hours else ""
             return f", Pause {self.break_minutes} Min.{after}"
-        if self.break_start is not None and self.break_end is not None:
-            return f", Pause {self.break_start:%H:%M}–{self.break_end:%H:%M}"
+        windows = self.break_window_list
+        if windows:
+            return ", Pause " + ", ".join(f"{start:%H:%M}–{end:%H:%M}" for start, end in windows)
         return ""
 
     @field_validator("weekdays")
@@ -202,6 +257,8 @@ class WorkTimeModelFields(BaseModel):
     break_after_minutes: int = 0
     break_start: time | None = None
     break_end: time | None = None
+    # Alle festen Pausenzeiten (auch eine einzelne); leer = keine feste Uhrzeit
+    break_windows: list[BreakWindow] | None = None
     break_from_template: bool = False
     # Schichtvorlage für die Uhrzeiten (optional)
     shift_template_id: int | None = None
@@ -213,11 +270,12 @@ class WorkTimeModelFields(BaseModel):
     core_time_start: time | None = None
     core_time_end: time | None = None
     core_time_days: CoreTimeDays = None
-    # Gleitzeit-Rahmen und Toleranz (eigene Werte nur aus einem Arbeitszeitmodell; leer = wie
-    # Einstellungen)
+    # Gleitzeit-Rahmen (auch je Wochentag) und Toleranz (eigene Toleranz nur aus einem
+    # Arbeitszeitmodell; leer = wie Einstellungen)
     flex_frame_mode: FlexFrameMode = "TENANT"
     flex_frame_start: time | None = None
     flex_frame_end: time | None = None
+    flex_frame_days: FlexFrameDays = None
     late_tolerance_minutes: int | None = None
     # Zugewiesenes Arbeitszeitmodell (leer = individuell eingetragen)
     profile_id: int | None = None
@@ -240,31 +298,12 @@ class WorkTimeModelVersion(WorkTimeModelFields):
 
 
 class WorkTimeProfileInput(WorkTimeModelInput):
-    """Angaben eines Arbeitszeitmodells: wie ein Arbeitszeitmodell, dazu Gleitzeit-Rahmen und
-    Pünktlichkeits-Toleranz (leer = wie in den Einstellungen)."""
+    """Angaben eines Arbeitszeitmodells: wie ein Arbeitszeitmodell, dazu die Pünktlichkeits-Toleranz
+    (leer = wie in den Einstellungen). Der Gleitzeit-Rahmen ist hier immer gesetzt (Standard: wie in
+    den Einstellungen)."""
 
     flex_frame_mode: FlexFrameMode = "TENANT"
-    flex_frame_start: time | None = None
-    flex_frame_end: time | None = None
     late_tolerance_minutes: int | None = Field(default=None, ge=0, le=120)
-
-    @model_validator(mode="after")
-    def _flex_frame(self) -> "WorkTimeProfileInput":
-        if self.flex_frame_mode == "CUSTOM":
-            if self.flex_frame_start is None or self.flex_frame_end is None:
-                raise ValueError("Für einen eigenen Gleitzeit-Rahmen bitte Beginn und Ende angeben.")
-            if self.flex_frame_start >= self.flex_frame_end:
-                raise ValueError("Gleitzeit-Rahmen: der Beginn muss vor dem Ende liegen.")
-            if (
-                self.core_time_mode == "CUSTOM"
-                and self.core_time_start is not None
-                and self.core_time_end is not None
-                and not (self.flex_frame_start <= self.core_time_start and self.core_time_end <= self.flex_frame_end)
-            ):
-                raise ValueError("Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen.")
-        else:
-            self.flex_frame_start = self.flex_frame_end = None
-        return self
 
 
 class WorkTimeProfileCreateRequest(WorkTimeProfileInput):

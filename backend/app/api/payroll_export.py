@@ -19,7 +19,7 @@ from app.services.datev_export_service import build_datev_export
 from app.services.pay_component_service import PayComponentAmount, pay_component_amounts
 from app.services.payroll_export_service import PayrollPeriod, payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges, merge_by_family
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 
 
 # Eigene Spalten im Lohn-Export, in dieser Reihenfolge (nur wenn im Zeitraum genutzt).

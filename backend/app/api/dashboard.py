@@ -23,7 +23,7 @@ from app.services.holiday_service import location_scope
 from app.services.leave_service import leave_balance
 from app.services.monthly_cap_service import monthly_cap_status
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import supervisor_team_ids
+from app.services.scope_service import visible_employee_ids
 from app.services.timesheet_service import (
     balance_as_of,
     calculate_day,
@@ -103,7 +103,7 @@ async def _me(db: AsyncSession, employee: Employee) -> DashboardMe:
 async def _visible_employees(db: AsyncSession, actor: Actor) -> list[Employee]:
     stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
     if actor.is_supervisor_level:
-        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+        stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     return list((await db.execute(stmt.order_by(Employee.last_name, Employee.first_name))).scalars().all())
 
 

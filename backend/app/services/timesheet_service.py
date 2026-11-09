@@ -30,7 +30,8 @@ from app.models import (
     ShiftTemplate,
     SummaryStatus,
 )
-from app.schemas.core_time import parse_core_time_days
+from app.schemas.break_rule import fixed_break_windows
+from app.schemas.core_time import parse_core_time_days, parse_day_windows
 from app.services.absence_type_service import CATEGORY_LABELS, absence_day_values
 from app.services.holiday_service import half_holiday_for_location, is_holiday_for_location
 from app.services.shift_planning_service import MAX_DAILY_WORKING_MINUTES, EffectiveDayPlan, resolve_effective_shift
@@ -219,6 +220,10 @@ async def _punctuality_flags(
         frame_start = frame_end = None
     elif frame_mode == "CUSTOM":
         frame_start, frame_end = version.flex_frame_start, version.flex_frame_end
+        frame_days = parse_day_windows(version.flex_frame_days)
+        if frame_days is not None:
+            # Rahmen je Wochentag: an Tagen ohne Eintrag gibt es keinen Rahmen.
+            frame_start, frame_end = frame_days[work_date.weekday()] or (None, None)
     by_weekday = parse_core_time_days(core_days)
     if by_weekday is not None:
         # Kernzeit je Wochentag: an Tagen ohne Eintrag gibt es keine Kernzeit.
@@ -1046,8 +1051,10 @@ async def _own_break(
         source = await db.get(ShiftTemplate, plan.shift_template_id)
     if source is None:
         return None
-    if source.break_mode == BreakMode.FIXED and source.fixed_break_start and source.fixed_break_end:
-        return [], [(source.fixed_break_start, source.fixed_break_end)]
+    if source.break_mode == BreakMode.FIXED:
+        windows = fixed_break_windows(source)  # eine oder mehrere feste Pausenzeiten
+        if windows:
+            return [], windows
     if source.min_break_minutes:
         return [(source.min_break_after_minutes or 0, source.min_break_minutes)], []
     return None

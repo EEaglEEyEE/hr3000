@@ -19,7 +19,7 @@ from app.services.shift_planning_service import (
     resolve_effective_shift,
     shift_planning_enabled_for_employee,
 )
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.period_service import ensure_period_open
 from app.services.timesheet_service import invalidate_balance
 

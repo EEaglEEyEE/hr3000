@@ -26,7 +26,7 @@ from app.schemas.punch_correction_request import (
 from app.services.audit_service import log_action
 from app.services.notification_service import notify_correction_decided, notify_correction_requested
 from app.services.period_service import ensure_period_open
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.timesheet_service import employee_timezone, recalculate_day, refresh_auto_breaks, today_in
 
 router = APIRouter(tags=["punch_correction_requests"])

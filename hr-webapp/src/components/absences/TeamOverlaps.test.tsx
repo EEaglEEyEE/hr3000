@@ -1,4 +1,4 @@
-/** Überschneidungen im Team: Hinweis im Antrag und bei den offenen Urlaubsanträgen. */
+/** Überschneidungen in der Abteilung: Hinweis im Antrag und bei den offenen Urlaubsanträgen. */
 import { screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loginAs, mockApi, renderWithProviders } from '../../test/utils'
@@ -13,12 +13,12 @@ const OVERLAP = { employee_id: 7, name: 'Max Kollege', date_from: '2026-12-21', 
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('Überschneidungen im Team', () => {
-  it('zeigt im Antrag, wer im Team gleichzeitig fehlt', async () => {
+describe('Überschneidungen in der Abteilung', () => {
+  it('zeigt im Antrag, wer in der Abteilung gleichzeitig fehlt', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     mockApi({ 'GET /absence-types': [VACATION], 'GET /employees/{employee_id}/team-overlaps': [OVERLAP] })
     renderWithProviders(<AbsenceFormDialog open onOpenChange={vi.fn()} employeeId={5} />)
-    expect(await screen.findByText('Im Team gleichzeitig abwesend:')).toBeInTheDocument()
+    expect(await screen.findByText('In der Abteilung gleichzeitig abwesend:')).toBeInTheDocument()
     expect(screen.getByText(/Max Kollege: 21\.12\.2026–23\.12\.2026 \(Urlaub\) – beantragt/)).toBeInTheDocument()
   })
 

@@ -13,14 +13,13 @@ function setToday(year: number, month: number, day: number) {
 }
 
 const EMPLOYEES = [
-  { id: 1, first_name: 'Erika', last_name: 'Muster', team_id: null },
-  { id: 2, first_name: 'Max', last_name: 'Beispiel', team_id: null },
+  { id: 1, first_name: 'Erika', last_name: 'Muster', department_id: null },
+  { id: 2, first_name: 'Max', last_name: 'Beispiel', department_id: null },
 ]
 
 function calendarRoutes() {
   return {
     'GET /locations': [],
-    'GET /teams': [],
     'GET /absence-types': [],
     'GET /team-calendar': (init: ApiInit) => {
       const from = String(init.params?.query?.from)
@@ -28,7 +27,7 @@ function calendarRoutes() {
         employee_id: e.id,
         first_name: e.first_name,
         last_name: e.last_name,
-        team_id: null,
+        department_id: null,
         days: [{ date: from, status: null, absence_type: null, is_birthday: e.id === 1 }],
       }))
     },

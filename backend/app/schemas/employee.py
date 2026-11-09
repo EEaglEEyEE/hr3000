@@ -1,3 +1,4 @@
+from typing import Literal
 import datetime as dt
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -31,13 +32,11 @@ class EmployeeCreateRequest(BaseModel):
     termination_date: dt.date | None = None
     birth_date: dt.date | None = None
     show_birthday_in_calendar: bool | None = None
-    team_id: int | None = None
     department_id: int | None = None
     position: str | None = Field(default=None, max_length=150)
-    # Führungskraft (ein anderer Mitarbeiter derselben Firma)
+    # Abweichende Führungskraft (Ausnahme, ein anderer Mitarbeiter derselben Firma); ohne Angabe gilt
+    # die Leitung der Abteilung (app/services/org_service.py)
     supervisor_id: int | None = None
-    # Vertretung bei Genehmigungen (wenn diese Person als Führungskraft abwesend ist)
-    approval_delegate_id: int | None = None
     # Optional direkt beim Anlegen: gilt ab Eintritt (bzw. heute, ohne Anstelldatum) – inkl.
     # Kernzeit/Pünktlichkeit (die gehört zur Fassung der Arbeitszeit).
     work_time_model: WorkTimeModelInput | None = None
@@ -85,16 +84,12 @@ class EmployeeUpdateRequest(BaseModel):
     birth_date: dt.date | None = None
     clear_birth_date: bool = False
     show_birthday_in_calendar: bool | None = None
-    team_id: int | None = None
-    clear_team_id: bool = False
     department_id: int | None = None
     clear_department_id: bool = False
     # "" entfernt die Position
     position: str | None = Field(default=None, max_length=150)
     supervisor_id: int | None = None
     clear_supervisor_id: bool = False
-    approval_delegate_id: int | None = None
-    clear_approval_delegate_id: bool = False
 
 
 class EmployeeHrRoleUpdateRequest(BaseModel):
@@ -134,11 +129,13 @@ class EmployeeResponse(BaseModel):
     termination_date: dt.date | None
     birth_date: dt.date | None
     show_birthday_in_calendar: bool
-    team_id: int | None
     department_id: int | None = None
     position: str | None = None
+    # Abweichende Führungskraft (Ausnahme je Person)
     supervisor_id: int | None = None
-    approval_delegate_id: int | None = None
+    # Wirksame Führungskräfte: die Ausnahme oder die Leitungen der Abteilung (OVERRIDE / DEPARTMENT)
+    effective_supervisor_ids: list[int] = []
+    supervisor_source: Literal["OVERRIDE", "DEPARTMENT"] | None = None
     # ONBOARDING, ACTIVE, LEAVE (Auszeit), INACTIVE
     employment_status: str = "ACTIVE"
     cost_centers: list[CostCenterShare] = []

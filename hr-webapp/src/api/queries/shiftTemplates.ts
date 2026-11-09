@@ -12,7 +12,7 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['shift-templates'] })
 }
 
-/** Schichtvorlagen des Mandanten (ohne archivierte alte Fassungen). Nur für HR/Teamleitung. */
+/** Schichtvorlagen des Mandanten (ohne archivierte alte Fassungen). Nur für HR/Führungskräfte. */
 export function useShiftTemplatesQuery({ enabled = true } = {}) {
   return useQuery({
     queryKey: ['shift-templates'],

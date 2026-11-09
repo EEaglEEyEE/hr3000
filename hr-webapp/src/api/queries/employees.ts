@@ -11,6 +11,9 @@ interface EmployeeFilters {
   search?: string
   locationId?: number
   active?: boolean
+  /** Abteilung samt Unterabteilungen */
+  departmentId?: number
+  withoutDepartment?: boolean
 }
 
 export function useEmployeesQuery(filters: EmployeeFilters = {}) {
@@ -24,6 +27,8 @@ export function useEmployeesQuery(filters: EmployeeFilters = {}) {
               search: filters.search || undefined,
               location_id: filters.locationId,
               active: filters.active,
+              department_id: filters.departmentId,
+              without_department: filters.withoutDepartment || undefined,
             },
           },
         }),
@@ -73,6 +78,9 @@ export function useUpdateEmployeeMutation() {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      // Abteilung oder Führungskraft können sich geändert haben
+      void queryClient.invalidateQueries({ queryKey: ['org-chart'] })
+      void queryClient.invalidateQueries({ queryKey: ['departments'] })
     },
   })
 }

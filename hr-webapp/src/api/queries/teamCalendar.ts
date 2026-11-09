@@ -5,16 +5,17 @@ import type { components } from '../schema'
 export type TeamCalendarEmployee = components['schemas']['TeamCalendarEmployee']
 export type TeamCalendarDay = components['schemas']['TeamCalendarDay']
 
-export function useTeamCalendarQuery(from: string, to: string, locationId?: number, teamIds: number[] = [], own = false) {
+/** departmentIds: Abteilungen samt Unterabteilungen (leer = alle sichtbaren; 0 = ohne Abteilung). */
+export function useTeamCalendarQuery(from: string, to: string, locationId?: number, departmentIds: number[] = [], own = false) {
   return useQuery({
-    queryKey: ['team-calendar', own ? 'me' : 'all', from, to, locationId, teamIds],
+    queryKey: ['team-calendar', own ? 'me' : 'all', from, to, locationId, departmentIds],
     queryFn: async () =>
       own
-        ? // „Mein Bereich“: eigenes Team, Art bei Kollegen nur bei „farbig“
+        ? // „Mein Bereich“: eigene Abteilung, Art bei Kollegen nur bei „farbig“
           unwrap(await apiClient.GET('/me/team-calendar', { params: { query: { from, to } } }))
         : unwrap(
             await apiClient.GET('/team-calendar', {
-              params: { query: { from, to, location_id: locationId, team_id: teamIds.length ? teamIds : undefined } },
+              params: { query: { from, to, location_id: locationId, department_id: departmentIds.length ? departmentIds : undefined } },
             }),
           ),
   })

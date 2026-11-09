@@ -47,9 +47,7 @@ from app.api.settings import router as settings_router
 from app.api.shift_plan_entries import router as shift_plan_entries_router
 from app.api.shift_plan_pdf import router as shift_plan_pdf_router
 from app.api.shift_templates import router as shift_templates_router
-from app.api.supervisor_team_assignments import router as supervisor_team_assignments_router
 from app.api.team_calendar import router as team_calendar_router
-from app.api.teams import router as teams_router
 from app.api.timesheets import router as timesheets_router
 from app.api.tenants import router as tenants_router
 from app.api.server_metrics import router as server_metrics_router
@@ -178,8 +176,6 @@ app.include_router(settings_router)
 app.include_router(plan_router)
 app.include_router(holidays_router)
 app.include_router(leave_entitlements_router)
-app.include_router(teams_router)
-app.include_router(supervisor_team_assignments_router)
 app.include_router(shift_templates_router)
 app.include_router(employee_default_shifts_router)
 app.include_router(shift_plan_entries_router)

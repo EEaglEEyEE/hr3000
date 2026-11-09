@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 class HrRole(str, enum.Enum):
     ADMIN = "ADMIN"
     HR = "HR"
-    # Team-beschränkter Zugriff, siehe app/services/team_scope_service.py –
+    # Führungskraft: Zugriff auf den eigenen Bereich (Unterstellte), siehe app/services/scope_service.py –
     # im Gegensatz zu ADMIN/HR nicht "voller HR-Zugriff", siehe Actor.is_full_hr_level.
     SUPERVISOR = "SUPERVISOR"
     # Plattformweit, nicht einem Tenant zugeordnet – siehe Account.tenant_id.

@@ -36,10 +36,10 @@ Stand: 04.11.2026.
   - „Zeiterfassung“: deine Buchungen; Fehler meldest du mit „Korrektur beantragen“ → „Antrag
     senden“.
   - „Kalender“
-  - „Teamkalender“ (wenn deine Firma ihn freigibt): wer aus deinem Team wann fehlt
-  - „Organigramm“ (wenn deine Firma es freigibt): wer wem zugeordnet ist, mit Position und
-    Abteilung
-  - „Kalender abonnieren (iCal)“: deine Abwesenheiten (und ggf. die des Teams) im eigenen
+  - „Abteilungskalender“ (wenn deine Firma ihn freigibt): wer aus deiner Abteilung wann fehlt
+  - „Organigramm“ (wenn deine Firma es freigibt): die Abteilungen mit Leitungen und Stellvertretungen
+    und wer in welcher Abteilung ist
+  - „Kalender abonnieren (iCal)“: deine Abwesenheiten (und ggf. die deiner Abteilung) im eigenen
     Kalenderprogramm; den Link nicht weitergeben
   - „Überstundenkonto“
   - „Abwesenheiten“: Mit „Neue Abwesenheit“ beantragst du z. B. Urlaub, auch halbtags. Je nach Art

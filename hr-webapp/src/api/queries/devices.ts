@@ -67,10 +67,12 @@ export function useDeleteDeviceMutation() {
 /** Kurzer Kopplungscode (15 Min., einmalig) zum Einrichten des Tablets. */
 export function useCreatePairingCodeMutation() {
   return useMutation({
-    mutationFn: async (deviceId: number) =>
+    /** replaceBound: Tablet ist schon mit einem Gerät verbunden – der Code tauscht es aus (nach Rückfrage). */
+    mutationFn: async ({ deviceId, replaceBound = false }: { deviceId: number; replaceBound?: boolean }) =>
       unwrap(
         await apiClient.POST('/devices/{device_id}/pairing-code', {
           params: { path: { device_id: deviceId } },
+          body: { replace_bound: replaceBound },
         }),
       ),
   })

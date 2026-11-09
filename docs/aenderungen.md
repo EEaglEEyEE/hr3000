@@ -5,6 +5,46 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 09.11.2026
 
+- **Mehrere Leitungen und Stellvertretungen, Organigramm direkt bearbeiten:** Eine Abteilung kann
+  mehrere gleichberechtigte Leitungen und beliebig viele Stellvertretungen haben. Je Stellvertretung
+  wählt ihr die Rechte: „Sieht immer, entscheidet bei Abwesenheit“ (Standard), „Gleiche Rechte wie die
+  Leitung“ oder „Nur während Abwesenheit der Leitung“. Anträge gehen an alle Leitungen (und an
+  Stellvertretungen mit gleichen Rechten), jede darf entscheiden. Ist keine Leitung da – heute
+  abwesend oder ohne Zugang –, entscheiden die Stellvertretungen. Die „Vertretung bei Genehmigungen“
+  am Mitarbeiter entfällt: Wer eine Abteilung leitete und eine Vertretung hatte, hat sie jetzt dort als
+  Stellvertretung. Fehlt eine abweichende Führungskraft, entscheidet die Abteilung. Admin und HR
+  bearbeiten Abteilungen jetzt direkt im Organigramm: an jeder Karte „Bearbeiten“, „Unterabteilung
+  anlegen“ und „Löschen“, an jeder Person „Verschieben“; am Computer lassen sich Personen und
+  Abteilungen auch mit der Maus auf eine andere Abteilung ziehen. Die API liefert zusätzlich
+  `supervisor_ids` (alle Führungskräfte).
+- **Abteilungen statt Teams:** Teams gibt es nicht mehr – die Abteilungen sind die einzige
+  Struktur. Jede Abteilung bekommt unter „Einstellungen“ → „Abteilungen“ eine „Leitung“; sie ist
+  die Führungskraft aller in der Abteilung (auch in Unterabteilungen ohne eigene Leitung). Mit der
+  Rolle „Führungskraft“ sieht sie das Tagesgeschäft ihres Bereichs und genehmigt dessen Anträge.
+  Am Mitarbeiter heißt das Feld jetzt „Abweichende Führungskraft“ und zeigt, wer automatisch gilt.
+  Bestehende Teams wurden zu Abteilungen, die Teamleitung zur Leitung; wer schon in einer anderen
+  Abteilung war, behält sie und bekommt die bisherige Teamleitung als abweichende Führungskraft.
+  Kalender-Filter, „Abteilungskalender“ (früher Teamkalender), Überschneidungen beim Antrag, CSV-Import
+  (Spalte „abteilung“, „team“ geht weiter) und API (`department_id` statt `team_id`) folgen der
+  Abteilung. Das **Organigramm** zeigt jetzt den Abteilungsbaum mit Leitung und Mitarbeitern von oben nach
+  unten mit Verbindungslinien; „Liste“ ist die eingerückte Ansicht (am Handy Standard).
+- **Mitarbeiterliste mit Abteilung:** Die Liste hat eine Spalte „Abteilung“ und einen Filter
+  „Alle Abteilungen“ / „Ohne Abteilung“ / je Abteilung. Eine Abteilung zeigt auch die Mitarbeiter
+  ihrer Unterabteilungen.
+- **Mehrere Pausenzeiten je Arbeitszeitmodell:** Unter „Pause“ → „Feste Uhrzeit“ lassen sich mit
+  „Weitere Pausenzeit“ bis zu vier feste Pausen eintragen, z. B. Frühstück 09:00–09:15 und Mittag
+  12:00–12:30. Jede wird abgezogen, soweit der Mitarbeiter in ihr da war; die gesetzliche
+  Pausenstaffel gilt weiter mindestens. Gilt im Arbeitszeitmodell und individuell am Mitarbeiter.
+- **Tablets: kein unbemerkter Tausch per QR-Code mehr:** Für ein Tablet, das schon mit einem Gerät
+  verbunden ist (auch per MDM), erzeugt „QR-Code“ erst nach der Rückfrage „Gerät tauschen – QR-Code
+  erzeugen“ einen Code. Bisher konnte ein zweites Gerät so den Eintrag übernehmen und das verbundene
+  Tablet ohne Hinweis abmelden. Koppeln per QR-Code steht jetzt im Audit-Protokoll, ein Tausch
+  meldet zusätzlich eine Warnung an Admins und HR. Ein per MDM verteiltes Tablet, das abgemeldet
+  wurde, nennt am Bildschirm den Neustart der Kiosk-App als Weg zur neuen Anfrage.
+- **Gleitzeit-Rahmen je Wochentag:** Im Arbeitszeitmodell gibt es unter „Gleitzeit-Rahmen“ →
+  „Eigener Rahmen“ das Häkchen „Rahmen je Wochentag unterschiedlich“, z. B. freitags 07:00–14:00
+  oder an einzelnen Tagen gar kein Rahmen. Den Gleitzeit-Rahmen gibt es jetzt auch individuell am
+  Mitarbeiter (Reiter „Arbeitszeit“). Bestehende Modelle und Mitarbeiter ändern sich nicht.
 - **Einstellungen am Tablet:** Die Einstellungsseiten lassen sich bei Tablet-Breite nicht mehr seitlich
   verschieben (betraf u. a. Felder der Personalakte, Feiertagskalender, Pausenregeln, Lohnarten und API &
   Webhooks). Eingabefelder werden schmaler, lange Knöpfe brechen um. Zu lange Werte in Auswahlfeldern

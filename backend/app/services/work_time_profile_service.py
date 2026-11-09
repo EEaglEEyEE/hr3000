@@ -32,6 +32,7 @@ CONTRACT_FIELDS = (
     "break_mode",
     "fixed_break_start",
     "fixed_break_end",
+    "fixed_break_windows",
     "min_break_minutes",
     "min_break_after_minutes",
     "core_time_mode",
@@ -41,6 +42,7 @@ CONTRACT_FIELDS = (
     "flex_frame_mode",
     "flex_frame_start",
     "flex_frame_end",
+    "flex_frame_days",
     "late_tolerance_minutes",
 )
 

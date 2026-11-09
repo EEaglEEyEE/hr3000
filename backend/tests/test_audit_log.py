@@ -229,26 +229,41 @@ async def test_hr_user_creation_and_deletion_are_audited(
     assert ("HR_USER_DELETED", "account", new_hr_user_id) in actions
 
 
-async def test_team_crud_is_audited(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_department_crud_is_audited(client: AsyncClient, db_session: AsyncSession) -> None:
+    location = await _create_location(db_session)
+    head = await _create_employee(db_session, location)
     await _create_hr_user(db_session)
     token = await _token(client)
 
     create_response = await client.post(
-        "/teams", headers={"Authorization": f"Bearer {token}"}, json={"name": "Team Nord"}
+        "/departments", headers={"Authorization": f"Bearer {token}"}, json={"name": "Team Nord"}
     )
-    team_id = create_response.json()["id"]
+    assert create_response.status_code == 201, create_response.text
+    department_id = create_response.json()["id"]
 
     await client.patch(
-        f"/teams/{team_id}", headers={"Authorization": f"Bearer {token}"}, json={"name": "Team Nord neu"}
+        f"/departments/{department_id}", headers={"Authorization": f"Bearer {token}"}, json={"name": "Team Nord neu"}
     )
-    await client.delete(f"/teams/{team_id}", headers={"Authorization": f"Bearer {token}"})
+    await client.patch(
+        f"/departments/{department_id}", headers={"Authorization": f"Bearer {token}"}, json={"leaders": [{"employee_id": head.id}]}
+    )
+    assert (await client.delete(f"/departments/{department_id}", headers={"Authorization": f"Bearer {token}"})).status_code == 204
 
     log_response = await client.get("/audit-log", headers={"Authorization": f"Bearer {token}"})
     entries = log_response.json()
-    actions = [(e["action"], e["entity_type"], e["entity_id"]) for e in entries]
-    assert ("TEAM_CREATED", "team", team_id) in actions
-    assert ("TEAM_UPDATED", "team", team_id) in actions
-    assert ("TEAM_DELETED", "team", team_id) in actions
+    details = [
+        e["detail"]
+        for e in entries
+        if (e["action"], e["entity_type"], e["entity_id"]) == ("DEPARTMENT_CHANGED", "department", department_id)
+    ]
+    assert sorted(details) == sorted(
+        [
+            "Abteilung „Team Nord“ angelegt",
+            "Abteilung „Team Nord neu“ geändert",
+            "Abteilung „Team Nord neu“ geändert, Leitung Max Mustermann",
+            "Abteilung „Team Nord neu“ gelöscht",
+        ]
+    )
 
 
 async def test_tenant_admin_email_change_is_audited_for_target_tenant(

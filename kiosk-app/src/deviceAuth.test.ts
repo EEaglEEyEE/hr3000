@@ -2,7 +2,7 @@
  * sonst muss das Tablet von Hand neu gekoppelt werden (Vorfall 06.11.2026). */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, NetworkError, deviceLogin, type DeviceLoginResponse } from './api'
-import { getStoredDeviceToken, resumeSession, storeDeviceToken } from './deviceAuth'
+import { getStoredDeviceToken, resumeMessage, resumeSession, storeDeviceToken } from './deviceAuth'
 
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
@@ -67,5 +67,20 @@ describe('resumeSession', () => {
     login.mockResolvedValueOnce(SESSION)
     expect((await resumeSession()).kind).toBe('rejected')
     expect(await resumeSession()).toEqual({ kind: 'ok', session: SESSION })
+  })
+})
+
+describe('resumeMessage', () => {
+  it('nennt per MDM verteilten Tablets den Neustart als Weg zur neuen Anfrage', () => {
+    expect(resumeMessage('rejected', true)).toContain('Kiosk-App neu starten')
+    expect(resumeMessage('rejected', true)).toContain('an ein anderes Gerät vergeben')
+    expect(resumeMessage('rejected')).toContain('jede Minute erneut')
+    expect(resumeMessage('rejected')).not.toContain('neu starten')
+  })
+
+  it('beschreibt die übrigen Fälle unabhängig vom MDM', () => {
+    expect(resumeMessage('in_use', true)).toBe(resumeMessage('in_use'))
+    expect(resumeMessage('unreachable')).toContain('nicht erreichbar')
+    expect(resumeMessage('none')).toBeUndefined()
   })
 })

@@ -38,7 +38,6 @@ import { LocationsPage } from './LocationsPage'
 import { ShiftTemplatesPage } from './ShiftTemplatesPage'
 import { WorkTimeProfilesPage } from './WorkTimeProfilesPage'
 import { SurchargeRulesPage } from './SurchargeRulesPage'
-import { TeamsPage } from './TeamsPage'
 import { DepartmentsPage } from './DepartmentsPage'
 import { CostCentersPage } from './CostCentersPage'
 import { AttributeSettingsPage } from './AttributeSettingsPage'
@@ -76,7 +75,6 @@ const GROUPS: { title: string; sections: Section[] }[] = [
     sections: [
       { key: 'firma', label: 'Allgemein', access: 'admin', needsSettings: true, render: ({ settings }) => <CompanySection settings={settings!} /> },
       { key: 'standorte', label: 'Standorte', access: 'hr', render: () => <LocationsPage /> },
-      { key: 'teams', label: 'Teams', access: 'hr', render: () => <TeamsPage /> },
       { key: 'abteilungen', label: 'Abteilungen', access: 'hr', render: () => <DepartmentsPage /> },
       { key: 'kostenstellen', label: 'Kostenstellen', access: 'hr', render: () => <CostCentersPage /> },
       { key: 'personalakte-felder', label: 'Felder der Personalakte', access: 'admin', render: () => <AttributeSettingsPage /> },
@@ -453,7 +451,7 @@ function VacationSection({ settings }: { settings: Settings }) {
             title="Mitarbeiter dürfen Urlaub/Abwesenheiten beantragen"
           >
             Aus = Mitarbeiter können unter „Mein Bereich“ keine Anträge mehr stellen; Urlaub und Abwesenheiten trägt nur
-            noch HR bzw. die Teamleitung ein. Offene Anträge stehen weiter unter „Zu klären“ → „Urlaubsanträge“. Welche
+            noch HR bzw. die Führungskraft ein. Offene Anträge stehen weiter unter „Zu klären“ → „Urlaubsanträge“. Welche
             Arten beantragt werden dürfen und ob sie genehmigt werden müssen, steht unter „Abwesenheitsarten“.
           </SettingsToggle>
           <SettingsToggle
@@ -470,19 +468,20 @@ function VacationSection({ settings }: { settings: Settings }) {
             checked={settings.absence_overlaps_for_employees}
             disabled={pending}
             onChange={(checked) => update.mutate({ absence_overlaps_for_employees: checked })}
-            title="Mitarbeiter sehen beim Antrag, wer im Team gleichzeitig abwesend ist"
+            title="Mitarbeiter sehen beim Antrag, wer in ihrer Abteilung gleichzeitig abwesend ist"
           >
-            An = Im Antrag stehen Name und Zeitraum der Abwesenheiten anderer aus demselben Team (ohne Art). Wer genehmigt,
+            An = Im Antrag stehen Name und Zeitraum der Abwesenheiten anderer aus derselben Abteilung (ohne Art). Wer genehmigt,
             sieht das unter „Zu klären“ → „Urlaubsanträge“ immer – dort mit Art und Resturlaub.
           </SettingsToggle>
           <SettingsToggle
             checked={settings.team_calendar_for_employees}
             disabled={pending}
             onChange={(checked) => update.mutate({ team_calendar_for_employees: checked })}
-            title="Mitarbeiter sehen den Teamkalender ihres Teams"
+            title="Mitarbeiter sehen den Kalender ihrer Abteilung"
           >
-            An = In „Mein Bereich“ gibt es den Reiter „Teamkalender“ mit den Abwesenheiten im eigenen Team. Die Art steht nur bei
-            Abwesenheitsarten mit „Im Teamkalender: farbig“, sonst nur, dass jemand fehlt; Homeoffice-Angaben gar nicht.
+            An = In „Mein Bereich“ gibt es den Reiter „Abteilungskalender“ mit den Abwesenheiten in der eigenen Abteilung. Die
+            Art steht nur bei Abwesenheitsarten mit „Im Abteilungskalender: farbig“, sonst nur, dass jemand fehlt;
+            Homeoffice-Angaben gar nicht.
           </SettingsToggle>
         </div>
       </div>

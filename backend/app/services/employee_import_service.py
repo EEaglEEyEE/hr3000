@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import EmailStr, TypeAdapter, ValidationError
 
-from app.models import Location, Team
+from app.models import Department, Location
 from app.schemas.employee import BulkImportRowError
 from app.schemas.work_time_model import WorkTimeModelInput
 
@@ -21,7 +21,7 @@ class ParsedEmployeeRow:
     last_name: str
     employee_number: str
     location_id: int
-    team_id: int | None
+    department_id: int | None
     active: bool
     login_email: str | None
     hire_date: dt.date | None
@@ -97,12 +97,12 @@ def _parse_date(raw: str, field_label: str) -> dt.date:
 def parse_bulk_import_csv(
     content: str,
     locations: list[Location],
-    teams: list[Team],
+    departments: list[Department],
     existing_employee_numbers: set[str],
     existing_login_emails: set[str],
 ) -> tuple[list[ParsedEmployeeRow], list[BulkImportRowError]]:
     """Parst und validiert eine hochgeladene Mitarbeiter-CSV, ohne selbst auf
-    die Datenbank zuzugreifen (Locations/Teams/bestehende Kennungen werden
+    die Datenbank zuzugreifen (Standorte/Abteilungen/bestehende Kennungen werden
     vom Aufrufer übergeben) – macht die Funktion isoliert testbar und
     vermeidet N+1-Lookups pro Zeile."""
     reader = csv.DictReader(io.StringIO(content), delimiter=";")
@@ -120,7 +120,7 @@ def parse_bulk_import_csv(
         ]
 
     locations_by_name = {loc.name.strip().lower(): loc for loc in locations}
-    teams_by_name = {team.name.strip().lower(): team for team in teams}
+    departments_by_name = {department.name.strip().lower(): department for department in departments}
 
     rows: list[ParsedEmployeeRow] = []
     errors: list[BulkImportRowError] = []
@@ -144,13 +144,15 @@ def parse_bulk_import_csv(
             if location is None:
                 raise ValueError(f"Standort '{location_name}' wurde nicht gefunden.")
 
-            team_id = None
-            team_name = row.get("team", "")
-            if team_name:
-                team = teams_by_name.get(team_name.lower())
-                if team is None:
-                    raise ValueError(f"Team '{team_name}' wurde nicht gefunden.")
-                team_id = team.id
+            department_id = None
+            # Spalte „abteilung“; die frühere Spalte „team“ gilt weiter als Abteilung (Teams wurden
+            # mit Migration 0134 zu Abteilungen).
+            department_name = row.get("abteilung", "") or row.get("team", "")
+            if department_name:
+                department = departments_by_name.get(department_name.lower())
+                if department is None:
+                    raise ValueError(f"Abteilung '{department_name}' wurde nicht gefunden.")
+                department_id = department.id
 
             active_raw = row.get("aktiv", "")
             active = _parse_bool(active_raw) if active_raw else True
@@ -233,7 +235,7 @@ def parse_bulk_import_csv(
                 last_name=last_name,
                 employee_number=employee_number,
                 location_id=location.id,
-                team_id=team_id,
+                department_id=department_id,
                 active=active,
                 login_email=login_email,
                 hire_date=hire_date,

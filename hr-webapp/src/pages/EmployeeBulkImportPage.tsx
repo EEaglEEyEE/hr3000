@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { Upload } from 'lucide-react'
 import { uploadEmployeeBulkImport, type BulkImportResult } from '../api/employeeImport'
 import { useLocationsQuery } from '../api/queries/locations'
-import { useTeamsQuery } from '../api/queries/teams'
+import { useDepartmentsQuery } from '../api/queries/departments'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
@@ -12,7 +12,7 @@ import { MigrationValuesSection } from '../components/migration/MigrationValuesS
 
 const REQUIRED_COLUMNS = ['vorname', 'nachname', 'personalnummer', 'standort']
 const OPTIONAL_COLUMNS = [
-  'team',
+  'abteilung',
   'aktiv',
   'login_email',
   'eintrittsdatum',
@@ -26,7 +26,7 @@ const OPTIONAL_COLUMNS = [
 export function EmployeeBulkImportPage() {
   const queryClient = useQueryClient()
   const locationsQuery = useLocationsQuery()
-  const teamsQuery = useTeamsQuery()
+  const departmentsQuery = useDepartmentsQuery()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -95,10 +95,10 @@ export function EmployeeBulkImportPage() {
           </p>
         </div>
 
-        {teamsQuery.data && teamsQuery.data.length > 0 && (
+        {departmentsQuery.data && departmentsQuery.data.length > 0 && (
           <div className="text-sm text-slate-700">
-            <p className="font-medium text-slate-900">Gültige Team-Namen</p>
-            <p>{teamsQuery.data.map((team) => team.name).join(', ')}</p>
+            <p className="font-medium text-slate-900">Gültige Abteilungs-Namen</p>
+            <p>{departmentsQuery.data.map((department) => department.name).join(', ')}</p>
           </div>
         )}
 

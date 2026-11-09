@@ -15,7 +15,7 @@ from app.api.deps import (
 )
 from app.db import get_db
 from app.errors import AppError
-from app.models import Account, AuditAction, Department, Employee, EmployeeLocationPeriod, HrRole, Location, Team
+from app.models import Account, AuditAction, Department, Employee, EmployeeLocationPeriod, HrRole, Location
 from app.schemas.work_time_model import WorkTimeModelInput, WorkTimeModelSetRequest, WorkTimeProfileAssignRequest
 from app.services.work_time_profile_service import get_profile_in_tenant
 from app.schemas.employee import (
@@ -37,7 +37,7 @@ from app.services.document_service import delete_employee_documents
 from app.services.credentials_mail import login_url, send_credentials_email
 from app.services.email_service import describe_smtp_error, resolve_smtp_config
 from app.services.employee_import_service import ParsedEmployeeRow, parse_bulk_import_csv
-from app.services.team_scope_service import ensure_employee_visible, supervisor_team_ids
+from app.services.scope_service import ensure_employee_visible, visible_employee_ids
 from app.services.timesheet_service import calculate_day, employee_timezone, local_date
 from app.services.timesheet_service import invalidate_balance
 from app.services.period_service import ensure_open_from
@@ -58,27 +58,50 @@ async def _record_location_change(db: AsyncSession, employee: Employee, new_loca
     db.add(EmployeeLocationPeriod(employee_id=employee.id, location_id=new_location_id, valid_from=effective))
 
 
+from app.services.department_service import department_subtree_ids
+from app.services.org_service import OrgSnapshot, check_no_supervisor_cycle, load_org
 from app.services.pairing_service import card_hash
 from app.schemas.common import normalize_card_uid
 router = APIRouter(tags=["employees"])
+
+
+def _with_supervisor(response: EmployeeResponse, org: OrgSnapshot) -> EmployeeResponse:
+    """Wirksame Führungskräfte (Ausnahme oder Leitungen der Abteilung) ergänzen."""
+    return response.model_copy(
+        update={"effective_supervisor_ids": org.supervisors(response.id), "supervisor_source": org.supervisor_source(response.id)}
+    )
+
+
+async def employee_response(db: AsyncSession, employee: Employee) -> EmployeeResponse:
+    return _with_supervisor(EmployeeResponse.model_validate(employee), await load_org(db, employee.tenant_id))
 
 
 @router.get("/employees", response_model=list[EmployeeResponse])
 async def list_employees(
     location_id: int | None = Query(default=None),
     active: bool | None = Query(default=None),
-    search: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=100),
+    # Abteilung samt ihren Unterabteilungen (z.B. Vertrieb → auch Innendienst)
+    department_id: int | None = Query(default=None, ge=1),
+    without_department: bool = Query(default=False),
     actor: Actor = Depends(get_current_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[EmployeeResponse]:
     stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id)
     if location_id is not None:
         stmt = stmt.where(Employee.location_id == location_id)
+    if department_id is not None and without_department:
+        raise AppError(422, "INVALID_FILTER", "Entweder nach einer Abteilung oder nach „ohne Abteilung“ filtern.")
+    if department_id is not None:
+        await _check_department(db, department_id, actor.tenant_id)
+        stmt = stmt.where(Employee.department_id.in_(await department_subtree_ids(db, actor.tenant_id, department_id)))
+    if without_department:
+        stmt = stmt.where(Employee.department_id.is_(None))
     if active is not None:
         stmt = stmt.where(Employee.active == active)
     if actor.is_supervisor_level:
-        team_ids = await supervisor_team_ids(db, actor)
-        stmt = stmt.where(Employee.team_id.in_(team_ids or set()))
+        visible = await visible_employee_ids(db, actor)
+        stmt = stmt.where(Employee.id.in_(visible or set()))
     if search:
         pattern = f"%{search}%"
         stmt = stmt.where(
@@ -92,7 +115,8 @@ async def list_employees(
 
     employees = list((await db.execute(stmt)).scalars().all())
     await personal_data_service.mark_leave(db, employees)
-    return [EmployeeResponse.model_validate(e) for e in employees]
+    org = await load_org(db, actor.tenant_id)
+    return [_with_supervisor(EmployeeResponse.model_validate(e), org) for e in employees]
 
 
 @router.get("/locations/{location_id}/employees", response_model=list[LocationEmployeeResponse])
@@ -116,7 +140,7 @@ async def list_location_employees(
     # Teamleader sehen nur ihre Teams und keine Chip-Nummern (die braucht nur das Tablet bzw. HR).
     limited = actor.device is None and actor.is_supervisor_level
     if limited:
-        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+        stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     result = await db.execute(stmt.order_by(Employee.last_name.asc(), Employee.first_name.asc()))
     employees = result.scalars().all()
 
@@ -158,7 +182,7 @@ async def get_employee(
     if actor.is_hr_level:
         await ensure_employee_visible(db, actor, employee)
     await personal_data_service.mark_leave(db, [employee])
-    return EmployeeResponse.model_validate(employee)
+    return await employee_response(db, employee)
 
 
 @router.post("/employees", response_model=EmployeeResponse, status_code=201)
@@ -176,10 +200,6 @@ async def create_employee(
             "MAX_DAILY_WORKING_TIME_EXCEEDED",
             "Das Arbeitszeitmodell ergibt mehr als 10 Stunden pro Arbeitstag (§3 ArbZG).",
         )
-    if payload.team_id is not None:
-        team = await db.get(Team, payload.team_id)
-        if team is None or team.tenant_id != actor.tenant_id:
-            raise AppError(404, "TEAM_NOT_FOUND", "Team nicht gefunden.")
     if payload.work_time_profile_id is not None:
         # Vor dem Anlegen prüfen – sonst entstünde ein Mitarbeiter ohne das gewünschte Modell.
         profile = await get_profile_in_tenant(db, payload.work_time_profile_id, actor.tenant_id)
@@ -192,8 +212,6 @@ async def create_employee(
         await _check_department(db, payload.department_id, actor.tenant_id)
     if payload.supervisor_id is not None:
         await _check_supervisor(db, None, payload.supervisor_id, actor.tenant_id)
-    if payload.approval_delegate_id is not None:
-        await _check_colleague(db, None, payload.approval_delegate_id, actor.tenant_id)
 
     defaults = await get_or_create_settings(db, actor.tenant_id)
     employee = Employee(
@@ -214,11 +232,9 @@ async def create_employee(
         show_birthday_in_calendar=(
             defaults.default_show_birthday if payload.show_birthday_in_calendar is None else payload.show_birthday_in_calendar
         ),
-        team_id=payload.team_id,
         department_id=payload.department_id,
         position=(payload.position or "").strip() or None,
         supervisor_id=payload.supervisor_id,
-        approval_delegate_id=payload.approval_delegate_id,
     )
     db.add(employee)
     try:
@@ -251,7 +267,7 @@ async def create_employee(
             db,
         )
         await db.refresh(employee)
-        return EmployeeResponse.model_validate(employee)
+        return await employee_response(db, employee)
 
     model = payload.work_time_model
     if model is None and defaults.default_day_minutes and not payload.no_work_time_model:
@@ -268,7 +284,7 @@ async def create_employee(
         )
         await db.refresh(employee)
 
-    return EmployeeResponse.model_validate(employee)
+    return await employee_response(db, employee)
 
 
 @router.post("/employees/bulk-import", response_model=BulkImportResult)
@@ -288,7 +304,7 @@ async def bulk_import_employees(
         raise AppError(400, "INVALID_ENCODING", "Die Datei muss UTF-8-kodiert sein.") from exc
 
     locations_result = await db.execute(select(Location).where(Location.tenant_id == actor.tenant_id))
-    teams_result = await db.execute(select(Team).where(Team.tenant_id == actor.tenant_id))
+    departments_result = await db.execute(select(Department).where(Department.tenant_id == actor.tenant_id))
     existing_numbers_result = await db.execute(
         select(Employee.employee_number).where(Employee.tenant_id == actor.tenant_id)
     )
@@ -301,7 +317,7 @@ async def bulk_import_employees(
     rows, errors = parse_bulk_import_csv(
         content,
         locations=list(locations_result.scalars().all()),
-        teams=list(teams_result.scalars().all()),
+        departments=list(departments_result.scalars().all()),
         existing_employee_numbers=set(existing_numbers_result.scalars().all()),
         existing_login_emails=set(existing_emails_result.scalars().all()),
     )
@@ -327,7 +343,7 @@ async def bulk_import_employees(
         new_employee = Employee(
                 tenant_id=actor.tenant_id,
                 location_id=parsed.location_id,
-                team_id=parsed.team_id,
+                department_id=parsed.department_id,
                 first_name=parsed.first_name,
                 last_name=parsed.last_name,
                 employee_number=parsed.employee_number,
@@ -431,7 +447,7 @@ async def update_employee_hr_role(
 
     await db.commit()
     await db.refresh(employee)
-    return EmployeeResponse.model_validate(employee)
+    return await employee_response(db, employee)
 
 
 @router.post("/employees/{employee_id}/reset-password", response_model=EmployeePasswordResetResponse)
@@ -555,7 +571,7 @@ async def anonymize_employee(
 
     await db.commit()
     await db.refresh(employee)
-    return EmployeeResponse.model_validate(employee)
+    return await employee_response(db, employee)
 
 
 async def _check_department(db: AsyncSession, department_id: int, tenant_id: int) -> None:
@@ -565,23 +581,11 @@ async def _check_department(db: AsyncSession, department_id: int, tenant_id: int
 
 
 async def _check_supervisor(db: AsyncSession, employee: Employee | None, supervisor_id: int, tenant_id: int) -> None:
-    """Führungskraft: ein anderer Mitarbeiter derselben Firma, ohne Kreis (A führt B, B führt A)."""
+    """Abweichende Führungskraft: ein anderer Mitarbeiter derselben Firma. Ob dadurch ein Kreis entsteht
+    (auch über Abteilungsleitungen), prüft check_no_supervisor_cycle nach dem Speichern."""
     supervisor = await db.get(Employee, supervisor_id)
-    if supervisor is None or supervisor.tenant_id != tenant_id:
-        raise AppError(404, "SUPERVISOR_NOT_FOUND", "Führungskraft nicht gefunden.")
-    seen: set[int] = set()
-    current: Employee | None = supervisor
-    while current is not None and current.id not in seen:
-        if employee is not None and current.id == employee.id:
-            raise AppError(400, "SUPERVISOR_CYCLE", "Die Führungskraft darf nicht (indirekt) an dieser Person hängen.")
-        seen.add(current.id)
-        current = await db.get(Employee, current.supervisor_id) if current.supervisor_id else None
-
-
-async def _check_colleague(db: AsyncSession, employee: Employee | None, colleague_id: int, tenant_id: int) -> None:
-    colleague = await db.get(Employee, colleague_id)
-    if colleague is None or colleague.tenant_id != tenant_id or (employee is not None and colleague.id == employee.id):
-        raise AppError(404, "EMPLOYEE_NOT_FOUND", "Vertretung nicht gefunden (eine andere Person der Firma wählen).")
+    if supervisor is None or supervisor.tenant_id != tenant_id or (employee is not None and supervisor.id == employee.id):
+        raise AppError(404, "SUPERVISOR_NOT_FOUND", "Führungskraft nicht gefunden (eine andere Person der Firma wählen).")
 
 
 def _conflict_error(exc: IntegrityError) -> AppError:
@@ -670,13 +674,6 @@ async def update_employee(
         employee.birth_date = None
     if payload.show_birthday_in_calendar is not None:
         employee.show_birthday_in_calendar = payload.show_birthday_in_calendar
-    if payload.team_id is not None:
-        team = await db.get(Team, payload.team_id)
-        if team is None or team.tenant_id != actor.tenant_id:
-            raise AppError(404, "TEAM_NOT_FOUND", "Team nicht gefunden.")
-        employee.team_id = payload.team_id
-    elif payload.clear_team_id:
-        employee.team_id = None
     if payload.department_id is not None:
         await _check_department(db, payload.department_id, actor.tenant_id)
         employee.department_id = payload.department_id
@@ -689,11 +686,21 @@ async def update_employee(
         employee.supervisor_id = payload.supervisor_id
     elif payload.clear_supervisor_id:
         employee.supervisor_id = None
-    if payload.approval_delegate_id is not None:
-        await _check_colleague(db, employee, payload.approval_delegate_id, actor.tenant_id)
-        employee.approval_delegate_id = payload.approval_delegate_id
-    elif payload.clear_approval_delegate_id:
-        employee.approval_delegate_id = None
+    # Kreis in den Führungskräften? Auch Aufheben einer Ausnahme, Wechsel/Entfernen der Abteilung und
+    # Reaktivieren können einen entstehen lassen (inaktive Personen zählen nicht als Führungskraft).
+    if (
+        payload.supervisor_id is not None
+        or payload.clear_supervisor_id
+        or payload.department_id is not None
+        or payload.clear_department_id
+        or payload.active is True
+    ):
+        await db.flush()
+        try:
+            await check_no_supervisor_cycle(db, actor.tenant_id)
+        except AppError:
+            await db.rollback()
+            raise
     if (employee.hire_date, employee.termination_date) != balance_relevant:
         await invalidate_balance(db, employee.id, None)
     await webhook_service.emit_event(db, actor.tenant_id, "employee.updated", {"employee_id": employee.id})
@@ -705,4 +712,4 @@ async def update_employee(
         raise _conflict_error(exc)
 
     await db.refresh(employee)
-    return EmployeeResponse.model_validate(employee)
+    return await employee_response(db, employee)

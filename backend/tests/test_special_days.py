@@ -1,13 +1,14 @@
 """Sonderfälle: außerplanmäßig, trotz Abwesenheit, an Feiertagen, außerhalb Beschäftigung – zählen,
-erscheinen aber unter "Zu klären", bis HR sie als geklärt markiert. Plus Team-Filter im Team-Kalender."""
+erscheinen aber unter "Zu klären", bis HR sie als geklärt markiert. Plus Abteilungs-Filter im Team-Kalender."""
 import uuid
 from datetime import date
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, EmployeeDefaultShift, Holiday, HrRole, Account, Location, ShiftTemplate, Team
+from app.models import Employee, EmployeeDefaultShift, Holiday, HrRole, Account, Location, ShiftTemplate
 from app.services.auth_service import hash_password
+from org_helpers import department
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
@@ -71,23 +72,32 @@ async def test_work_during_absence_holiday_and_outside_employment(client: AsyncC
     assert "OUTSIDE_EMPLOYMENT" in after["flags"]
 
 
-async def test_team_calendar_filters_by_team(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_team_calendar_filters_by_department(client: AsyncClient, db_session: AsyncSession) -> None:
     location = Location(name="A", timezone="UTC")
-    team_a, team_b = Team(name="A-Team"), Team(name="B-Team")
-    db_session.add_all([location, team_a, team_b, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([location, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
-    db_session.add_all([
-        Employee(location_id=location.id, team_id=team_a.id, first_name="A", last_name="A", employee_number="1"),
-        Employee(location_id=location.id, team_id=team_b.id, first_name="B", last_name="B", employee_number="2"),
-        Employee(location_id=location.id, first_name="C", last_name="C", employee_number="3"),
-    ])
+    a, b, c, d = (
+        Employee(location_id=location.id, first_name=n, last_name=n, employee_number=str(i))
+        for i, n in enumerate("ABCD", start=1)
+    )
+    db_session.add_all([a, b, c, d])
     await db_session.commit()
+    # A in der A-Abteilung, D in deren Unterabteilung, B in der B-Abteilung, C ohne Abteilung
+    dep_a = await department(db_session, "A-Abteilung", a)
+    dep_b = await department(db_session, "B-Abteilung", b)
+    sub_a = await department(db_session, "A-Unterabteilung", d, parent=dep_a)
     headers = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]}
     params = {"from": "2025-03-01", "to": "2025-03-31"}
 
     def names(r):
         return sorted(e["last_name"] for e in r.json())
 
-    assert names(await client.get("/team-calendar", headers=headers, params=params)) == ["A", "B", "C"]
-    assert names(await client.get("/team-calendar", headers=headers, params={**params, "team_id": team_a.id})) == ["A"]
-    assert names(await client.get("/team-calendar", headers=headers, params={**params, "team_id": [team_a.id, 0]})) == ["A", "C"]
+    everyone = await client.get("/team-calendar", headers=headers, params=params)
+    assert names(everyone) == ["A", "B", "C", "D"]
+    assert {e["last_name"]: e["department_id"] for e in everyone.json()} == {"A": dep_a.id, "B": dep_b.id, "C": None, "D": sub_a.id}
+    # Eine Abteilung umfasst ihre Unterabteilungen; 0 = ohne Abteilung; mehrere Angaben werden vereinigt
+    assert names(await client.get("/team-calendar", headers=headers, params={**params, "department_id": dep_a.id})) == ["A", "D"]
+    assert names(await client.get("/team-calendar", headers=headers, params={**params, "department_id": sub_a.id})) == ["D"]
+    assert names(await client.get("/team-calendar", headers=headers, params={**params, "department_id": [dep_a.id, 0]})) == ["A", "C", "D"]
+    assert names(await client.get("/team-calendar", headers=headers, params={**params, "department_id": [dep_b.id, sub_a.id]})) == ["B", "D"]
+    assert names(await client.get("/team-calendar", headers=headers, params={**params, "department_id": 0})) == ["C"]

@@ -182,7 +182,19 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (`entity_type="work_time_profile"`), Zuweisungen als `EMPLOYEE_WORK_TIME_MODEL_SET`.
   - Pünktlichkeit (`timesheet_service._punctuality_flags`): Toleranz und Gleitzeit-Rahmen der
     Fassung vor denen des Mandanten (`TENANT`/leer = Einstellungen, `NONE` = kein Rahmen).
-    Individuelle Fassungen lassen beides leer.
+    Individuelle Fassungen haben keine eigene Toleranz; den Gleitzeit-Rahmen können sie selbst
+    setzen (`flex_frame_mode` im Request, ohne Angabe wie die bisherige Fassung, siehe
+    `api/work_time_model._flex_frame_fields`).
+- **Mitarbeiterliste nach Abteilung:** `GET /employees?department_id=…` liefert die Abteilung samt
+  Unterabteilungen (`services/department_service.department_subtree_ids`, robust gegen Zyklen),
+  `without_department=true` die ohne Abteilung; beides zusammen ist 422 `INVALID_FILTER`, eine
+  fremde oder unbekannte Abteilung 404.
+- **Gleitzeit-Rahmen je Wochentag:** `flex_frame_days` (Migration 0132) an der Fassung und an der
+  Modell-Fassung, Format wie `core_time_days` (`schemas/core_time.py`, `FlexFrameDays`), nur bei
+  `CUSTOM`; NULL = jeden Tag `flex_frame_start/-end`, ein leerer Tag = an diesem Tag kein Rahmen.
+  Die eigene Kernzeit muss an jedem Tag im Rahmen liegen (`WorkTimeModelInput._flex_frame`).
+  Zuweisungen übernehmen das Feld (`CONTRACT_FIELDS`). Downgrade: Fassungen mit Rahmen je
+  Wochentag gelten danach wie die Einstellungen.
 - **Kernzeit je Wochentag:** `core_time_days` (Text, 7 Einträge „HH:MM-HH:MM“ oder leer, Format
   und Schema in `schemas/core_time.py`) an `AppSettings` und an der Fassung (nur bei `CUSTOM`).
   NULL = jeden Tag `core_time_start/-end`. Ausgewertet in `timesheet_service._punctuality_flags`
@@ -199,7 +211,10 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     Uhrzeit, Ortszeit, nicht über Mitternacht). Alle effektiv-datiert.
   - Eigene Pause des Tages (`_own_break`): die der Fassung, sonst die der Schichtvorlage (an
     geplanten Schichttagen immer die der Schicht). `break_mode=FIXED` + `fixed_break_*` ersetzt die
-    Pausenzeiten des Mandanten; `min_break_minutes` ab `min_break_after_minutes` ist eine weitere
+    Pausenzeiten des Mandanten. Mehrere feste Pausenzeiten (bis 4, Migration 0133) stehen in
+    `fixed_break_windows` („09:00-09:15,12:00-12:30“, nur ab zwei; `fixed_break_start/-end` ist
+    immer die erste), gelesen über `schemas/break_rule.fixed_break_windows`; API-Feld
+    `break_windows` (eine einzelne wird zu `break_start`/`break_end`); `min_break_minutes` ab `min_break_after_minutes` ist eine weitere
     Staffelstufe. Pausenänderungen an Schichtvorlagen versionieren wie Soll-Änderungen.
   - `BreakPolicy.shortfall` ist der einzige Rechenweg für den Fehlbetrag (Tagesberechnung,
     `maybe_auto_insert_break`, `surcharge_service.work_intervals`). `precise`
@@ -295,7 +310,7 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (`AppLayout`), Seitenschutz (`RequireAccess` in `App.tsx`) und die Bereiche der Einstellungen
     (`SettingsPage`, je Bereich eine Stufe) lesen alle daraus. Neue Seite oder neuer Bereich: Stufe
     passend zur Backend-Abhängigkeit eintragen.
-  - Einstellungen: `/einstellungen/:seite`; frühere eigene Seiten (Standorte, Teams, Feiertage,
+  - Einstellungen: `/einstellungen/:seite` (alte Links auf „teams“ führen zu „abteilungen“); frühere eigene Seiten (Standorte, Feiertage,
     Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten, Audit-Protokoll) sind Bereiche dort,
     die alten Pfade leiten um (`MOVED_TO_SETTINGS`), alte Reiter `?bereich=` ebenso.
   - „Zu klären“: `/zu-klaeren/:reiter` (`tage`, `korrekturen`, `urlaubsantraege`, `monatsgrenzen`);
@@ -350,9 +365,14 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     /employees/{id}/history` = Audit-Einträge zum Mitarbeiter (Vergütung nur mit Freigabe).
   - **Genehmigungsketten** (Migration 0123, `services/approval_service.py`):
     `AbsenceTypeDefinition.approval_chain` (DEFAULT/SUPERVISOR/SUPERVISOR_HR/HR → Schritte TEAM,
-    SUPERVISOR, HR), `Absence.approval_step`, Verlauf in `absence_approvals`. `can_decide` ersetzt
-    beim Entscheiden die Team-Prüfung; Admin/HR dürfen jeden Schritt. SUPERVISOR = Führungskraft
-    mit Rolle und Zugang, bei heutiger Abwesenheit `Employee.approval_delegate_id`, sonst Admin/HR.
+    SUPERVISOR, HR), `Absence.approval_step`, Verlauf in `absence_approvals`. `can_decide`: Schritt
+    TEAM (Name aus der Zeit der Teams) = jede Führungskraft, die für die Person entscheiden darf
+    (`decidable_employee_ids`, nie die Person selbst); Admin/HR dürfen jeden Schritt. SUPERVISOR =
+    `supervisor_approvers`: die Ausnahme je Person, wenn sie entscheiden kann und heute da ist; sonst
+    die Leitungen nach Abteilung samt handelnder Stellvertretungen, soweit heute da; ist niemand da,
+    bleiben die Zuständigen zuständig (Ausnahme vor Abteilung), ohne Zugang Admin/HR.
+    Benachrichtigung bei TEAM und SUPERVISOR: alle `supervisor_approvers` (`approver_recipients`),
+    sonst Admin/HR.
     `GET /absences/pending` filtert für Führungskräfte über `can_decide`; `waiting_for` in
     `AbsenceResponse`; Benachrichtigung je Schritt über `step_recipients`.
   - **Stammdaten** (Migration 0122, `api/personal_data.py`, `services/personal_data_service.py`):
@@ -364,11 +384,40 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     /employees/{id}/cost-centers`). `Employee.employment_status` (ONBOARDING/ACTIVE/LEAVE/INACTIVE);
     LEAVE setzt `mark_leave` in Liste und Einzelansicht (laufende Elternzeit/Pflegezeit).
     Anonymisieren löscht persönliche Daten und Kostenstellen, der Datenexport enthält sie.
-  - **Organisation** (Migration 0121, `api/departments.py`): `departments` (hierarchisch über
-    `parent_id`, `ON DELETE SET NULL`, Name je Firma eindeutig, Kreise abgelehnt), am Mitarbeiter
-    `department_id`, `position` und `supervisor_id` (Führungskraft, `ON DELETE SET NULL`, Kreise
-    über `_check_supervisor` abgelehnt). `GET /org-chart` liefert die aktiven Mitarbeiter mit
-    Führungskraft; für Rollen immer, für Mitarbeiter nur mit `AppSettings.org_chart_for_employees`.
+  - **Organisation** (Migrationen 0121, 0134, 0135, `api/departments.py`, `services/org_service.py`,
+    `services/scope_service.py`): Abteilungen sind die einzige Struktur – Teams gibt es seit 0134
+    nicht mehr. `departments` (hierarchisch über `parent_id`, `ON DELETE SET NULL`, Name je Firma
+    eindeutig, Kreise abgelehnt); Leitungen und Stellvertretungen in `department_leaders`
+    (`role` HEAD/DEPUTY, `deputy_rights` STANDBY/FULL/ABSENCE, `position`, je Abteilung und Person
+    eindeutig, `ON DELETE CASCADE`). Am Mitarbeiter `department_id`, `position` und `supervisor_id` =
+    abweichende Führungskraft (Ausnahme). **Wirksame Führungskräfte** (`OrgSnapshot.supervisors`,
+    eine Liste): Ausnahme (aktiv, nicht man selbst), sonst die aktiven Leitungen der
+    „Heimatabteilung“ (eigene Abteilung, ohne Abteilung die erste geleitete) bzw. – für eine Leitung
+    selbst oder ohne Leitung – der nächsten darüber. Stellvertretungen sind keine Führungskräfte im
+    Baum; wenn sie handeln, rechnet `reports(…, extra)` sie als zusätzliche Leitung ihrer Abteilung.
+    Wann sie handeln, regelt `acting_deputies`: Sicht (VIEW) bei FULL und STANDBY immer, bei ABSENCE
+    nur ohne verfügbare Leitung; Entscheidung (DECIDE) bei FULL immer, sonst nur ohne verfügbare
+    Leitung. Verfügbar = aktiv, Konto mit Rolle, E-Mail und Passwort, heute nicht genehmigt abwesend.
+    `GET /employees` liefert `effective_supervisor_ids` und `supervisor_source` (OVERRIDE/DEPARTMENT).
+    **Zuständigkeit** (`visible_employee_ids`, `decidable_employee_ids`): die Person selbst plus alle
+    direkt und indirekt Unterstellten; ein SUPERVISOR-Konto ohne Mitarbeiter sieht niemanden. Kreise
+    über Ausnahme oder Leitungen lehnt `check_no_supervisor_cycle` nach dem Flush ab (400
+    `SUPERVISOR_CYCLE`, Tiefensuche über alle Führungskräfte). `POST/PATCH /departments` nehmen
+    `leaders` (Liste ersetzt alle, `[]` leert, fehlend = unverändert; Pydantic: Person höchstens
+    einmal, höchstens 50, Rolle und Rechte als Literal). Abteilungskalender
+    (`department_id`-Filter samt Unterabteilungen, 0 = ohne), „Mein Bereich“-Kalender, iCal und
+    Überschneidungen beim Antrag nutzen die eigene Abteilung. `GET /org-chart` liefert
+    `{departments, people}` (Abteilungsbaum mit aktiven `leaders`, aktive Mitarbeiter mit
+    `supervisor_ids`); für Rollen immer, für Mitarbeiter nur mit `AppSettings.org_chart_for_employees`.
+    Bearbeitet wird im Organigramm über dieselben Endpunkte (`PATCH /departments/{id}` für
+    `parent_id`, `PATCH /employees/{id}` für `department_id`); Ziehen und Ablegen ist natives HTML5
+    Drag and Drop ohne Zusatzpaket. Migration 0134 macht aus jedem Team eine Abteilung (vorhandene
+    gleichen Namens wird genutzt), die erste Teamleitung mit Mitarbeiter-Konto zur Leitung, setzt
+    Teammitglieder ohne Abteilung hinein und trägt bei Mitgliedern anderer Abteilungen die
+    Teamleitung als Ausnahme ein. Migration 0135 legt `department_leaders` an, übernimmt
+    `head_employee_id` als HEAD und die persönliche Vertretung (`approval_delegate_id`) einer Leitung
+    als DEPUTY/STANDBY in jeder ihrer Abteilungen, und entfernt beide Spalten. Beide Migrationen sind
+    wiederholbar (jeder Schritt prüft den Stand) und haben kein Downgrade.
   - **Zwei-Faktor-Anmeldung** (Migration 0120, `services/totp_service.py` ohne Zusatzpaket,
     `services/two_factor_service.py`, `api/two_factor.py`): TOTP nach RFC 6238 (SHA-1, 6 Ziffern,
     30 s, ±1 Schritt), Geheimnis per `secret_box` verschlüsselt in `accounts.totp_secret`,
@@ -392,6 +441,13 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     der Zugang schon gebunden ist. Koppeln per Code erzeugt ein neues Token; „Kopplung aufheben“
     (`regenerate_token`) ebenso und löst die Bindung. Der JWT-Claim `tv` (erste 16 Zeichen des
     Hashes) beendet dabei alte Sitzungen sofort (`deps.py`).
+    Ein Kopplungscode für einen schon gebundenen Eintrag nur mit `replace_bound: true`
+    (`POST /devices/{id}/pairing-code`, sonst 409 `DEVICE_BOUND`, Webapp fragt „Gerät tauschen“).
+    Jede Bindung (Login, `bind_device`, Koppeln) löscht einen offenen Code, damit ein Code für einen
+    freien Eintrag kein inzwischen gebundenes Gerät verdrängt. `POST /auth/device/pair` schreibt
+    Audit `DEVICE_ENROLLMENT`; ein Tausch (andere Installation) zusätzlich `DEVICE_ALERT`
+    (`notify_device_replaced`). Anlass: Vorfall Staging 09.11.2026, ein zweites Gerät übernahm per
+    QR-Code den gerade freigegebenen MDM-Eintrag.
   - **Verteilung per MDM** (`services/device_enrollment.py`, Migration 0130): Registrierungsschlüssel
     je Standort (`device_enrollment_keys`, 256 Bit, nur SHA-256, optional `expires_at`). Die
     Kiosk-App liest `#enroll=<schlüssel>&name=<gerätename>` beim Start aus dem Fragment, hält es nur

@@ -19,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    Department,
+    DepartmentLeader,
     Absence,
     Account,
     AbsenceApprovalStatus,
@@ -36,11 +38,10 @@ from app.models import (
     PunchSource,
     PunchType,
     ShiftTemplate,
-    SupervisorTeamAssignment,
-    Team,
     Tenant,
     TenantPlan,
 )
+from app.models.department import DEPUTY_STANDBY, LEADER_DEPUTY, LEADER_HEAD
 from app.services.auth_service import hash_password
 
 SUBDOMAIN = "demo"
@@ -96,13 +97,13 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
 
     stuttgart = Location(tenant_id=tenant.id, name="Stuttgart", timezone="Europe/Berlin", bundesland="BW")
     berlin = Location(tenant_id=tenant.id, name="Berlin", timezone="Europe/Berlin", bundesland="BE")
-    sales, store = Team(tenant_id=tenant.id, name="Verkauf"), Team(tenant_id=tenant.id, name="Lager")
+    sales, store = Department(tenant_id=tenant.id, name="Verkauf"), Department(tenant_id=tenant.id, name="Lager")
     db.add_all([stuttgart, berlin, sales, store])
     await db.flush()
 
-    def person(first: str, last: str, number: str, location: Location, team: Team, **extra) -> Employee:
+    def person(first: str, last: str, number: str, location: Location, department: Department, **extra) -> Employee:
         return Employee(
-            tenant_id=tenant.id, location_id=location.id, team_id=team.id, first_name=first, last_name=last,
+            tenant_id=tenant.id, location_id=location.id, department_id=department.id, first_name=first, last_name=last,
             employee_number=number, hire_date=start - timedelta(days=365), **extra,
         )
 
@@ -116,7 +117,11 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     people = [erika, tom, hanna, max_, lena, ali, fiona]
     db.add_all(people)
     await db.flush()
-    db.add(SupervisorTeamAssignment(team_id=sales.id, account_id=tom.account.id))
+    # Tom leitet den Verkauf (Führungskraft), Fiona vertritt ihn bei Abwesenheit
+    db.add_all([
+        DepartmentLeader(department_id=sales.id, employee_id=tom.id, role=LEADER_HEAD, position=0),
+        DepartmentLeader(department_id=sales.id, employee_id=fiona.id, role=LEADER_DEPUTY, deputy_rights=DEPUTY_STANDBY, position=1),
+    ])
     await db.commit()
 
     # Schichtvorlage liefert im Arbeitszeitmodell nur die Uhrzeiten (Soll bleibt das des Modells).

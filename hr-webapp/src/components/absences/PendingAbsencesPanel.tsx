@@ -21,7 +21,7 @@ export function PendingAbsencesPanel() {
     <div className="flex flex-col gap-4">
       <p className="text-sm text-slate-500">
         Offene Anträge, die auf Genehmigung warten (je Abwesenheitsart unter Einstellungen → „Abwesenheitsarten“ mit
-        „Genehmigung nötig“). Als Führungskraft sieht man hier nur Anträge aus den eigenen Teams.
+        „Genehmigung nötig“). Als Führungskraft sieht man hier nur Anträge aus dem eigenen Bereich (Abteilung und Unterstellte).
       </p>
 
       {pendingQuery.isLoading && <p className="text-slate-500">Lädt…</p>}

@@ -23,7 +23,7 @@ from app.services.leave_service import (
     workdays_per_week,
 )
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 
 router = APIRouter(tags=["leave_entitlements"])
 

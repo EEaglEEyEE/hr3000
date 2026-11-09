@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_principal
-from app.api.work_time_model import _contract, _core_time_fields, _days_label, _describe, _times_template
+from app.api.work_time_model import _contract, _core_time_fields, _days_label, _describe, _flex_frame_fields, _frame_label, _times_template
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
@@ -72,17 +72,14 @@ async def _version_fields(
 ) -> tuple[dict, str]:
     fields, soll_label = _contract(payload)
     fields.update(_core_time_fields(payload, inherit))
+    fields.update(_flex_frame_fields(payload, inherit))
     template = await _times_template(
         db, tenant_id, payload.shift_template_id, inherit.shift_template_id if inherit else None
     )
     if template is not None:
         check_max_daily_working_time(template.start_time, template.end_time)
     fields["shift_template_id"] = template.id if template else None
-    frame = ""
-    if payload.flex_frame_mode == "CUSTOM":
-        frame = f", Gleitzeit-Rahmen {payload.flex_frame_start:%H:%M}–{payload.flex_frame_end:%H:%M}"
-    elif payload.flex_frame_mode == "NONE":
-        frame = ", ohne Gleitzeit-Rahmen"
+    frame = _frame_label(payload)
     if payload.late_tolerance_minutes is not None:
         frame += f", Toleranz {payload.late_tolerance_minutes} Min."
     return fields, f"{soll_label} an {_days_label(payload, template)}{frame}"

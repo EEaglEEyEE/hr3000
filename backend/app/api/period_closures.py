@@ -33,7 +33,7 @@ from app.schemas.period import (
     PeriodSubmitRequest,
 )
 from app.services.audit_service import log_action
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.document_service import store_document
 from app.services.notification_service import notify_period_disputed, notify_period_submitted
 from app.services.timesheet_service import day_fingerprint, day_reviews, needs_review, review_valid, utc_today

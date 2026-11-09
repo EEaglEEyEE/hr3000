@@ -5,8 +5,9 @@ from datetime import time
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, Account, Location, ShiftTemplate, SupervisorTeamAssignment, Team
+from app.models import Employee, HrRole, Account, Location, ShiftTemplate
 from app.services.auth_service import hash_password
+from org_helpers import department, supervisor_with_department
 
 # WeasyPrint dlopen't Pango/GObject als native Libs (siehe
 # shift_plan_pdf_service.py) – auf diesem Entwicklungsrechner (macOS/Homebrew)
@@ -49,14 +50,6 @@ async def _create_template(db_session: AsyncSession) -> ShiftTemplate:
 
 async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
     user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-
-async def _create_supervisor_hr_user(db_session: AsyncSession) -> Account:
-    user = Account(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -118,28 +111,17 @@ async def test_export_unknown_employee_returns_404(client: AsyncClient, db_sessi
     assert response.json()["code"] == "EMPLOYEE_NOT_FOUND"
 
 
-async def test_supervisor_cannot_export_employee_outside_own_team(
+async def test_supervisor_cannot_export_employee_outside_own_department(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     location = await _create_location(db_session)
-    supervisor = await _create_supervisor_hr_user(db_session)
-
-    own_team = Team(name="Team Nord", location_id=location.id)
-    other_team = Team(name="Team Sued", location_id=location.id)
-    db_session.add_all([own_team, other_team])
-    await db_session.commit()
-    await db_session.refresh(own_team)
-    await db_session.refresh(other_team)
-
-    db_session.add(SupervisorTeamAssignment(team_id=own_team.id, account_id=supervisor.id))
-    await db_session.commit()
-
-    own_employee = await _create_employee(
-        db_session, location, first_name="Erika", employee_number="EMP-OWN", team_id=own_team.id
+    own_employee = await _create_employee(db_session, location, first_name="Erika", employee_number="EMP-OWN")
+    other_employee = await _create_employee(db_session, location, first_name="Otto", employee_number="EMP-OTHER")
+    # Die Führungskraft leitet Erikas Abteilung; Otto arbeitet in einer anderen (ohne Leitung).
+    supervisor_setup = await supervisor_with_department(
+        db_session, location, email="supervisor@example.com", department_name="Team Nord", members=(own_employee,)
     )
-    other_employee = await _create_employee(
-        db_session, location, first_name="Otto", employee_number="EMP-OTHER", team_id=other_team.id
-    )
+    await department(db_session, "Team Sued", other_employee)
 
     token = await _token(client, "supervisor@example.com")
 

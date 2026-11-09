@@ -10,8 +10,8 @@ import {
   type HrRole,
 } from '../../api/queries/employees'
 import type { Location } from '../../api/queries/locations'
-import { useTeamsQuery } from '../../api/queries/teams'
 import { departmentTree, useDepartmentsQuery } from '../../api/queries/departments'
+import { automaticSupervisorText } from '../../lib/departments'
 import { todayIsoDate } from '../../lib/format'
 import { ApiError } from '../../api/client'
 import { ResetPasswordDialog } from '../shared/ResetPasswordDialog'
@@ -50,7 +50,8 @@ function ifChosen(apply: (value: string) => void) {
 }
 
 const NO_HR_ROLE = 'NONE'
-const NO_TEAM = '__none__'
+const NONE = '__none__'
+
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 /** Arbeitszeitmodell beim Anlegen: Standard der Firma, Stunden je Wochentag, nach Aufwand oder keins. */
@@ -98,9 +99,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const [resetError, setResetError] = useState<string | null>(null)
   const [resetNotice, setResetNotice] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<{ password: string } | null>(null)
-  const teamsQuery = useTeamsQuery()
-  const teams = teamsQuery.data ?? []
-  const departments = departmentTree(useDepartmentsQuery().data ?? [])
+  const departmentList = useDepartmentsQuery().data ?? []
+  const departments = departmentTree(departmentList)
   const colleagues = (useEmployeesQuery({ active: true }).data ?? []).filter((e) => e.id !== employee?.id)
 
   const [firstName, setFirstName] = useState('')
@@ -115,10 +115,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const [modelDailyHours, setModelDailyHours] = useState<string[]>(['', '', '', '', '', '', ''])
   const [modelChoice, setModelChoice] = useState<ModelChoice>('NONE')
   const [modelTouched, setModelTouched] = useState(false)
-  const [teamId, setTeamId] = useState<string>(NO_TEAM)
-  const [departmentId, setDepartmentId] = useState<string>(NO_TEAM)
-  const [supervisorId, setSupervisorId] = useState<string>(NO_TEAM)
-  const [delegateId, setDelegateId] = useState<string>(NO_TEAM)
+  const [departmentId, setDepartmentId] = useState<string>(NONE)
+  const [supervisorId, setSupervisorId] = useState<string>(NONE)
   const [position, setPosition] = useState('')
   const [active, setActive] = useState(true)
   const [loginEmail, setLoginEmail] = useState('')
@@ -152,10 +150,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
     )
     setModelChoice(modelSummary(features?.default_day_minutes) ? 'DEFAULT' : 'NONE')
     setModelTouched(false)
-    setTeamId(employee?.team_id ? String(employee.team_id) : NO_TEAM)
-    setDepartmentId(employee?.department_id ? String(employee.department_id) : NO_TEAM)
-    setSupervisorId(employee?.supervisor_id ? String(employee.supervisor_id) : NO_TEAM)
-    setDelegateId(employee?.approval_delegate_id ? String(employee.approval_delegate_id) : NO_TEAM)
+    setDepartmentId(employee?.department_id ? String(employee.department_id) : NONE)
+    setSupervisorId(employee?.supervisor_id ? String(employee.supervisor_id) : NONE)
     setPosition(employee?.position ?? '')
     setActive(employee?.active ?? true)
     setLoginEmail(employee?.login_email ?? '')
@@ -237,14 +233,10 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
       birth_date: birthDate || undefined,
       clear_birth_date: birthDate === '',
       show_birthday_in_calendar: showBirthdayInCalendar,
-      team_id: teamId === NO_TEAM ? undefined : Number(teamId),
-      clear_team_id: teamId === NO_TEAM,
-      department_id: departmentId === NO_TEAM ? undefined : Number(departmentId),
-      clear_department_id: departmentId === NO_TEAM,
-      supervisor_id: supervisorId === NO_TEAM ? undefined : Number(supervisorId),
-      clear_supervisor_id: supervisorId === NO_TEAM,
-      approval_delegate_id: delegateId === NO_TEAM ? undefined : Number(delegateId),
-      clear_approval_delegate_id: delegateId === NO_TEAM,
+      department_id: departmentId === NONE ? undefined : Number(departmentId),
+      clear_department_id: departmentId === NONE,
+      supervisor_id: supervisorId === NONE ? undefined : Number(supervisorId),
+      clear_supervisor_id: supervisorId === NONE,
       position: position.trim(),
       ...(password ? { password } : {}),
       ...(pin ? { pin } : resetPin ? { pin: '' } : {}),
@@ -444,25 +436,6 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
               </p>
             </div>
           )}
-          <div className="flex flex-col gap-1.5">
-            <Label>Team</Label>
-            <Select value={teamId} onValueChange={ifChosen(setTeamId)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_TEAM}>Kein Team</SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={String(team.id)}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-500">
-              Bestimmt, welche Führungskräfte diesen Mitarbeiter sehen dürfen (siehe Einstellungen → „Teams“).
-            </p>
-          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label>Abteilung</Label>
@@ -471,7 +444,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_TEAM}>Keine Abteilung</SelectItem>
+                  <SelectItem value={NONE}>Keine Abteilung</SelectItem>
                   {departments.map(({ department, depth }) => (
                     <SelectItem key={department.id} value={String(department.id)}>
                       {'\u00a0'.repeat(depth * 3)}
@@ -487,30 +460,13 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label>Führungskraft</Label>
+            <Label>Abweichende Führungskraft</Label>
             <Select value={supervisorId} onValueChange={ifChosen(setSupervisorId)}>
-              <SelectTrigger aria-label="Führungskraft">
+              <SelectTrigger aria-label="Abweichende Führungskraft">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_TEAM}>Keine Führungskraft</SelectItem>
-                {colleagues.map((colleague) => (
-                  <SelectItem key={colleague.id} value={String(colleague.id)}>
-                    {colleague.last_name}, {colleague.first_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-500">Für Organigramm und Genehmigungen (je Abwesenheitsart einstellbar).</p>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Vertretung bei Genehmigungen</Label>
-            <Select value={delegateId} onValueChange={ifChosen(setDelegateId)}>
-              <SelectTrigger aria-label="Vertretung bei Genehmigungen">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_TEAM}>Keine Vertretung</SelectItem>
+                <SelectItem value={NONE}>Wie Abteilung (automatisch)</SelectItem>
                 {colleagues.map((colleague) => (
                   <SelectItem key={colleague.id} value={String(colleague.id)}>
                     {colleague.last_name}, {colleague.first_name}
@@ -519,7 +475,10 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
               </SelectContent>
             </Select>
             <p className="text-xs text-slate-500">
-              Ist diese Person als Führungskraft abwesend, genehmigt die Vertretung die Anträge ihrer Mitarbeiter.
+              {supervisorId === NONE
+                ? automaticSupervisorText(departmentList, departmentId === NONE ? null : Number(departmentId), employee?.id)
+                : 'Ausnahme: gilt statt der Abteilungsleitung.'}{' '}
+              Führungskraft für Organigramm, Sichtbarkeit und Genehmigungen.
             </p>
           </div>
           <div className="flex flex-col gap-1.5">

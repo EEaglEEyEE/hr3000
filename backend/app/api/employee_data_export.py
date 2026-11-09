@@ -33,7 +33,7 @@ from app.schemas.personal_data import PersonalData
 from app.services import personal_data_service
 from app.services.audit_service import log_action
 from app.services.leave_service import leave_balance
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 
 router = APIRouter(tags=["employee_data_export"])
 

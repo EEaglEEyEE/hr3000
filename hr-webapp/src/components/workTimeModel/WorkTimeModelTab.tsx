@@ -27,6 +27,15 @@ import {
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import { BreakWindowsEditor, breakWindowsValid, type BreakWindow } from './BreakWindowsEditor'
+import {
+  DEFAULT_FLEX_FRAME,
+  FlexFrameFields,
+  flexFrameFromApi,
+  flexFramePayload,
+  flexFrameValid,
+  type FlexFrameValue,
+} from './FlexFrameFields'
 import {
   breakLabel,
   describeVersion,
@@ -67,18 +76,13 @@ type DaysKind = 'fixed' | 'flex' | 'onDemand'
 // Soll bei festen Tagen: Wochenstunden (gleichmäßig oder je Wochentag) oder festes Monatssoll.
 type Period = 'week' | 'month'
 
-type FlexFrameMode = 'TENANT' | 'CUSTOM' | 'NONE'
-
-/** Was das Formular liefert (ohne „gültig ab“); Gleitzeit-Rahmen und Toleranz nur bei Modellen. */
+/** Was das Formular liefert (ohne „gültig ab“); die Toleranz nur bei Modellen. */
 export type ModelFormPayload = Omit<WorkTimeModelSetRequest, 'valid_from'> & {
-  flex_frame_mode?: FlexFrameMode
-  flex_frame_start?: string | null
-  flex_frame_end?: string | null
   late_tolerance_minutes?: number | null
 }
 
 /** Formular eines Arbeitszeitmodells – am Mitarbeiter (neue Fassung bzw. nachträgliche Änderung) und
- * für Arbeitszeitmodelle (mit Gleitzeit-Rahmen und Toleranz). Wechselt `loadToken`, wird es mit
+ * für Arbeitszeitmodelle (dazu die Toleranz). Wechselt `loadToken`, wird es mit
  * `source` neu vorbelegt; ändert sich nur `source` (z. B. nach dem Speichern), werden die Werte
  * übernommen. */
 export function WorkTimeModelForm({
@@ -89,7 +93,7 @@ export function WorkTimeModelForm({
   highlighted = false,
   withValidFrom = true,
   validFromHint,
-  withFlexFrame = false,
+  withTolerance = false,
   children,
   extraValid = true,
   pending,
@@ -105,7 +109,8 @@ export function WorkTimeModelForm({
   highlighted?: boolean
   withValidFrom?: boolean
   validFromHint?: string
-  withFlexFrame?: boolean
+  /** Toleranz der Pünktlichkeitsprüfung (nur Arbeitszeitmodelle). */
+  withTolerance?: boolean
   /** Zusätzliche Felder oben im Formular (z. B. Name eines Modells). */
   children?: ReactNode
   extraValid?: boolean
@@ -132,17 +137,15 @@ export function WorkTimeModelForm({
   const [breakKind, setBreakKind] = useState<'rules' | 'minutes' | 'window'>('rules')
   const [breakMinutes, setBreakMinutes] = useState('30')
   const [breakAfterHours, setBreakAfterHours] = useState('')
-  const [breakStart, setBreakStart] = useState('12:00')
-  const [breakEnd, setBreakEnd] = useState('12:30')
+  // Feste Pausenzeiten (bis zu MAX_BREAK_WINDOWS, z. B. Frühstück und Mittag)
+  const [breakWindows, setBreakWindows] = useState<BreakWindow[]>([{ start: '12:00', end: '12:30' }])
   // Schichtvorlage nur für die Uhrzeiten ('' = keine festen Uhrzeiten)
   const [shiftTemplateId, setShiftTemplateId] = useState('')
   // Vorlage der geladenen Fassung (auch eine alte, archivierte Fassung einer Vorlage)
   const [loadedShift, setLoadedShift] = useState<{ id: number; name: string; breakFromTemplate: boolean } | null>(null)
   const [coreTime, setCoreTime] = useState<CoreTimeValue>(DEFAULT_CORE_TIME)
-  // Nur Modelle: Gleitzeit-Rahmen und Toleranz der Pünktlichkeitsprüfung ('' = wie Einstellungen)
-  const [frameMode, setFrameMode] = useState<FlexFrameMode>('TENANT')
-  const [frameStart, setFrameStart] = useState('07:00')
-  const [frameEnd, setFrameEnd] = useState('19:00')
+  const [frame, setFrame] = useState<FlexFrameValue>(DEFAULT_FLEX_FRAME)
+  // Nur Modelle: Toleranz der Pünktlichkeitsprüfung ('' = wie Einstellungen)
   const [tolerance, setTolerance] = useState('')
   const [validFrom, setValidFrom] = useState(() => toIsoDate(new Date()))
   const [error, setError] = useState<string | null>(null)
@@ -174,14 +177,15 @@ export function WorkTimeModelForm({
         breakMinutesNumber > 0 &&
         breakMinutesNumber <= 240 &&
         (breakAfter === null || (Number.isFinite(breakAfter) && breakAfter >= 0 && breakAfter <= 16))
-      : breakStart !== '' && breakEnd !== '' && breakStart < breakEnd)
+      : breakWindowsValid(breakWindows))
   const breakPayload =
     breakKind === 'minutes'
       ? { break_minutes: breakMinutesNumber, ...(breakAfter ? { break_after_hours: breakAfter } : {}) }
       : breakKind === 'window'
-        ? { break_start: breakStart, break_end: breakEnd }
+        ? breakWindows.length === 1
+          ? { break_start: breakWindows[0].start, break_end: breakWindows[0].end }
+          : { break_windows: breakWindows }
         : {}
-  const frameValid = frameMode !== 'CUSTOM' || (frameStart !== '' && frameEnd !== '' && frameStart < frameEnd)
   const toleranceNumber = tolerance.trim() ? Number(tolerance) : null
   const toleranceValid = toleranceNumber === null || (Number.isInteger(toleranceNumber) && toleranceNumber >= 0 && toleranceNumber <= 120)
   const dailyPreview = hoursValid && weekdays.length > 0 ? formatHours(Math.round((hours * 60) / weekdays.length)) : null
@@ -254,10 +258,13 @@ export function WorkTimeModelForm({
       setBreakKind('minutes')
       setBreakMinutes(String(source.break_minutes))
       setBreakAfterHours(source.break_after_minutes ? decimal(source.break_after_minutes / 60) : '')
-    } else if (source.break_start && source.break_end && !source.break_from_template) {
+    } else if ((source.break_windows?.length || (source.break_start && source.break_end)) && !source.break_from_template) {
       setBreakKind('window')
-      setBreakStart(hhmm(source.break_start))
-      setBreakEnd(hhmm(source.break_end))
+      setBreakWindows(
+        source.break_windows?.length
+          ? source.break_windows.map((w) => ({ start: hhmm(w.start), end: hhmm(w.end) }))
+          : [{ start: hhmm(source.break_start), end: hhmm(source.break_end) }],
+      )
     } else {
       setBreakKind('rules')
     }
@@ -268,9 +275,7 @@ export function WorkTimeModelForm({
         : null,
     )
     setCoreTime(coreTimeFromApi(source))
-    setFrameMode((source.flex_frame_mode as FlexFrameMode | undefined) ?? 'TENANT')
-    setFrameStart(hhmm(source.flex_frame_start) || '07:00')
-    setFrameEnd(hhmm(source.flex_frame_end) || '19:00')
+    setFrame(flexFrameFromApi(source))
     setTolerance(source.late_tolerance_minutes != null ? String(source.late_tolerance_minutes) : '')
     if (source.on_demand) {
       setDaysKind('onDemand')
@@ -309,14 +314,7 @@ export function WorkTimeModelForm({
         : mode === 'flex'
           ? { weekly_hours: hours, flexible: true, on_demand: false }
           : { weekly_hours: hours, weekdays, flexible: false, on_demand: false }
-    const framePayload = withFlexFrame
-      ? {
-          flex_frame_mode: frameMode,
-          flex_frame_start: frameMode === 'CUSTOM' ? frameStart : null,
-          flex_frame_end: frameMode === 'CUSTOM' ? frameEnd : null,
-          late_tolerance_minutes: toleranceNumber,
-        }
-      : {}
+    const framePayload = { ...flexFramePayload(frame), ...(withTolerance ? { late_tolerance_minutes: toleranceNumber } : {}) }
     const payload: ModelFormPayload = {
       ...modelPayload,
       ...breakPayload,
@@ -536,7 +534,7 @@ export function WorkTimeModelForm({
         <Label htmlFor="shift-template">Schichtvorlage (Uhrzeiten, optional)</Label>
         <select
           id="shift-template"
-          className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          className="h-9 w-72 max-w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
           value={shiftTemplateId}
           onChange={(event) => setShiftTemplateId(event.target.value)}
         >
@@ -598,25 +596,7 @@ export function WorkTimeModelForm({
             <span className="text-sm text-slate-600">Std. Arbeit (leer = ab der ersten Minute), auch ohne Stempelung</span>
           </div>
         )}
-        {breakKind === 'window' && (
-          <div className="flex items-center gap-2">
-            <Input
-              aria-label="Pause von"
-              type="time"
-              className="w-32"
-              value={breakStart}
-              onChange={(event) => setBreakStart(event.target.value)}
-            />
-            <span className="text-sm text-slate-600">bis</span>
-            <Input
-              aria-label="Pause bis"
-              type="time"
-              className="w-32"
-              value={breakEnd}
-              onChange={(event) => setBreakEnd(event.target.value)}
-            />
-          </div>
-        )}
+        {breakKind === 'window' && <BreakWindowsEditor windows={breakWindows} onChange={setBreakWindows} />}
         <p className="text-sm text-slate-500">
           {breakKind === 'rules'
             ? templateBreak
@@ -624,74 +604,28 @@ export function WorkTimeModelForm({
               : 'Es gelten die Pausenregeln (gesetzliche Staffel und ggf. feste Pausen des Betriebs).'
             : breakKind === 'minutes'
               ? 'Gestempelte Pausen zählen mit; nur was fehlt, wird abgezogen.'
-              : 'Abgezogen wird, soweit der Mitarbeiter in dieser Zeit da war.'}{' '}
+              : 'Abgezogen wird jede Pausenzeit, soweit der Mitarbeiter in ihr da war.'}{' '}
           Die gesetzliche Pause gilt immer mindestens.
         </p>
       </fieldset>
 
       <CoreTimeFields value={coreTime} onChange={setCoreTime} />
 
-      {withFlexFrame && (
-        <>
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-sm font-medium">Gleitzeit-Rahmen</legend>
-            <div className="flex flex-wrap gap-2 text-sm">
-              {(
-                [
-                  ['TENANT', 'Wie Einstellungen'],
-                  ['CUSTOM', 'Eigener Rahmen'],
-                  ['NONE', 'Kein Rahmen'],
-                ] as const
-              ).map(([kind, label]) => (
-                <Button
-                  key={kind}
-                  type="button"
-                  size="sm"
-                  variant={frameMode === kind ? 'default' : 'outline'}
-                  aria-pressed={frameMode === kind}
-                  onClick={() => setFrameMode(kind)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            {frameMode === 'CUSTOM' && (
-              <div className="flex items-center gap-2">
-                <Input
-                  aria-label="Rahmen von"
-                  type="time"
-                  className="w-32"
-                  value={frameStart}
-                  onChange={(event) => setFrameStart(event.target.value)}
-                />
-                <span className="text-sm text-slate-600">bis</span>
-                <Input
-                  aria-label="Rahmen bis"
-                  type="time"
-                  className="w-32"
-                  value={frameEnd}
-                  onChange={(event) => setFrameEnd(event.target.value)}
-                />
-              </div>
-            )}
-            <p className="text-sm text-slate-500">
-              Kommen oder Gehen außerhalb des Rahmens erscheint unter „Zu klären“ – nur ein Hinweis, an den Stunden
-              ändert sich nichts. Schichten mit Uhrzeiten haben Vorrang.
-            </p>
-          </fieldset>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="late-tolerance">Toleranz der Pünktlichkeitsprüfung (Minuten)</Label>
-            <Input
-              id="late-tolerance"
-              inputMode="numeric"
-              className="w-24"
-              placeholder="wie Einst."
-              value={tolerance}
-              onChange={(event) => setTolerance(event.target.value)}
-            />
-            <p className="text-sm text-slate-500">Leer = wie in den Einstellungen (0–120 Minuten).</p>
-          </div>
-        </>
+      <FlexFrameFields value={frame} onChange={setFrame} />
+
+      {withTolerance && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="late-tolerance">Toleranz der Pünktlichkeitsprüfung (Minuten)</Label>
+          <Input
+            id="late-tolerance"
+            inputMode="numeric"
+            className="w-24"
+            placeholder="wie Einst."
+            value={tolerance}
+            onChange={(event) => setTolerance(event.target.value)}
+          />
+          <p className="text-sm text-slate-500">Leer = wie in den Einstellungen (0–120 Minuten).</p>
+        </div>
       )}
 
       {withValidFrom && (
@@ -720,7 +654,8 @@ export function WorkTimeModelForm({
             !hoursValid ||
             !breakValid ||
             !coreTimeValid(coreTime) ||
-            (withFlexFrame && (!frameValid || !toleranceValid)) ||
+            !flexFrameValid(frame) ||
+            (withTolerance && !toleranceValid) ||
             ((mode === 'even' || mode === 'monthly') && weekdays.length === 0) ||
             (withValidFrom && !validFrom)
           }
@@ -877,7 +812,7 @@ function ProfileAssignCard({ employeeId, model }: { employeeId: number; model: W
           <Label htmlFor="assign-profile">Arbeitszeitmodell</Label>
           <select
             id="assign-profile"
-            className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            className="h-9 w-72 max-w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
             value={profileId}
             onChange={(event) => setProfileId(event.target.value)}
           >

@@ -3,8 +3,9 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, Account, Location, SupervisorTeamAssignment, Team
+from app.models import Employee, HrRole, Account, Location
 from absence_helpers import require_vacation_approval
+from org_helpers import department, supervisor_with_department
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 from app.services.timesheet_service import calculate_day, employee_timezone
@@ -18,7 +19,7 @@ async def _create_location(db_session: AsyncSession) -> Location:
     return location
 
 
-async def _create_self_service_employee(db_session: AsyncSession, location: Location, team_id: int | None = None) -> Employee:
+async def _create_self_service_employee(db_session: AsyncSession, location: Location) -> Employee:
     employee = Employee(
         location_id=location.id,
         first_name="Erika",
@@ -27,7 +28,6 @@ async def _create_self_service_employee(db_session: AsyncSession, location: Loca
         active=True,
         login_email="erika@example.com",
         password_hash=hash_password("pw123456"),
-        team_id=team_id,
     )
     db_session.add(employee)
     await db_session.commit()
@@ -37,14 +37,6 @@ async def _create_self_service_employee(db_session: AsyncSession, location: Loca
 
 async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
     user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-
-async def _create_supervisor_hr_user(db_session: AsyncSession) -> Account:
-    user = Account(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -168,22 +160,16 @@ async def test_admin_can_decide_pending_absence(client: AsyncClient, db_session:
     assert second_decide.json()["code"] == "NOT_PENDING"
 
 
-async def test_supervisor_cannot_decide_absence_outside_own_team(
+async def test_supervisor_cannot_decide_absence_outside_own_department(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     location = await _create_location(db_session)
-    other_team = Team(name="Team Sued", location_id=location.id)
-    db_session.add(other_team)
-    await db_session.commit()
-    await db_session.refresh(other_team)
-
-    employee = await _create_self_service_employee(db_session, location, team_id=other_team.id)
-    supervisor = await _create_supervisor_hr_user(db_session)
-    own_team = Team(name="Team Nord", location_id=location.id)
-    db_session.add(own_team)
-    await db_session.commit()
-    await db_session.refresh(own_team)
-    db_session.add(SupervisorTeamAssignment(team_id=own_team.id, account_id=supervisor.id))
+    employee = await _create_self_service_employee(db_session, location)
+    # Erika arbeitet in einer anderen Abteilung (ohne Leitung); die Führungskraft leitet „Team Nord“.
+    await department(db_session, "Team Sued", employee)
+    supervisor_setup = await supervisor_with_department(
+        db_session, location, email="supervisor@example.com", department_name="Team Nord"
+    )
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     await require_vacation_approval(db_session)
     await db_session.commit()
@@ -203,6 +189,7 @@ async def test_supervisor_cannot_decide_absence_outside_own_team(
         json={"approve": True},
     )
     assert decide_response.status_code == 403
+    assert decide_response.json()["code"] == "FORBIDDEN"
 
 
 async def test_pending_absence_does_not_count_against_leave_entitlement(

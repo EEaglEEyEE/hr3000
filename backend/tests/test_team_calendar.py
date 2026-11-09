@@ -12,10 +12,9 @@ from app.models import (
     HrRole,
     Account,
     Location,
-    SupervisorTeamAssignment,
-    Team,
 )
 from app.services.auth_service import hash_password
+from org_helpers import department, supervisor_with_department
 
 
 async def _create_location(db_session: AsyncSession, name: str = "Standort A") -> Location:
@@ -26,12 +25,9 @@ async def _create_location(db_session: AsyncSession, name: str = "Standort A") -
     return location
 
 
-async def _create_employee(
-    db_session: AsyncSession, location: Location, number: str, team_id: int | None = None
-) -> Employee:
+async def _create_employee(db_session: AsyncSession, location: Location, number: str) -> Employee:
     employee = Employee(
         location_id=location.id,
-        team_id=team_id,
         first_name="Erika",
         last_name="Musterfrau",
         employee_number=number,
@@ -142,24 +138,15 @@ async def test_location_wide_holiday_does_not_apply_to_other_location(
     assert holiday_count == 1
 
 
-async def test_supervisor_sees_only_own_team(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_supervisor_sees_only_own_department(client: AsyncClient, db_session: AsyncSession) -> None:
     location = await _create_location(db_session)
-    team = Team(name="Team Nord")
-    other_team = Team(name="Team Süd")
-    db_session.add_all([team, other_team])
-    await db_session.commit()
-    await db_session.refresh(team)
-    await db_session.refresh(other_team)
-
-    own_employee = await _create_employee(db_session, location, "EMP-OWN", team_id=team.id)
-    await _create_employee(db_session, location, "EMP-OTHER", team_id=other_team.id)
-
-    supervisor = Account(email="super@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
-    db_session.add(supervisor)
-    await db_session.commit()
-    await db_session.refresh(supervisor)
-    db_session.add(SupervisorTeamAssignment(team_id=team.id, account_id=supervisor.id))
-    await db_session.commit()
+    own_employee = await _create_employee(db_session, location, "EMP-OWN")
+    other_employee = await _create_employee(db_session, location, "EMP-OTHER")
+    # Die Führungskraft leitet „Team Nord“ (mit own_employee), other_employee arbeitet in „Team Süd“.
+    department_row, head, _account = await supervisor_with_department(
+        db_session, location, email="super@example.com", department_name="Team Nord", members=(own_employee,)
+    )
+    other_department = await department(db_session, "Team Süd", other_employee)
 
     login_response = await client.post(
         "/auth/login", json={"email": "super@example.com", "password": "pw"}
@@ -172,8 +159,18 @@ async def test_supervisor_sees_only_own_team(client: AsyncClient, db_session: As
     )
 
     body = response.json()
-    assert len(body) == 1
-    assert body[0]["employee_id"] == own_employee.id
+    # die eigene Abteilung samt der Führungskraft selbst, nicht „Team Süd“
+    assert {(e["employee_id"], e["department_id"]) for e in body} == {
+        (own_employee.id, department_row.id),
+        (head.id, department_row.id),
+    }
+    # Der Abteilungs-Filter erweitert den eigenen Bereich nicht
+    filtered = await client.get(
+        "/team-calendar",
+        params={"from": "2026-08-01", "to": "2026-08-31", "department_id": other_department.id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert filtered.json() == []
 
 
 async def test_invalid_range_rejected(client: AsyncClient, db_session: AsyncSession) -> None:

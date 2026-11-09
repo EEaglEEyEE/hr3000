@@ -57,7 +57,7 @@ class AbsenceUpdateRequest(BaseModel):
 
 
 class TeamOverlap(BaseModel):
-    """Abwesenheit einer anderen Person aus demselben Team im gefragten Zeitraum."""
+    """Abwesenheit einer anderen Person aus derselben Abteilung im gefragten Zeitraum."""
 
     employee_id: int
     name: str

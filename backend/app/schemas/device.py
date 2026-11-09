@@ -79,6 +79,15 @@ class DeviceResponse(BaseModel):
     mdm_name: str | None = None
 
 
+class PairingCodeRequest(BaseModel):
+    """QR-Code für ein Tablet, das schon mit einem Gerät verbunden ist, nur mit ausdrücklichem
+    replace_bound: Koppeln meldet das bisherige Gerät ab (Tablet-Tausch)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    replace_bound: bool = False
+
+
 class PairingCodeResponse(BaseModel):
     code: str
     expires_at: datetime

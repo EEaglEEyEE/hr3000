@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db import get_db
 from app.errors import AppError
@@ -53,7 +54,7 @@ class Actor:
     @property
     def is_full_hr_level(self) -> bool:
         """ADMIN/HR/SUPER_ADMIN – im Gegensatz zu SUPERVISOR nicht auf
-        eigene Teams beschränkt, siehe app/services/team_scope_service.py."""
+        den eigenen Bereich (Unterstellte) beschränkt, siehe app/services/scope_service.py."""
         return self.role is not None and self.role != HrRole.SUPERVISOR
 
     @property
@@ -115,6 +116,11 @@ async def get_current_actor(
         account = await db.get(Account, int(payload["sub"]))
         if account is None or not account_can_sign_in(account) or payload.get("pwv") != session_fingerprint(account):
             raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
+        if account.employee is not None:
+            # Rückverweis setzen: über Account.employee geladen, wäre employee.account sonst nicht geladen und
+            # würde später im async-Kontext nachgeladen (MissingGreenlet), z. B. wenn die angemeldete Person
+            # selbst als Führungskraft entscheidet oder den eigenen Datensatz abruft.
+            set_committed_value(account.employee, "account", account)
         actor = Actor(account=account)
     else:
         raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
@@ -167,7 +173,7 @@ async def get_current_full_hr_principal(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Actor:
-    """Für Aktionen, die einem Supervisor bewusst NICHT erlaubt sind (Teams/
+    """Für Aktionen, die einem Supervisor bewusst NICHT erlaubt sind (Abteilungen/
     Schichtvorlagen/Standard-Schichten verwalten) – ADMIN/HR/SUPER_ADMIN,
     siehe Actor.is_full_hr_level."""
     actor = await get_current_actor(request, credentials, db)

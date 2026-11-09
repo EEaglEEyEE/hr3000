@@ -14,11 +14,11 @@ Personalakte. Mehrmandantenfähig.
 - Stempeln am Tablet (PWA, PIN, NFC/RFID-Chips, offline-fähig) und im Browser (Homeoffice)
 - Arbeitszeitmodelle mit Historie: gleichmäßig, je Wochentag, flexibel, nach Aufwand
 - Gleitzeitkonto, Kernzeit/Gleitzeit-Rahmen, automatische Pausen nach ArbZG oder eigenen Regeln
-- Abwesenheiten (auch halbe Tage und Stunden), Urlaubskonto mit Übertrag, Genehmigungen, Teamkalender
+- Abwesenheiten (auch halbe Tage und Stunden), Urlaubskonto mit Übertrag, Genehmigungen, Abteilungskalender
 - „Zu klären“: fehlende Stempelungen und Sonderfälle werden automatisch erkannt
 - Schichtplanung mit Vorlagen und PDF
 - Monatsabschluss mit Bestätigung durch Mitarbeiter, Zuschläge, Auswertungen, Lohn-Export (CSV)
-- Personalakte mit verschlüsselten Dokumenten, Rollen (Admin, HR, Teamleader), Audit-Log
+- Personalakte mit verschlüsselten Dokumenten, Abteilungen mit Leitungen und Stellvertretungen, bearbeitbares Organigramm, Rollen (Admin, HR, Führungskraft), Audit-Log
 - DSGVO-Datenexport und Anonymisierung
 
 ## Aufbau

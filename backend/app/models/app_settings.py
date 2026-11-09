@@ -133,7 +133,7 @@ class AppSettings(Base):
     # Vier-Augen-Prinzip: eigene Abwesenheiten werden nie selbst genehmigt (auch nicht von HR,
     # Admin oder Teamleader) – sie gehen als Antrag an jemand anderen. Aus = bisheriges Verhalten.
     absence_four_eyes: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Mitarbeiter sehen beim eigenen Antrag, wer im Team gleichzeitig abwesend ist (nur Namen und
+    # Mitarbeiter sehen beim eigenen Antrag, wer in ihrer Abteilung gleichzeitig abwesend ist (nur Namen und
     # Zeitraum, keine Art). Genehmigende sehen es immer. Standard aus.
     absence_overlaps_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Grenzen fürs Überstundenkonto in Stunden (leer = keine): Hinweis unter „Zu klären“ ab 90 % der

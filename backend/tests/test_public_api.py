@@ -50,6 +50,38 @@ async def test_api_clients_tokens_and_reads(client: AsyncClient, db_session: Asy
     assert (await client.post("/v1/auth/token", json={"client_id": created["client_id"], "client_secret": created["client_secret"]})).status_code == 401
 
 
+
+async def test_api_employees_show_department_and_effective_supervisor(client: AsyncClient, db_session: AsyncSession) -> None:
+    location, admin = await _admin(client, db_session)
+
+    async def employee(number: str, first: str, **extra) -> int:
+        r = await client.post(
+            "/employees", headers=admin,
+            json={"location_id": location.id, "first_name": first, "last_name": "M", "employee_number": number, **extra},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    sales = (await client.post("/departments", headers=admin, json={"name": "Vertrieb"})).json()["id"]
+    bea = await employee("1", "Bea", department_id=sales)
+    assert (await client.patch(f"/departments/{sales}", headers=admin, json={"leaders": [{"employee_id": bea}]})).status_code == 200
+    erika = await employee("2", "Erika", department_id=sales)  # Führungskraft: Leitung Bea
+    xenia = await employee("3", "Xenia")
+    otto = await employee("4", "Otto", department_id=sales, supervisor_id=xenia)  # abweichend: Xenia
+
+    created = (await client.post("/api-clients", headers=admin, json={"name": "Lohnsoftware", "scopes": ["employees:read"]})).json()
+    token = (await client.post("/v1/auth/token", json={"client_id": created["client_id"], "client_secret": created["client_secret"]})).json()
+    page = (await client.get("/v1/employees", headers={"Authorization": f"Bearer {token['access_token']}"})).json()
+    assert all("team_id" not in row for row in page["data"])
+    assert {row["id"]: row["supervisor_ids"] for row in page["data"]} == {bea: [], erika: [bea], xenia: [], otto: [xenia]}
+    rows = {row["id"]: (row["department_id"], row["department"], row["supervisor_id"]) for row in page["data"]}
+    assert rows == {
+        bea: (sales, "Vertrieb", None),
+        erika: (sales, "Vertrieb", bea),
+        xenia: (None, None, None),
+        otto: (sales, "Vertrieb", xenia),
+    }
+
 async def test_webhooks_queue_sign_and_retry(client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
     location, admin = await _admin(client, db_session)
     for url in ("http://example.com/hook", "https://10.0.0.5/hook", "https://localhost/hook", "https://user:pw@example.com/x"):

@@ -35,6 +35,7 @@ from app.services import rate_limiter, webhook_service
 from app.services.auth_service import create_token, decode_token
 from app.services.personal_data_service import mark_leave
 from app.services.secret_box import encrypt_secret
+from app.services.org_service import load_org
 
 router = APIRouter(tags=["public_api"])
 _bearer = HTTPBearer(auto_error=False)
@@ -328,10 +329,13 @@ class ApiEmployee(BaseModel):
     hire_date: date | None
     termination_date: date | None
     location_id: int
-    team_id: int | None
+    department_id: int | None
     department: str | None
     position: str | None
+    # Erste wirksame Führungskraft (Abteilungsleitung bzw. abweichend je Person eingetragen)
     supervisor_id: int | None
+    # Alle wirksamen Führungskräfte (eine Abteilung kann mehrere Leitungen haben)
+    supervisor_ids: list[int] = []
 
 
 class EmployeesPage(BaseModel):
@@ -359,14 +363,16 @@ async def api_employees(
     people = list((await db.execute(stmt.order_by(Employee.id).limit(limit).offset(offset))).scalars().all())
     await mark_leave(db, people)
     names = dict((await db.execute(select(Department.id, Department.name).where(Department.tenant_id == client.tenant_id))).all())
+    org = await load_org(db, client.tenant_id)
     return EmployeesPage(
         data=[
             ApiEmployee(
                 id=p.id, personnel_number=p.employee_number, first_name=p.first_name, last_name=p.last_name,
                 email=p.login_email, status=p.employment_status, active=p.active, hire_date=p.hire_date,
-                termination_date=p.termination_date, location_id=p.location_id, team_id=p.team_id,
+                termination_date=p.termination_date, location_id=p.location_id, department_id=p.department_id,
                 department=names.get(p.department_id) if p.department_id else None, position=p.position,
-                supervisor_id=p.supervisor_id,
+                supervisor_id=next(iter(org.supervisors(p.id)), None),
+                supervisor_ids=org.supervisors(p.id),
             )
             for p in people
         ],

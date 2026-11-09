@@ -1,5 +1,6 @@
-"""Genehmigungsketten je Abwesenheitsart: Führungskraft, erst Führungskraft dann Admin/HR, Vertretung
-während der Abwesenheit der Führungskraft, ohne Führungskraft Rückfall auf Admin/HR."""
+"""Genehmigungsketten je Abwesenheitsart: Führungskraft, erst Führungskraft dann Admin/HR, mehrere
+Leitungen, Stellvertretung während der Abwesenheit der Leitungen, Rückfall von der abwesenden Ausnahme
+auf die Abteilung, ohne Führungskraft Rückfall auf Admin/HR."""
 from datetime import date, timedelta
 
 from httpx import AsyncClient
@@ -10,6 +11,7 @@ from app.models import (
     Absence, AbsenceApproval, AbsenceApprovalStatus, AbsenceType, Account, Employee, HrRole, Location, Notification,
 )
 from app.services.auth_service import hash_password
+from tests.org_helpers import department
 
 PW = "pw123456"
 FUTURE = date.today() + timedelta(days=60)
@@ -36,7 +38,6 @@ async def _people(db_session: AsyncSession) -> dict[str, Employee]:
     db_session.add_all(people.values())
     await db_session.commit()
     people["erika"].supervisor_id = people["bea"].id
-    people["bea"].approval_delegate_id = people["carl"].id
     await db_session.commit()
     return people
 
@@ -102,20 +103,106 @@ async def test_supervisor_then_hr(client: AsyncClient, db_session: AsyncSession)
     assert r.json()["approval_status"] == "REJECTED"
 
 
-async def test_delegate_decides_while_supervisor_is_absent(client: AsyncClient, db_session: AsyncSession) -> None:
-    people = await _people(db_session)
-    hr = await _token(client, "hr@example.com")
-    await _set_chain(client, hr, "SUPERVISOR")
+async def _absent_today(db_session: AsyncSession, person: Employee) -> None:
     db_session.add(Absence(
-        employee_id=people["bea"].id, type=AbsenceType.VACATION, date_from=date.today(), date_to=date.today(),
+        employee_id=person.id, type=AbsenceType.VACATION, date_from=date.today(), date_to=date.today(),
         approval_status=AbsenceApprovalStatus.APPROVED,
     ))
     await db_session.commit()
+
+
+async def _in_department(db_session: AsyncSession, people: dict, *, heads: tuple, deputies: tuple = ()) -> None:
+    """Erika ohne Ausnahme in eine Abteilung mit diesen Leitungen und Stellvertretungen."""
+    people["erika"].supervisor_id = None
+    await department(db_session, "Team", people["erika"], heads=heads, deputies=deputies)
+
+
+async def _notified(db_session: AsyncSession) -> list[int]:
+    return sorted((await db_session.execute(select(Notification.recipient_account_id))).scalars().all())
+
+
+async def test_deputy_decides_while_all_heads_are_absent(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"],), deputies=((people["carl"], "STANDBY"),))
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    await _absent_today(db_session, people["bea"])
     absence = await _request(client, people)
     assert absence["waiting_for"] == "Führungskraft Carl Test"
+    assert await _notified(db_session) == [people["carl"].account.id]
     bea, carl = await _token(client, "bea@example.com"), await _token(client, "carl@example.com")
     assert (await client.patch(f"/absences/{absence['id']}/decide", headers=bea, json={"approve": True})).status_code == 403
     assert (await client.patch(f"/absences/{absence['id']}/decide", headers=carl, json={"approve": True})).status_code == 200
+
+
+async def test_standby_deputy_waits_while_a_head_is_there(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"],), deputies=((people["carl"], "STANDBY"),))
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    absence = await _request(client, people)
+    assert absence["waiting_for"] == "Führungskraft Bea Test"
+    carl = await _token(client, "carl@example.com")
+    assert (await client.patch(f"/absences/{absence['id']}/decide", headers=carl, json={"approve": True})).status_code == 403
+
+
+async def test_several_heads_are_all_notified_and_any_decides(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"], people["tom"]), deputies=((people["carl"], "FULL"),))
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    absence = await _request(client, people)
+    assert absence["waiting_for"] == "Führungskräfte Bea Test, Tom Test, Carl Test"  # Stellvertretung mit vollen Rechten dabei
+    assert await _notified(db_session) == sorted(people[p].account.id for p in ("bea", "tom", "carl"))
+    tom = await _token(client, "tom@example.com")
+    decided = await client.patch(f"/absences/{absence['id']}/decide", headers=tom, json={"approve": True})
+    assert decided.status_code == 200 and decided.json()["approval_status"] == "APPROVED"
+
+
+async def test_present_heads_decide_absent_ones_do_not(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"], people["tom"]), deputies=((people["carl"], "STANDBY"),))
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    await _absent_today(db_session, people["bea"])
+    absence = await _request(client, people)
+    assert absence["waiting_for"] == "Führungskraft Tom Test"  # Tom ist da: keine Stellvertretung nötig
+
+
+async def test_absent_heads_without_deputy_stay_responsible(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"],))
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    await _absent_today(db_session, people["bea"])
+    absence = await _request(client, people)
+    assert absence["waiting_for"] == "Führungskraft Bea Test"  # verwaist nicht, Admin/HR können ohnehin
+
+
+async def test_absent_override_falls_back_to_the_department(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    await _in_department(db_session, people, heads=(people["bea"],))
+    people["erika"].supervisor_id = people["tom"].id  # Ausnahme: Tom statt Bea
+    await db_session.commit()
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    first = await _request(client, people)
+    assert first["waiting_for"] == "Führungskraft Tom Test"
+    await _absent_today(db_session, people["tom"])
+    second = await _request(client, people, offset=1)
+    assert second["waiting_for"] == "Führungskraft Bea Test"
+    tom, bea = await _token(client, "tom@example.com"), await _token(client, "bea@example.com")
+    assert (await client.patch(f"/absences/{second['id']}/decide", headers=tom, json={"approve": True})).status_code == 403
+    assert (await client.patch(f"/absences/{second['id']}/decide", headers=bea, json={"approve": True})).status_code == 200
+
+
+async def test_absent_override_without_department_stays_responsible(client: AsyncClient, db_session: AsyncSession) -> None:
+    people = await _people(db_session)
+    hr = await _token(client, "hr@example.com")
+    await _set_chain(client, hr, "SUPERVISOR")
+    await _absent_today(db_session, people["bea"])
+    absence = await _request(client, people)
+    assert absence["waiting_for"] == "Führungskraft Bea Test"
 
 
 async def test_without_supervisor_admin_hr_decides(client: AsyncClient, db_session: AsyncSession) -> None:

@@ -52,6 +52,8 @@ class WorkTimeProfileVersion(Base):
     fixed_break_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     min_break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_break_after_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    # Mehrere feste Pausenzeiten ("09:00-09:15,12:00-12:30"); NULL = höchstens eine (fixed_break_start/-end)
+    fixed_break_windows: Mapped[str | None] = mapped_column(String(100), nullable=True)
     core_time_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     core_time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
@@ -59,6 +61,7 @@ class WorkTimeProfileVersion(Base):
     flex_frame_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     flex_frame_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     flex_frame_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    flex_frame_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     late_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     @property

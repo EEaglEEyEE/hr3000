@@ -12,7 +12,6 @@ from app.models import (
     HrRole,
     Notification,
     NotificationType,
-    SupervisorTeamAssignment,
 )
 from app.services.email_service import SmtpConfig, resolve_smtp_config, send_email
 from app.services.settings_service import get_or_create_settings
@@ -113,24 +112,17 @@ async def notify_absence_requested(
     recipients: list[tuple[int, str | None]] | None = None,
     step_note: str = "",
 ) -> None:
-    """Benachrichtigt die Supervisor des Teams des Mitarbeiters (siehe
-    SupervisorTeamAssignment) über einen neuen PENDING-Urlaubsantrag – ist
-    kein Team zugeordnet oder hat es keinen Supervisor, fällt die
-    Benachrichtigung ersatzweise an alle Admin/HR-Nutzer des Mandanten,
-    damit ein Antrag nie unbemerkt bleibt."""
+    """Benachrichtigt die zuständigen Führungskräfte (Ausnahme je Person bzw. alle Leitungen der
+    Abteilung, bei Abwesenheit die handelnden Stellvertretungen) über einen neuen PENDING-Antrag – ohne
+    Führungskraft mit Zugang ersatzweise alle Admin/HR-Nutzer des Mandanten, damit ein Antrag nie
+    unbemerkt bleibt."""
     if recipients is not None:
         message = f"Antrag ({type_name}) von {employee.first_name} {employee.last_name} wartet auf Genehmigung{step_note}."
         await _notify_accounts(db, tenant_id, recipients, NotificationType.ABSENCE_REQUESTED, message, f"Neuer Antrag: {type_name}")
         return
-    recipients = []
-    if employee.team_id is not None:
-        result = await db.execute(
-            _signed_in_accounts(tenant_id)
-            .join(SupervisorTeamAssignment, SupervisorTeamAssignment.account_id == Account.id)
-            .where(SupervisorTeamAssignment.team_id == employee.team_id)
-            .order_by(Account.id)
-        )
-        recipients = list(dict.fromkeys((account_id, email) for account_id, email in result.all()))
+    from app.services.approval_service import approver_recipients
+
+    recipients = await approver_recipients(db, employee)
     if not recipients:
         recipients = await full_hr_recipients(db, tenant_id)
 
@@ -256,6 +248,18 @@ async def notify_enrollment_requested(
     await _notify_accounts(
         db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.DEVICE_ALERT, message,
         "Tablet wartet auf Freigabe",
+    )
+
+
+async def notify_device_replaced(db: AsyncSession, device) -> None:
+    """Warnung an Admin/HR: ein verbundenes Tablet wurde per QR-Code an ein anderes Gerät vergeben."""
+    message = (
+        f"Das Tablet „{device.name}“ wurde per QR-Code mit einem anderen Gerät gekoppelt; das bisherige Gerät ist "
+        "abgemeldet. War das nicht geplant, in der HR-Webapp unter „Tablets“ prüfen, welches Gerät den Zugang hat."
+    )
+    await _notify_accounts(
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        "Tablet an anderes Gerät vergeben",
     )
 
 

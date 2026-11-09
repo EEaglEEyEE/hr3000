@@ -12,7 +12,6 @@ describe('QR-Code fürs Tablet', () => {
     loginAs({ kind: 'hr', role: 'HR' })
     mockApi({
       'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true, default_auto_break: true, default_show_birthday: true, default_day_minutes: null },
-      'GET /teams': [],
     })
     renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
     await userEvent.type(await screen.findByLabelText('Vorname'), 'Paula')

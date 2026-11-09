@@ -18,7 +18,8 @@ from app.models import (
     WorkTimeProfile,
     WorkTimeProfileVersion,
 )
-from app.schemas.core_time import serialize_core_time_days
+from app.schemas.break_rule import fixed_break_windows, serialize_break_windows
+from app.schemas.core_time import describe_day_windows, day_windows, serialize_core_time_days, serialize_day_windows
 from app.schemas.work_time_model import (
     WorkTimeModelInput,
     WorkTimeModelResponse,
@@ -33,7 +34,7 @@ from app.services.shift_planning_service import (
     check_rest_period_for_default,
     version_target,
 )
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.period_service import ensure_open_from, ensure_range_open
 from app.services.timesheet_service import invalidate_balance
 
@@ -76,7 +77,8 @@ def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
     else:
         minutes, period = round(payload.weekly_hours * 60), TargetPeriod.WEEKLY
         label = f"{minutes / 60:g} h/Woche"
-    window = payload.break_start is not None
+    windows = payload.break_window_list
+    window = bool(windows)
     fields = dict(
         weekdays_mask=_weekdays_to_mask(payload.weekdays or []) or _ALL_DAYS,
         day_minutes=",".join(str(m) for m in payload.day_minutes) if payload.day_minutes else None,
@@ -87,14 +89,12 @@ def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
         target_period=period,
         # Eigene Pause (leer = Pause der Schichtvorlage bzw. Pausenregeln)
         break_mode=BreakMode.FIXED if window else BreakMode.FLEXIBLE if payload.break_minutes else None,
-        fixed_break_start=payload.break_start if window else None,
-        fixed_break_end=payload.break_end if window else None,
+        fixed_break_start=windows[0][0] if window else None,
+        fixed_break_end=windows[0][1] if window else None,
+        fixed_break_windows=serialize_break_windows(windows),
         min_break_minutes=payload.break_minutes,
         min_break_after_minutes=payload.break_after_minutes if payload.break_minutes else 0,
-        # Gleitzeit-Rahmen/Toleranz: eigene Werte nur im Arbeitszeitmodell, individuell wie Einstellungen
-        flex_frame_mode=getattr(payload, "flex_frame_mode", None),
-        flex_frame_start=getattr(payload, "flex_frame_start", None),
-        flex_frame_end=getattr(payload, "flex_frame_end", None),
+        # Toleranz: eigener Wert nur im Arbeitszeitmodell, individuell wie Einstellungen
         late_tolerance_minutes=getattr(payload, "late_tolerance_minutes", None),
     )
     return fields, label
@@ -119,6 +119,36 @@ def _core_time_fields(payload: WorkTimeModelInput, inherit_from: EmployeeDefault
         core_time_end=payload.core_time_end if custom and not days else None,
         core_time_days=serialize_core_time_days(payload.core_time_days) if days else None,
     )
+
+
+def _flex_frame_fields(payload: WorkTimeModelInput, inherit_from: EmployeeDefaultShift | WorkTimeProfileVersion | None) -> dict:
+    """Gleitzeit-Rahmen der Fassung: wie angegeben, ohne Angabe wie die bisherige Fassung."""
+    if payload.flex_frame_mode is None:
+        source = inherit_from
+        return dict(
+            flex_frame_mode=source.flex_frame_mode if source else None,
+            flex_frame_start=source.flex_frame_start if source else None,
+            flex_frame_end=source.flex_frame_end if source else None,
+            flex_frame_days=source.flex_frame_days if source else None,
+        )
+    return dict(
+        flex_frame_mode=payload.flex_frame_mode,
+        flex_frame_start=payload.flex_frame_start,
+        flex_frame_end=payload.flex_frame_end,
+        flex_frame_days=serialize_day_windows(payload.flex_frame_days),
+    )
+
+
+def _frame_label(payload: WorkTimeModelInput) -> str:
+    """Gleitzeit-Rahmen fürs Audit-Protokoll (leer = nicht angegeben bzw. wie Einstellungen)."""
+    if payload.flex_frame_mode == "CUSTOM":
+        if payload.flex_frame_days is not None:
+            days = describe_day_windows(day_windows(payload.flex_frame_days, None, None))
+            return f", Gleitzeit-Rahmen je Wochentag ({days})"
+        return f", Gleitzeit-Rahmen {payload.flex_frame_start:%H:%M}–{payload.flex_frame_end:%H:%M}"
+    if payload.flex_frame_mode == "NONE":
+        return ", ohne Gleitzeit-Rahmen"
+    return ""
 
 
 async def _times_template(
@@ -186,6 +216,7 @@ async def _describe(db: AsyncSession, version: EmployeeDefaultShift | WorkTimePr
         "break_minutes": minutes,
         "break_after_minutes": (source.min_break_after_minutes or 0) if minutes else 0,
         "break_start": source.fixed_break_start if fixed else None,
+        "break_windows": [{"start": start, "end": end} for start, end in fixed_break_windows(source)] if fixed else None,
         "break_end": source.fixed_break_end if fixed else None,
         "break_from_template": not own_break and (fixed or minutes is not None),
         "shift_template_id": version.shift_template_id,
@@ -199,6 +230,7 @@ async def _describe(db: AsyncSession, version: EmployeeDefaultShift | WorkTimePr
         "flex_frame_mode": version.flex_frame_mode or "TENANT",
         "flex_frame_start": version.flex_frame_start if frame else None,
         "flex_frame_end": version.flex_frame_end if frame else None,
+        "flex_frame_days": version.flex_frame_days if frame else None,
         "late_tolerance_minutes": version.late_tolerance_minutes,
         "profile_id": profile.id if profile else None,
         "profile_name": profile.name if profile else None,
@@ -297,6 +329,7 @@ async def set_work_time_model(
     # Kernzeit ohne Angabe: wie die Fassung, die bisher an diesem Tag galt.
     inherit = next((v for v in reversed(rows) if v.valid_from <= payload.valid_from), None)
     fields.update(_core_time_fields(payload, inherit))
+    fields.update(_flex_frame_fields(payload, inherit))
     # "Ab Stichtag" ersetzt alles ab diesem Tag (auch rückwirkend, solange der Monat offen ist):
     # spätere Fassungen entfallen, eine laufende endet am Vortag.
     for row in rows:
@@ -325,7 +358,7 @@ async def set_work_time_model(
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
-        detail=f"{soll_label} an {_days_label(payload, template)} ab {payload.valid_from.isoformat()}",
+        detail=f"{soll_label} an {_days_label(payload, template)}{_frame_label(payload)} ab {payload.valid_from.isoformat()}",
     )
     await db.commit()
     return await _build_response(db, employee_id)
@@ -442,6 +475,7 @@ async def update_work_time_model_version(
 
     fields, soll_label = _contract(payload)
     fields.update(_core_time_fields(payload, version))
+    fields.update(_flex_frame_fields(payload, version))
     template = await _times_template(db, actor.tenant_id, payload.shift_template_id, version.shift_template_id)
     old_from = version.valid_from
     for key, value in fields.items():
@@ -464,7 +498,7 @@ async def update_work_time_model_version(
         entity_type="employee",
         entity_id=employee_id,
         detail=(
-            f"Fassung ab {old_from.isoformat()} geändert: {soll_label} an {_days_label(payload, template)} "
+            f"Fassung ab {old_from.isoformat()} geändert: {soll_label} an {_days_label(payload, template)}{_frame_label(payload)} "
             f"ab {payload.valid_from.isoformat()}"
         ),
     )

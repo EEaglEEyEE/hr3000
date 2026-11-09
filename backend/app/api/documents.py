@@ -46,7 +46,7 @@ def _is_self(actor: Actor, employee_id: int) -> bool:
 
 def _check_read_scope(actor: Actor, employee_id: int) -> None:
     """Personalakte: Admin/HR (voll) und der Mitarbeiter selbst – Supervisor
-    bewusst nicht (auch nicht für das eigene Team), wohl aber für die eigene Akte."""
+    bewusst nicht (auch nicht für den eigenen Bereich), wohl aber für die eigene Akte."""
     if _is_self(actor, employee_id):
         return
     if actor.is_supervisor_level:

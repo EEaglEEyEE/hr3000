@@ -19,14 +19,7 @@ import {
   type OvertimeBalance,
   type PunchType,
 } from './api'
-import {
-  clearStoredDeviceToken,
-  getStoredDeviceToken,
-  loginWithStoredToken,
-  resumeSession,
-  storeDeviceToken,
-  type ResumeResult,
-} from './deviceAuth'
+import { clearStoredDeviceToken, getStoredDeviceToken, loginWithStoredToken, resumeSession, storeDeviceToken, resumeMessage } from './deviceAuth'
 import { getCachedEmployees, setCachedEmployees } from './employeeCache'
 import { enrollFromMdm, enrollmentFromHash } from './enrollment'
 import { describeNfcError, isNfcSupported, startNfcScan, type NfcScanSession } from './nfcScanner'
@@ -69,16 +62,6 @@ const LINK_TOKEN = (() => {
 const CONFIG_REFRESH_MS = 30_000
 /** Einrichtungsbildschirm mit gespeichertem Token: so oft erneut anmelden */
 const RESUME_RETRY_MS = 60_000
-
-function resumeMessage(kind: Exclude<ResumeResult['kind'], 'ok'>): string | undefined {
-  if (kind === 'in_use')
-    return 'Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt. Zum Wechseln in der HR-Webapp unter „Tablets“ den QR-Code öffnen und hier scannen.'
-  if (kind === 'rejected')
-    return 'Der Server hat die Anmeldung dieses Tablets abgelehnt. Es versucht es jede Minute erneut – wurde es in der HR-Webapp entfernt, bitte neu einrichten.'
-  if (kind === 'unreachable')
-    return 'Server nicht erreichbar – das Tablet meldet sich automatisch wieder an, sobald er erreichbar ist.'
-  return undefined
-}
 
 type Screen =
   | { kind: 'loading' }
@@ -201,7 +184,7 @@ export default function App() {
         return
       }
       if (result.kind === 'pending') setPending({ code: result.verifyCode })
-      else setSetupError(resumeMessage(result.kind))
+      else setSetupError(resumeMessage(result.kind, !!ENROLLMENT))
       if (result.kind === 'in_use') setDeviceInUse(true)
       setScreen({ kind: 'setup' })
     }
@@ -251,7 +234,7 @@ export default function App() {
         if (result.kind === 'rejected' && pending) {
           // Anfrage wurde in der HR-Webapp abgelehnt
           setPending(null)
-          setSetupError(resumeMessage('rejected'))
+          setSetupError(resumeMessage('rejected', !!ENROLLMENT))
         }
         if (result.kind !== 'ok') return
         setSession(result.session)

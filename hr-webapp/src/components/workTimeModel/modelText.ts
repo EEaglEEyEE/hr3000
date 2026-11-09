@@ -3,6 +3,7 @@
 import type { WorkTimeModelVersion } from '../../api/queries/workTimeModel'
 import { formatDate } from '../../lib/format'
 import { coreTimeLabel } from '../coreTime/CoreTimeFields'
+import { flexFrameText } from './FlexFrameFields'
 
 export const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
@@ -19,10 +20,14 @@ export function breakLabel(source: {
   break_after_minutes?: number
   break_start?: string | null
   break_end?: string | null
+  break_windows?: { start: string; end: string }[] | null
 }): string {
   if (source.break_minutes) {
     const after = source.break_after_minutes ? ` ab ${formatHours(source.break_after_minutes)} Std.` : ''
     return `, Pause ${source.break_minutes} Min.${after}`
+  }
+  if (source.break_windows && source.break_windows.length > 1) {
+    return `, Pause ${source.break_windows.map((w) => `${hhmm(w.start)}–${hhmm(w.end)}`).join(', ')}`
   }
   if (source.break_start && source.break_end) return `, Pause ${hhmm(source.break_start)}–${hhmm(source.break_end)}`
   return ''
@@ -44,12 +49,10 @@ export function formatRange(version: { valid_from: string; valid_to?: string | n
 }
 
 /** Gleitzeit-Rahmen einer Fassung bzw. eines Modells (leer = wie in den Einstellungen). */
-export function flexFrameLabel(source: Pick<ModelSource, 'flex_frame_mode' | 'flex_frame_start' | 'flex_frame_end'>): string {
-  if (source.flex_frame_mode === 'NONE') return 'keiner'
-  if (source.flex_frame_mode === 'CUSTOM' && source.flex_frame_start && source.flex_frame_end) {
-    return `${hhmm(source.flex_frame_start)}–${hhmm(source.flex_frame_end)}`
-  }
-  return ''
+export function flexFrameLabel(
+  source: Pick<ModelSource, 'flex_frame_mode' | 'flex_frame_start' | 'flex_frame_end'> & Partial<Pick<ModelSource, 'flex_frame_days'>>,
+): string {
+  return flexFrameText(source)
 }
 
 export function describeVersion(version: ModelSource): string {

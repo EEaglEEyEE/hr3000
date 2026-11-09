@@ -17,7 +17,7 @@ from app.models.checklist import (
     EmployeeChecklistItem,
 )
 from app.models.daily_summary import DailySummary, SummaryStatus
-from app.models.department import Department
+from app.models.department import Department, DepartmentLeader
 from app.models.attribute import AttributeDefinition, AttributeSection, AttributeValue
 from app.models.change_request import DataChangeRequest
 from app.models.document_template import DocumentTemplate
@@ -46,8 +46,6 @@ from app.models.punch_correction_request import CorrectionRequestStatus, PunchCo
 from app.models.shift_plan_entry import ShiftPlanEntry
 from app.models.shift_template import BreakMode, ShiftTemplate, TargetPeriod
 from app.models.surcharge_rule import SurchargeKind, SurchargeRule
-from app.models.supervisor_team_assignment import SupervisorTeamAssignment
-from app.models.team import Team
 from app.models.tenant import Tenant, TenantPlan, TenantStatus
 
 __all__ = [
@@ -94,6 +92,7 @@ __all__ = [
     "DailySummary",
     "DayReview",
     "Department",
+    "DepartmentLeader",
     "AttributeDefinition",
     "AttributeSection",
     "AttributeValue",
@@ -136,10 +135,8 @@ __all__ = [
     "ServerMetricSample",
     "ShiftPlanEntry",
     "ShiftTemplate",
-    "SupervisorTeamAssignment",
     "SurchargeKind",
     "SurchargeRule",
-    "Team",
     "Tenant",
     "TenantPlan",
     "TenantStatus",

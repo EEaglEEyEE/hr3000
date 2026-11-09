@@ -53,16 +53,18 @@ async def _setup_two_tenants(client, db_session) -> tuple[dict, dict, int]:
 async def _fill(client, h: dict) -> None:
     """Dieselben Daten in einer Firma: Stammdaten, Zeiten, Abwesenheiten, Dokument, Checklisten …"""
     loc = (await client.post("/locations", json={"name": "Zentrale", "timezone": "Europe/Berlin"}, headers=h)).json()["id"]
-    team = (await client.post("/teams", json={"name": "Werkstatt", "location_id": loc}, headers=h)).json()["id"]
+    department = (await client.post("/departments", json={"name": "Werkstatt"}, headers=h)).json()["id"]
     assert (await client.post("/devices", json={"name": "Tablet", "location_id": loc}, headers=h)).status_code == 201
     assert (await client.post("/holidays", json={"date": "2026-12-24", "name": "Heiligabend", "location_ids": [loc]}, headers=h)).status_code == 201
     emp = await client.post(
         "/employees",
-        json={"location_id": loc, "first_name": "Erika", "last_name": "Muster", "employee_number": "E-1", "team_id": team},
+        json={"location_id": loc, "first_name": "Erika", "last_name": "Muster", "employee_number": "E-1", "department_id": department},
         headers=h,
     )
     assert emp.status_code == 201, emp.text
     eid = emp.json()["id"]
+    # Leitung der eigenen Abteilung: Abteilung und Mitarbeiter verweisen gegenseitig aufeinander
+    assert (await client.patch(f"/departments/{department}", json={"head_employee_id": eid}, headers=h)).status_code == 200
     for kind, ts, key in (("COME", "2026-10-05T06:00:00Z", "1"), ("GO", "2026-10-05T14:30:00Z", "2")):
         r = await client.post(
             "/punches",

@@ -21,7 +21,7 @@ from app.models import (
     Location,
     Punch,
     ShiftTemplate,
-    Team,
+    Department,
     Tenant,
 )
 
@@ -37,7 +37,7 @@ _TENANT_SCOPED_MODELS = [
     AppSettings,
     BreakRule,
     Holiday,
-    Team,
+    Department,
     ShiftTemplate,
 ]
 

@@ -19,6 +19,58 @@ def check_window(start: time | None, end: time | None) -> None:
         raise ValueError("Eine feste Pausenzeit darf höchstens 4 Stunden lang sein.")
 
 
+MAX_BREAK_WINDOWS = 4
+
+
+class BreakWindow(BaseModel):
+    """Eine feste Pausenzeit (Ortszeit), z.B. 12:00–12:30."""
+
+    start: time
+    end: time
+
+    @model_validator(mode="after")
+    def _valid(self) -> "BreakWindow":
+        check_window(self.start, self.end)
+        return self
+
+
+def check_windows(windows: list[tuple[time, time]]) -> list[tuple[time, time]]:
+    """Mehrere feste Pausenzeiten: jede gültig, nach Beginn sortiert, ohne Überschneidung."""
+    ordered = sorted(windows)
+    for (_, end), (start, _) in zip(ordered, ordered[1:]):
+        if start < end:
+            raise ValueError("Feste Pausenzeiten dürfen sich nicht überschneiden.")
+    return ordered
+
+
+def serialize_break_windows(windows: list[tuple[time, time]]) -> str | None:
+    """Text für fixed_break_windows (nur bei mehr als einer Pausenzeit, sonst NULL)."""
+    if len(windows) < 2:
+        return None
+    return ",".join(f"{start:%H:%M}-{end:%H:%M}" for start, end in windows)
+
+
+def parse_break_windows(value: str | None) -> list[tuple[time, time]]:
+    if not value:
+        return []
+    result = []
+    for part in value.split(","):
+        start, end = part.split("-")
+        result.append((time.fromisoformat(start), time.fromisoformat(end)))
+    return result
+
+
+def fixed_break_windows(source) -> list[tuple[time, time]]:
+    """Feste Pausenzeiten einer Fassung bzw. Modell-Fassung: alle aus fixed_break_windows, sonst die
+    eine aus fixed_break_start/-end."""
+    windows = parse_break_windows(getattr(source, "fixed_break_windows", None))
+    if windows:
+        return windows
+    if source.fixed_break_start is not None and source.fixed_break_end is not None:
+        return [(source.fixed_break_start, source.fixed_break_end)]
+    return []
+
+
 class BreakRuleCreateRequest(BaseModel):
     kind: BreakRuleKind = BreakRuleKind.LEGAL
     # LEGAL/FIXED_MINUTES: ab wie vielen Arbeitsminuten wie viel Pause.

@@ -30,7 +30,8 @@ import { ServerMetricsPage } from './pages/ServerMetricsPage'
 /** Frühere Menüpunkte, die jetzt Bereiche der Einstellungen sind (alte Links und Lesezeichen). */
 const MOVED_TO_SETTINGS: Record<string, string> = {
   standorte: 'standorte',
-  teams: 'teams',
+  // Teams wurden zu Abteilungen
+  teams: 'abteilungen',
   feiertage: 'feiertage',
   pausenregeln: 'pausen',
   schichtvorlagen: 'schichtplanung',

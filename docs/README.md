@@ -6,7 +6,7 @@ ist die Lassners IT Factory. Website: https://hr3000.de · Quellcode (AGPL-3.0):
 
 | Dokument | Für wen |
 |---|---|
-| [Handbuch für Admins, HR und Teamleader](handbuch-admin.md) | Firmen, die HR3000 nutzen: Einrichtung, Tagesgeschäft, Abrechnung, Einstellungen |
+| [Handbuch für Admins, HR und Führungskräfte](handbuch-admin.md) | Firmen, die HR3000 nutzen: Einrichtung, Tagesgeschäft, Abrechnung, Einstellungen |
 | [Handbuch für Mitarbeiter](handbuch-mitarbeiter.md) | Stempeln am Tablet, „Mein Bereich“ |
 | [Betrieb der Plattform](betrieb.md) (intern, nicht im öffentlichen Repo) | Betreiber: Super-Admin, Domain/DNS, Rollout, Sicherungen, Wiederherstellung, Störungen |
 | [Technik](technik.md) | Entwicklung: Aufbau, Mandanten und Zertifikate, Kernlogik, Sicherheit, Tests |

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLocationsQuery } from '../api/queries/locations'
-import { useTeamsQuery } from '../api/queries/teams'
+import { departmentTree, useDepartmentsQuery } from '../api/queries/departments'
 import { useTeamCalendarQuery, type TeamCalendarDay } from '../api/queries/teamCalendar'
 import { CalendarSubscribe } from '../components/calendar/CalendarSubscribe'
 import { ABSENCE_TYPE_LABELS } from '../lib/labels'
@@ -57,9 +57,10 @@ export function TeamCalendarPage({ own = false }: { own?: boolean }) {
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
   const [locationFilter, setLocationFilter] = useState(ALL_LOCATIONS)
-  // Leer = alle Teams; sonst die ausgewählten (0 = ohne Team).
-  const [selectedTeams, setSelectedTeams] = useState<number[]>([])
-  const teamsQuery = useTeamsQuery(!own)
+  // Leer = alle Abteilungen; sonst die ausgewählten samt Unterabteilungen (0 = ohne Abteilung).
+  const [selectedDepartments, setSelectedDepartments] = useState<number[]>([])
+  const departmentsQuery = useDepartmentsQuery(!own)
+  const departmentChoices = departmentTree(departmentsQuery.data ?? [])
 
   const locationsQuery = useLocationsQuery(!own)
   const { daysInMonth, from, to } = monthRange(year, month)
@@ -67,7 +68,7 @@ export function TeamCalendarPage({ own = false }: { own?: boolean }) {
     from,
     to,
     locationFilter === ALL_LOCATIONS ? undefined : Number(locationFilter),
-    selectedTeams,
+    selectedDepartments,
     own,
   )
 
@@ -120,35 +121,40 @@ export function TeamCalendarPage({ own = false }: { own?: boolean }) {
       <CalendarSubscribe />
       <p className="text-sm text-slate-500">
         {own
-          ? 'Abwesenheiten in deinem Team – bei manchen Arten nur, dass jemand fehlt.'
+          ? 'Abwesenheiten in deiner Abteilung – bei manchen Arten nur, dass jemand fehlt.'
           : 'Monatsübersicht über Urlaub, Krankheit und Feiertage aller sichtbaren Mitarbeiter.'}
       </p>
 
-      {!own && (teamsQuery.data?.length ?? 0) > 0 && (
+      {!own && departmentChoices.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-slate-500">Teams:</span>
+          <span className="text-slate-500">Abteilungen:</span>
           <button
             type="button"
-            onClick={() => setSelectedTeams([])}
-            className={`rounded-full border px-3 py-1 ${selectedTeams.length === 0 ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}
+            onClick={() => setSelectedDepartments([])}
+            className={`rounded-full border px-3 py-1 ${selectedDepartments.length === 0 ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}
           >
             Alle
           </button>
-          {[...(teamsQuery.data ?? []).map((t) => ({ id: t.id, name: t.name })), { id: 0, name: 'Ohne Team' }].map((team) => {
-            const active = selectedTeams.includes(team.id)
-            return (
-              <button
-                key={team.id}
-                type="button"
-                onClick={() =>
-                  setSelectedTeams((current) => (active ? current.filter((id) => id !== team.id) : [...current, team.id]))
-                }
-                className={`rounded-full border px-3 py-1 ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}
-              >
-                {team.name}
-              </button>
-            )
-          })}
+          {[...departmentChoices.map(({ department }) => ({ id: department.id, name: department.name })), { id: 0, name: 'Ohne Abteilung' }].map(
+            (choice) => {
+              const active = selectedDepartments.includes(choice.id)
+              return (
+                <button
+                  key={choice.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() =>
+                    setSelectedDepartments((current) =>
+                      active ? current.filter((id) => id !== choice.id) : [...current, choice.id],
+                    )
+                  }
+                  className={`rounded-full border px-3 py-1 ${active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white'}`}
+                >
+                  {choice.name}
+                </button>
+              )
+            },
+          )}
         </div>
       )}
 

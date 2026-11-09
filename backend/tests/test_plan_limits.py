@@ -71,7 +71,7 @@ async def test_reactivating_counts_but_other_edits_do_not(client: AsyncClient, d
 async def test_csv_import_stops_at_the_limit(client: AsyncClient, db_session: AsyncSession) -> None:
     _, admin = await _setup(db_session, client, active=3)
     csv_text = (
-        "vorname;nachname;personalnummer;standort;team;aktiv;eintrittsdatum;geburtsdatum\n"
+        "vorname;nachname;personalnummer;standort;abteilung;aktiv;eintrittsdatum;geburtsdatum\n"
         "A;Eins;I1;Zentrale;;ja;;\n"
         "B;Zwei;I2;Zentrale;;nein;;\n"
         "C;Drei;I3;Zentrale;;ja;;\n"

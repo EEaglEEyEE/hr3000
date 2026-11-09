@@ -1,7 +1,9 @@
+"""Mitarbeiter-Import per CSV: gültige Zeilen werden angelegt, fehlerhafte gemeldet; die Abteilung kommt
+aus der Spalte „abteilung“ (die frühere Spalte „team“ gilt weiter als Abteilung)."""
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, Account, Location, Team
+from app.models import Department, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -13,12 +15,12 @@ async def _create_location(db_session: AsyncSession, name: str = "Standort A") -
     return location
 
 
-async def _create_team(db_session: AsyncSession, name: str = "Team Nord") -> Team:
-    team = Team(name=name)
-    db_session.add(team)
+async def _create_department(db_session: AsyncSession, name: str = "Team Nord") -> Department:
+    department = Department(name=name)
+    db_session.add(department)
     await db_session.commit()
-    await db_session.refresh(team)
-    return team
+    await db_session.refresh(department)
+    return department
 
 
 async def _create_hr_user(db_session: AsyncSession) -> Account:
@@ -40,13 +42,13 @@ def _upload(csv_text: str) -> dict:
 
 async def test_bulk_import_creates_valid_rows(client: AsyncClient, db_session: AsyncSession) -> None:
     location = await _create_location(db_session)
-    team = await _create_team(db_session)
+    department = await _create_department(db_session)
     await _create_hr_user(db_session)
     token = await _hr_token(client)
 
     csv_text = (
-        "vorname;nachname;personalnummer;standort;team;aktiv;eintrittsdatum;geburtsdatum\n"
-        f"Erika;Musterfrau;EMP-100;{location.name};{team.name};ja;2020-03-01;1990-05-20\n"
+        "vorname;nachname;personalnummer;standort;abteilung;aktiv;eintrittsdatum;geburtsdatum\n"
+        f"Erika;Musterfrau;EMP-100;{location.name};{department.name};ja;2020-03-01;1990-05-20\n"
         f"Max;Mustermann;EMP-101;{location.name};;nein;;\n"
     )
 
@@ -65,12 +67,46 @@ async def test_bulk_import_creates_valid_rows(client: AsyncClient, db_session: A
     employees = list_response.json()
     assert len(employees) == 2
     erika = next(e for e in employees if e["employee_number"] == "EMP-100")
-    assert erika["team_id"] == team.id
+    assert erika["department_id"] == department.id
+    assert "team_id" not in erika
     assert erika["hire_date"] == "2020-03-01"
     assert erika["birth_date"] == "1990-05-20"
     max_ = next(e for e in employees if e["employee_number"] == "EMP-101")
     assert max_["active"] is False
-    assert max_["team_id"] is None
+    assert max_["department_id"] is None
+
+
+async def test_bulk_import_accepts_old_team_column_as_department(client: AsyncClient, db_session: AsyncSession) -> None:
+    location = await _create_location(db_session)
+    department = await _create_department(db_session, "Lager")
+    await _create_hr_user(db_session)
+    token = await _hr_token(client)
+
+    # Ältere Vorlagen mit Spalte „team“; Groß-/Kleinschreibung egal
+    csv_text = "vorname;nachname;personalnummer;standort;team\n" f"Lea;Lager;EMP-110;{location.name};lager\n"
+    response = await client.post("/employees/bulk-import", headers={"Authorization": f"Bearer {token}"}, files=_upload(csv_text))
+
+    assert (response.json()["created"], response.json()["errors"]) == (1, [])
+    employees = (await client.get("/employees", headers={"Authorization": f"Bearer {token}"})).json()
+    assert [(e["employee_number"], e["department_id"]) for e in employees] == [("EMP-110", department.id)]
+
+
+async def test_bulk_import_reports_unknown_department(client: AsyncClient, db_session: AsyncSession) -> None:
+    location = await _create_location(db_session)
+    await _create_department(db_session, "Lager")
+    await _create_hr_user(db_session)
+    token = await _hr_token(client)
+
+    csv_text = (
+        "vorname;nachname;personalnummer;standort;abteilung\n"
+        f"Lea;Lager;EMP-120;{location.name};Lager\n"
+        f"Otto;Ohne;EMP-121;{location.name};Vertrieb\n"
+    )
+    response = await client.post("/employees/bulk-import", headers={"Authorization": f"Bearer {token}"}, files=_upload(csv_text))
+
+    body = response.json()
+    assert body["created"] == 1
+    assert [(e["row"], e["message"]) for e in body["errors"]] == [(3, "Abteilung 'Vertrieb' wurde nicht gefunden.")]
 
 
 async def test_bulk_import_reports_row_errors_without_blocking_valid_rows(

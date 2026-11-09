@@ -1,8 +1,9 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, Account, Location, SupervisorTeamAssignment, Team
+from app.models import Employee, HrRole, Account, Location
 from absence_helpers import require_vacation_approval
+from org_helpers import department, supervisor_with_department
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 
@@ -15,9 +16,7 @@ async def _create_location(db_session: AsyncSession) -> Location:
     return location
 
 
-async def _create_self_service_employee(
-    db_session: AsyncSession, location: Location, team_id: int | None = None
-) -> Employee:
+async def _create_self_service_employee(db_session: AsyncSession, location: Location) -> Employee:
     employee = Employee(
         location_id=location.id,
         first_name="Erika",
@@ -26,7 +25,6 @@ async def _create_self_service_employee(
         active=True,
         login_email="erika@example.com",
         password_hash=hash_password("pw123456"),
-        team_id=team_id,
     )
     db_session.add(employee)
     await db_session.commit()
@@ -36,14 +34,6 @@ async def _create_self_service_employee(
 
 async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
     user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-
-async def _create_supervisor_hr_user(db_session: AsyncSession) -> Account:
-    user = Account(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -71,18 +61,18 @@ async def _request_pending_vacation(client: AsyncClient, employee_id: int, day: 
     )
 
 
-async def test_absence_request_notifies_teams_supervisor(
+async def test_absence_request_notifies_department_head(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     location = await _create_location(db_session)
-    team = Team(name="Team Nord", location_id=location.id)
-    db_session.add(team)
-    await db_session.commit()
-    await db_session.refresh(team)
-
-    supervisor = await _create_supervisor_hr_user(db_session)
-    db_session.add(SupervisorTeamAssignment(team_id=team.id, account_id=supervisor.id))
-    employee = await _create_self_service_employee(db_session, location, team_id=team.id)
+    employee = await _create_self_service_employee(db_session, location)
+    await _create_admin_hr_user(db_session)
+    supervisor_setup = await supervisor_with_department(
+        db_session, location, email="supervisor@example.com", members=(employee,)
+    )
+    other_setup = await supervisor_with_department(
+        db_session, location, email="other@example.com", department_name="Lager", employee_number="L2"
+    )
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     await require_vacation_approval(db_session)
     await db_session.commit()
@@ -97,9 +87,55 @@ async def test_absence_request_notifies_teams_supervisor(
     assert entries[0]["type"] == "ABSENCE_REQUESTED"
     assert "Erika Muster" in entries[0]["message"]
     assert entries[0]["read_at"] is None
+    # Nur die Leitung der eigenen Abteilung, weder Admin noch andere Führungskräfte
+    for email in ("admin@example.com", "other@example.com"):
+        token = await _hr_token(client, email)
+        assert (await client.get("/notifications", headers={"Authorization": f"Bearer {token}"})).json() == []
 
 
-async def test_absence_request_falls_back_to_admin_without_team(
+async def test_absence_request_goes_to_override_supervisor_instead_of_head(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    location = await _create_location(db_session)
+    employee = await _create_self_service_employee(db_session, location)
+    head_setup = await supervisor_with_department(db_session, location, email="head@example.com", members=(employee,))
+    override_setup = await supervisor_with_department(
+        db_session, location, email="override@example.com", department_name="Lager", first_name="Olga",
+        employee_number="L2",
+    )
+    employee.supervisor_id = override_setup[1].id  # abweichende Führungskraft
+    await require_vacation_approval(db_session)
+
+    await _request_pending_vacation(client, employee.id)
+
+    override_token = await _hr_token(client, "override@example.com")
+    entries = (await client.get("/notifications", headers={"Authorization": f"Bearer {override_token}"})).json()
+    assert [e["type"] for e in entries] == ["ABSENCE_REQUESTED"]
+    head_token = await _hr_token(client, "head@example.com")
+    assert (await client.get("/notifications", headers={"Authorization": f"Bearer {head_token}"})).json() == []
+
+
+async def test_absence_request_falls_back_to_admin_when_head_cannot_approve(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    location = await _create_location(db_session)
+    employee = await _create_self_service_employee(db_session, location)
+    head = Employee(location_id=location.id, first_name="Hans", last_name="Ohnezugang", employee_number="H1")
+    db_session.add(head)
+    await db_session.commit()
+    # Leitung ohne Zugang: niemand kann als Führungskraft entscheiden -> Admin/HR
+    await department(db_session, "Team Nord", employee, head=head)
+    await _create_admin_hr_user(db_session)
+    await require_vacation_approval(db_session)
+
+    await _request_pending_vacation(client, employee.id)
+
+    admin_token = await _hr_token(client, "admin@example.com")
+    entries = (await client.get("/notifications", headers={"Authorization": f"Bearer {admin_token}"})).json()
+    assert [e["type"] for e in entries] == ["ABSENCE_REQUESTED"]
+
+
+async def test_absence_request_falls_back_to_admin_without_department(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     location = await _create_location(db_session)

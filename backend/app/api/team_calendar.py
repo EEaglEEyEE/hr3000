@@ -13,7 +13,8 @@ from app.schemas.team_calendar import TeamCalendarDay, TeamCalendarEmployee
 from app.services.absence_type_service import list_absence_types
 from app.services.holiday_service import location_scope
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import supervisor_team_ids
+from app.services.org_service import load_org
+from app.services.scope_service import visible_employee_ids
 from app.services.timesheet_service import describe_absence_parts, is_birthday
 
 router = APIRouter(tags=["team_calendar"])
@@ -28,14 +29,15 @@ async def get_team_calendar(
     date_from: date = Query(alias="from"),
     date_to: date = Query(alias="to"),
     location_id: int | None = Query(default=None),
-    # Filter auf ein oder mehrere Teams (leer = alle sichtbaren); 0 = Mitarbeiter ohne Team.
-    team_ids: list[int] = Query(default_factory=list, alias="team_id"),
+    # Filter auf eine oder mehrere Abteilungen samt Unterabteilungen (leer = alle sichtbaren);
+    # 0 = Mitarbeiter ohne Abteilung.
+    department_ids: list[int] = Query(default_factory=list, alias="department_id"),
     actor: Actor = Depends(get_current_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[TeamCalendarEmployee]:
     """Monatsübersicht über Urlaub/Krankheit/Feiertage für alle für den Actor
-    sichtbaren Mitarbeiter (Supervisor: nur eigene Teams, siehe
-    app/services/team_scope_service.py). Bewusst ohne Ist-Zeit-Berechnung –
+    sichtbaren Mitarbeiter (Führungskraft: der eigene Bereich, siehe
+    app/services/scope_service.py). Bewusst ohne Ist-Zeit-Berechnung –
     reine Absenz-/Feiertagsübersicht, daher zwei Bulk-Queries (Holiday,
     Absence) statt einer Punch-Historie-Abfrage pro Tag und Mitarbeiter wie
     bei calculate_day."""
@@ -49,15 +51,19 @@ async def get_team_calendar(
     stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
     if location_id is not None:
         stmt = stmt.where(Employee.location_id == location_id)
-    if team_ids:
-        wanted = [t for t in team_ids if t > 0]
-        condition = Employee.team_id.in_(wanted) if wanted else None
-        if 0 in team_ids:
-            condition = Employee.team_id.is_(None) if condition is None else or_(condition, Employee.team_id.is_(None))
+    if department_ids:
+        org = await load_org(db, actor.tenant_id)
+        wanted: set[int] = set()
+        for department_id in department_ids:
+            if department_id > 0:
+                wanted |= org.subtree(department_id)
+        condition = Employee.department_id.in_(wanted) if wanted else None
+        if 0 in department_ids:
+            without = Employee.department_id.is_(None)
+            condition = without if condition is None else or_(condition, without)
         stmt = stmt.where(condition)
     if actor.is_supervisor_level:
-        team_ids = await supervisor_team_ids(db, actor)
-        stmt = stmt.where(Employee.team_id.in_(team_ids or set()))
+        stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     stmt = stmt.order_by(Employee.last_name.asc(), Employee.first_name.asc())
 
     employees = (await db.execute(stmt)).scalars().all()
@@ -168,7 +174,7 @@ async def _calendar(
                 employee_id=employee.id,
                 first_name=employee.first_name,
                 last_name=employee.last_name,
-                team_id=employee.team_id,
+                department_id=employee.department_id,
                 days=days,
             )
         )
@@ -183,7 +189,7 @@ async def get_my_team_calendar(
     actor: Actor = Depends(get_current_actor),
     db: AsyncSession = Depends(get_db),
 ) -> list[TeamCalendarEmployee]:
-    """Teamkalender für Mitarbeiter („Mein Bereich“): das eigene Team (ohne Team nur man selbst).
+    """Teamkalender für Mitarbeiter („Mein Bereich“): die eigene Abteilung (ohne Abteilung nur man selbst).
     Bei Kollegen erscheint die Art nur bei Abwesenheitsarten mit „im Teamkalender farbig“, sonst
     „ausgegraut“; Arbeitszeit-Angaben (Homeoffice) gar nicht. Nur mit Einstellung
     team_calendar_for_employees."""
@@ -195,7 +201,11 @@ async def get_my_team_calendar(
         raise AppError(403, "TEAM_CALENDAR_DISABLED", "Der Teamkalender ist für Mitarbeiter nicht freigeschaltet.")
     me = actor.employee
     stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
-    stmt = stmt.where(Employee.team_id == me.team_id) if me.team_id is not None else stmt.where(Employee.id == me.id)
+    stmt = (
+        stmt.where(Employee.department_id == me.department_id)
+        if me.department_id is not None
+        else stmt.where(Employee.id == me.id)
+    )
     employees = (await db.execute(stmt.order_by(Employee.last_name, Employee.first_name))).scalars().all()
     colored = frozenset(t.id for t in await list_absence_types(db, actor.tenant_id) if t.calendar_visibility == "COLOR")
     return await _calendar(db, actor.tenant_id, employees, date_from, date_to, _Mask(me.id, colored))

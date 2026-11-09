@@ -36,7 +36,7 @@ from app.services.email_service import resolve_smtp_config, send_email
 from app.services.signup_mail import send_verification_mail
 from app.services import rate_limiter
 from app.services.pairing_service import card_salt, new_device_token, pairing_code_hash, token_hash
-from app.services.notification_service import notify_device_rejected
+from app.services.notification_service import notify_device_rejected, notify_device_replaced
 from app.services.device_enrollment import enroll_device, pending_enrollment_for_token
 from app.services.settings_service import device_kiosk_config
 from app.services import two_factor_service
@@ -122,6 +122,10 @@ async def device_login(
         if installation is not None:
             device.installation_hash = installation
             device.bound_at = datetime.now(UTC).replace(tzinfo=None)
+            # Ein noch offener QR-Code galt für den ungebundenen Eintrag – er darf das jetzt gebundene
+            # Gerät nicht mehr verdrängen (wie bind_device).
+            device.pairing_code_hash = None
+            device.pairing_code_expires_at = None
     elif installation != device.installation_hash:
         await reject_second_device(db, device)
         raise AppError(
@@ -189,14 +193,27 @@ async def device_pair(
         rate_limiter.record_failure(key)
         raise AppError(401, "PAIRING_CODE_INVALID", "Kopplungscode ungültig oder abgelaufen.")
     # Koppeln = neues Token für genau dieses Tablet: das alte Token und ein bisher gebundenes Gerät
-    # sind danach ungültig (Tablet-Tausch).
+    # sind danach ungültig (Tablet-Tausch, nur nach ausdrücklicher Bestätigung beim Erzeugen des Codes).
+    installation = token_hash(payload.installation_id)
+    replaced = device.installation_hash is not None and device.installation_hash != installation
     new_token = new_device_token()
     device.token_hash = token_hash(new_token)
-    device.installation_hash = token_hash(payload.installation_id)
+    device.installation_hash = installation
     device.bound_at = datetime.now(UTC).replace(tzinfo=None)
     device.rejected_at = None
     device.pairing_code_hash = None
     device.pairing_code_expires_at = None
+    log_action(
+        db, tenant_id=tenant_id, actor_account_id=None, action=AuditAction.DEVICE_ENROLLMENT,
+        entity_type="device", entity_id=device.id,
+        detail=(
+            f"Tablet „{device.name}“ per QR-Code mit einem anderen Gerät gekoppelt – das bisherige Gerät ist abgemeldet"
+            if replaced
+            else f"Tablet „{device.name}“ per QR-Code eingerichtet"
+        ),
+    )
+    if replaced:
+        await notify_device_replaced(db, device)
     await db.commit()
     return DevicePairResponse(device_token=new_token)
 

@@ -1,9 +1,11 @@
 """Abteilungen (hierarchisch) und Organigramm.
 
-Abteilungen pflegen Admin und HR; sehen dürfen sie alle mit Verwaltungsrolle. Das Organigramm baut
-auf der Führungskraft je Mitarbeiter auf (Employee.supervisor_id) und zeigt Name, Position und
-Abteilung der aktiven Mitarbeiter – für Verwaltungsrollen immer, für Mitarbeiter nur mit der
-Einstellung „Organigramm für Mitarbeiter“.
+Abteilungen pflegen Admin und HR (auch direkt im Organigramm); sehen dürfen sie alle mit
+Verwaltungsrolle. Jede Abteilung kann mehrere Leitungen und Stellvertretungen haben – die Leitungen
+sind die Führungskräfte der Mitarbeiter darin, Stellvertretungen handeln je nach ihren Rechten
+(app/services/org_service.py, scope_service.py). Das Organigramm ist der Abteilungsbaum mit Leitungen
+und aktiven Mitarbeitern – für Verwaltungsrollen immer, für Mitarbeiter nur mit der Einstellung
+„Organigramm für Mitarbeiter“.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -13,9 +15,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_actor, get_current_full_hr_principal, get_current_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, Department, Employee
-from app.schemas.department import DepartmentCreateRequest, DepartmentResponse, DepartmentUpdateRequest, OrgChartPerson
+from app.models import AuditAction, Department, DepartmentLeader, Employee
+from app.models.department import DEPUTY_STANDBY, LEADER_DEPUTY, LEADER_HEAD
+from app.schemas.department import (
+    DepartmentCreateRequest,
+    DepartmentLeaderInput,
+    DepartmentLeaderResponse,
+    DepartmentResponse,
+    DepartmentUpdateRequest,
+    OrgChartDepartment,
+    OrgChartLeader,
+    OrgChartPerson,
+    OrgChartResponse,
+)
 from app.services.audit_service import log_action
+from app.services.org_service import check_no_supervisor_cycle, load_org
 from app.services.settings_service import get_or_create_settings
 
 router = APIRouter(tags=["departments"])
@@ -39,6 +53,51 @@ async def _check_parent(db: AsyncSession, department: Department | None, parent_
         parent = await db.get(Department, parent.parent_id) if parent.parent_id else None
 
 
+RIGHTS_LABELS = {"STANDBY": "entscheidet bei Abwesenheit", "FULL": "gleiche Rechte", "ABSENCE": "nur bei Abwesenheit"}
+
+
+async def _set_leaders(
+    db: AsyncSession, department: Department, leaders: list[DepartmentLeaderInput], tenant_id: int
+) -> str:
+    """Ersetzt Leitungen und Stellvertretungen der Abteilung; gibt den Text fürs Protokoll zurück."""
+    ids = [leader.employee_id for leader in leaders]
+    people = (
+        {
+            e.id: e
+            for e in (await db.execute(select(Employee).where(Employee.id.in_(ids), Employee.tenant_id == tenant_id))).scalars()
+        }
+        if ids
+        else {}
+    )
+    missing = [i for i in ids if i not in people]
+    if missing:
+        raise AppError(404, "EMPLOYEE_NOT_FOUND", "Leitung oder Stellvertretung nicht gefunden (eine Person der Firma wählen).")
+    for row in (await db.execute(select(DepartmentLeader).where(DepartmentLeader.department_id == department.id))).scalars():
+        await db.delete(row)
+    await db.flush()
+    for position, leader in enumerate(leaders):
+        db.add(
+            DepartmentLeader(
+                department_id=department.id,
+                employee_id=leader.employee_id,
+                role=leader.role,
+                deputy_rights=leader.deputy_rights if leader.role == LEADER_DEPUTY else DEPUTY_STANDBY,
+                position=position,
+            )
+        )
+    await db.flush()
+
+    def name(employee_id: int) -> str:
+        return f"{people[employee_id].first_name} {people[employee_id].last_name}"
+
+    heads = [name(l.employee_id) for l in leaders if l.role == LEADER_HEAD]
+    deputies = [f"{name(l.employee_id)} ({RIGHTS_LABELS[l.deputy_rights]})" for l in leaders if l.role == LEADER_DEPUTY]
+    parts = [f"Leitung {', '.join(heads)}" if heads else "ohne Leitung"]
+    if deputies:
+        parts.append(f"Stellvertretung {', '.join(deputies)}")
+    return ", " + "; ".join(parts)
+
+
 def _audit(db: AsyncSession, actor: Actor, department: Department, detail: str) -> None:
     log_action(
         db, tenant_id=actor.tenant_id, actor_account_id=actor.account_id, action=AuditAction.DEPARTMENT_CHANGED,
@@ -56,8 +115,31 @@ async def _responses(db: AsyncSession, tenant_id: int, departments: list[Departm
             )
         ).all()
     )
+    leaders: dict[int, list[DepartmentLeaderResponse]] = {}
+    ids = [d.id for d in departments]
+    if ids:
+        rows = (
+            await db.execute(
+                select(DepartmentLeader, Employee)
+                .join(Employee, Employee.id == DepartmentLeader.employee_id)
+                .where(DepartmentLeader.department_id.in_(ids))
+                .order_by(DepartmentLeader.department_id, DepartmentLeader.position, DepartmentLeader.id)
+            )
+        ).all()
+        for leader, person in rows:
+            leaders.setdefault(leader.department_id, []).append(
+                DepartmentLeaderResponse(
+                    employee_id=person.id,
+                    name=f"{person.first_name} {person.last_name}",
+                    role=leader.role,
+                    deputy_rights=leader.deputy_rights,
+                    active=bool(person.active),
+                )
+            )
     return [
-        DepartmentResponse(id=d.id, name=d.name, parent_id=d.parent_id, employee_count=counts.get(d.id, 0))
+        DepartmentResponse(
+            id=d.id, name=d.name, parent_id=d.parent_id, leaders=leaders.get(d.id, []), employee_count=counts.get(d.id, 0)
+        )
         for d in departments
     ]
 
@@ -87,7 +169,15 @@ async def create_department(
     except IntegrityError as exc:
         await db.rollback()
         raise AppError(409, "DEPARTMENT_NAME_TAKEN", "Diese Abteilung gibt es schon.") from exc
-    _audit(db, actor, department, f"Abteilung „{department.name}“ angelegt")
+    leading = ""
+    if payload.leaders:
+        try:
+            leading = await _set_leaders(db, department, payload.leaders, actor.tenant_id)
+            await check_no_supervisor_cycle(db, actor.tenant_id)
+        except AppError:
+            await db.rollback()
+            raise
+    _audit(db, actor, department, f"Abteilung „{department.name}“ angelegt{leading}")
     await db.commit()
     return (await _responses(db, actor.tenant_id, [department]))[0]
 
@@ -107,7 +197,20 @@ async def update_department(
         department.parent_id = None
     if payload.name is not None:
         department.name = payload.name.strip()
-    _audit(db, actor, department, f"Abteilung „{department.name}“ geändert")
+    head_note = ""
+    try:
+        if payload.leaders is not None:
+            head_note = await _set_leaders(db, department, payload.leaders, actor.tenant_id)
+        if payload.leaders is not None or payload.parent_id is not None or payload.clear_parent_id:
+            await db.flush()
+            await check_no_supervisor_cycle(db, actor.tenant_id)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise AppError(409, "DEPARTMENT_NAME_TAKEN", "Diese Abteilung gibt es schon.") from exc
+    except AppError:
+        await db.rollback()
+        raise
+    _audit(db, actor, department, f"Abteilung „{department.name}“ geändert{head_note}")
     try:
         await db.commit()
     except IntegrityError as exc:
@@ -129,20 +232,23 @@ async def delete_department(
     if in_use or children:
         raise AppError(409, "DEPARTMENT_IN_USE", "Die Abteilung hat noch Mitarbeiter oder Unterabteilungen.")
     _audit(db, actor, department, f"Abteilung „{department.name}“ gelöscht")
+    for row in (await db.execute(select(DepartmentLeader).where(DepartmentLeader.department_id == department.id))).scalars():
+        await db.delete(row)
     await db.delete(department)
     await db.commit()
 
 
-@router.get("/org-chart", response_model=list[OrgChartPerson])
-async def org_chart(actor: Actor = Depends(get_current_actor), db: AsyncSession = Depends(get_db)) -> list[OrgChartPerson]:
+@router.get("/org-chart", response_model=OrgChartResponse)
+async def org_chart(actor: Actor = Depends(get_current_actor), db: AsyncSession = Depends(get_db)) -> OrgChartResponse:
     if actor.account is None or actor.tenant_id is None:
         raise AppError(403, "FORBIDDEN", "Nur für Konten einer Firma.")
     if not actor.is_hr_level:
         if actor.employee is None or not (await get_or_create_settings(db, actor.tenant_id)).org_chart_for_employees:
             raise AppError(403, "ORG_CHART_DISABLED", "Das Organigramm ist für Mitarbeiter nicht freigeschaltet.")
-    names = dict(
-        (await db.execute(select(Department.id, Department.name).where(Department.tenant_id == actor.tenant_id))).all()
-    )
+    departments = (
+        await db.execute(select(Department).where(Department.tenant_id == actor.tenant_id).order_by(Department.name))
+    ).scalars().all()
+    names = {d.id: d.name for d in departments}
     people = (
         await db.execute(
             select(Employee)
@@ -151,15 +257,31 @@ async def org_chart(actor: Actor = Depends(get_current_actor), db: AsyncSession 
         )
     ).scalars().all()
     active_ids = {p.id for p in people}
-    return [
-        OrgChartPerson(
-            employee_id=p.id,
-            first_name=p.first_name,
-            last_name=p.last_name,
-            position=p.position,
-            department_id=p.department_id,
-            department=names.get(p.department_id) if p.department_id else None,
-            supervisor_id=p.supervisor_id if p.supervisor_id in active_ids else None,
-        )
-        for p in people
-    ]
+    org = await load_org(db, actor.tenant_id)
+    return OrgChartResponse(
+        departments=[
+            OrgChartDepartment(
+                id=d.id,
+                name=d.name,
+                parent_id=d.parent_id,
+                leaders=[
+                    OrgChartLeader(employee_id=e, role=role, deputy_rights=rights)
+                    for e, role, rights in org.leaders.get(d.id, [])
+                    if e in active_ids
+                ],
+            )
+            for d in departments
+        ],
+        people=[
+            OrgChartPerson(
+                employee_id=p.id,
+                first_name=p.first_name,
+                last_name=p.last_name,
+                position=p.position,
+                department_id=p.department_id,
+                department=names.get(p.department_id) if p.department_id else None,
+                supervisor_ids=[s for s in org.supervisors(p.id) if s in active_ids],
+            )
+            for p in people
+        ],
+    )

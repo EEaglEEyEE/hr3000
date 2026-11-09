@@ -133,30 +133,25 @@ async def test_data_export_is_audited(client: AsyncClient, db_session: AsyncSess
 async def test_supervisor_cannot_export_data(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    from app.models import Employee, Team
+    from app.models import Employee
+    from org_helpers import department, supervisor_with_department
 
     location = await _create_location(db_session)
-    other_team = Team(name="Anderes Team")
-    db_session.add(other_team)
+    report = Employee(location_id=location.id, first_name="Eigen", last_name="Mitarbeiter", employee_number="EMP-98")
+    stranger = Employee(location_id=location.id, first_name="Fremd", last_name="Mitarbeiter", employee_number="EMP-99")
+    db_session.add_all([report, stranger])
     await db_session.commit()
-    await db_session.refresh(other_team)
-
-    employee = Employee(
-        location_id=location.id,
-        team_id=other_team.id,
-        first_name="Fremd",
-        last_name="Mitarbeiter",
-        employee_number="EMP-99",
+    # Die Führungskraft leitet die Abteilung von „Eigen“; „Fremd“ arbeitet in einer anderen.
+    supervisor_setup = await supervisor_with_department(
+        db_session, location, email="hr@example.com", department_name="Eigene Abteilung", members=(report,)
     )
-    db_session.add(employee)
-    await _create_hr_user(db_session, role=HrRole.SUPERVISOR)
-    await db_session.commit()
-    await db_session.refresh(employee)
+    await department(db_session, "Andere Abteilung", stranger)
     token = await _hr_token(client)
 
-    response = await client.get(
-        f"/employees/{employee.id}/data-export", headers={"Authorization": f"Bearer {token}"}
-    )
-
-    # Der Export enthält die Personalakte -> nur Admin/HR, Supervisor generell nicht.
-    assert response.status_code == 403
+    # Der Export enthält die Personalakte -> nur Admin/HR, Führungskräfte generell nicht – auch nicht für
+    # die eigene Abteilung.
+    for employee in (report, stranger):
+        response = await client.get(
+            f"/employees/{employee.id}/data-export", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 403

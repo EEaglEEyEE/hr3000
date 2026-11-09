@@ -60,3 +60,17 @@ export async function resumeSession(): Promise<ResumeResult> {
 export function verifyCodeFrom(message: string): string | null {
   return /Prüfcode: ([A-Z0-9]{3}-[A-Z0-9]{3})/.exec(message)?.[1] ?? null
 }
+
+/** Meldung am Einrichtungsbildschirm. mdm: per MDM verteilt (Registrierungsschlüssel in der Start-URL) –
+ * nach einer Ablehnung fragt das Tablet erst nach einem Neustart der Kiosk-App erneut an. */
+export function resumeMessage(kind: Exclude<ResumeResult['kind'], 'ok'>, mdm = false): string | undefined {
+  if (kind === 'in_use')
+    return 'Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt. Zum Wechseln in der HR-Webapp unter „Tablets“ den QR-Code öffnen und hier scannen.'
+  if (kind === 'rejected' && mdm)
+    return 'Der Server hat die Anmeldung dieses Tablets abgelehnt – die Anfrage wurde abgelehnt, das Tablet entfernt oder sein Zugang an ein anderes Gerät vergeben. Zum erneuten Anfragen die Kiosk-App neu starten.'
+  if (kind === 'rejected')
+    return 'Der Server hat die Anmeldung dieses Tablets abgelehnt. Es versucht es jede Minute erneut – wurde es in der HR-Webapp entfernt, bitte neu einrichten.'
+  if (kind === 'unreachable')
+    return 'Server nicht erreichbar – das Tablet meldet sich automatisch wieder an, sobald er erreichbar ist.'
+  return undefined
+}

@@ -1,7 +1,7 @@
 """Kalender-Abo (iCal): ein privater Link je Person, abonnierbar in Outlook, Google
 oder Apple Kalender. Inhalt nach denselben Regeln wie die Kalender in der Webapp:
 - Admin/HR/Führungskraft: Abwesenheiten aller für sie sichtbaren Mitarbeiter mit Art.
-- Mitarbeiter: eigene Abwesenheiten; mit Teamkalender-Freigabe auch das Team (Art nur bei „farbig“,
+- Mitarbeiter: eigene Abwesenheiten; mit Teamkalender-Freigabe auch die eigene Abteilung (Art nur bei „farbig“,
   sonst „abwesend“; Arbeitszeit-Angaben nicht).
 Dazu die Feiertage. Der Link enthält ein Geheimnis; gespeichert wird nur dessen SHA-256.
 """
@@ -22,7 +22,7 @@ from app.services.absence_type_service import CATEGORY_LABELS, list_absence_type
 from app.services.holiday_service import applies_to_location
 from app.services.ical_service import CalendarEvent, build_ics
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import supervisor_team_ids
+from app.services.scope_service import visible_employee_ids
 
 router = APIRouter(tags=["calendar_feed"])
 
@@ -85,12 +85,12 @@ async def calendar_feed(token: str, request: Request, db: AsyncSession = Depends
     stmt = select(Employee).where(Employee.tenant_id == tenant.id, Employee.active.is_(True))
     if actor.is_hr_level:
         if actor.is_supervisor_level:
-            stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+            stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
         full_view = True
     else:
         team_calendar = (await get_or_create_settings(db, tenant.id)).team_calendar_for_employees
-        if team_calendar and employee.team_id is not None:
-            stmt = stmt.where(Employee.team_id == employee.team_id)
+        if team_calendar and employee.department_id is not None:
+            stmt = stmt.where(Employee.department_id == employee.department_id)
         else:
             stmt = stmt.where(Employee.id == employee.id)
         full_view = False

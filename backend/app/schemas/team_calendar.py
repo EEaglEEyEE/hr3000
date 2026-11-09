@@ -26,5 +26,5 @@ class TeamCalendarEmployee(BaseModel):
     employee_id: int
     first_name: str
     last_name: str
-    team_id: int | None
+    department_id: int | None
     days: list[TeamCalendarDay]

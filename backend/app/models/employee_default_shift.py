@@ -43,6 +43,8 @@ class EmployeeDefaultShift(Base):
     fixed_break_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     min_break_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_break_after_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    # Mehrere feste Pausenzeiten ("09:00-09:15,12:00-12:30"); NULL = höchstens eine (fixed_break_start/-end)
+    fixed_break_windows: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Kernzeit/Pünktlichkeit dieser Fassung: TENANT (oder leer) = wie in den Einstellungen,
     # CUSTOM = eigene Kernzeit (Beginn/Ende oder je Wochentag), NONE = keine Prüfung.
     core_time_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
@@ -53,6 +55,9 @@ class EmployeeDefaultShift(Base):
     flex_frame_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     flex_frame_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     flex_frame_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # Eigener Rahmen je Wochentag (Format wie core_time_days, schemas/core_time.py); NULL = jeden Tag
+    # flex_frame_start/-end.
+    flex_frame_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Toleranz der Pünktlichkeitsprüfung in Minuten (leer = wie in den Einstellungen).
     late_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Zugewiesenes Arbeitszeitmodell: Die Angaben oben kommen dann aus dessen Fassung und werden bei

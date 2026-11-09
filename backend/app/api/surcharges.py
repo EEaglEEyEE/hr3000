@@ -25,7 +25,7 @@ from app.schemas.surcharge import (
 )
 from app.services.audit_service import log_action
 from app.services.surcharge_service import compute_surcharges
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 
 router = APIRouter(tags=["surcharges"])
 

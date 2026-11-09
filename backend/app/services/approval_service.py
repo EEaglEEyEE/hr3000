@@ -1,11 +1,12 @@
 """Genehmigungsketten für Abwesenheitsanträge (je Abwesenheitsart, AbsenceTypeDefinition.approval_chain).
 
 Schritte:
-- TEAM: Teamleitung des Teams (Konto mit Rolle Führungskraft, SupervisorTeamAssignment) – bisheriges
-  Verhalten, Standard („DEFAULT“).
-- SUPERVISOR: die Führungskraft der Person (Employee.supervisor_id), wenn sie eine Verwaltungsrolle und
-  einen Zugang hat. Ist sie heute abwesend und hat eine Vertretung bei Genehmigungen
-  (approval_delegate_id), entscheidet die Vertretung. Ohne geeignete Führungskraft: Admin/HR.
+- TEAM (Standard „DEFAULT“, Name aus der Zeit der Teams): jede Führungskraft, die für die Person
+  entscheiden darf – ihre Führungskräfte, jemand darüber oder eine handelnde Stellvertretung
+  (app/services/scope_service.py).
+- SUPERVISOR: die zuständigen Führungskräfte der Person (supervisor_approvers: Ausnahme je Person bzw.
+  Leitungen der Abteilung, bei Abwesenheit die Stellvertretungen, app/services/org_service.py) – jede
+  davon darf entscheiden, alle werden benachrichtigt. Ohne Führungskraft mit Zugang: Admin/HR.
 - HR: Admin oder HR.
 
 Admin und HR dürfen jeden Schritt entscheiden (z. B. wenn die Führungskraft länger fehlt).
@@ -16,9 +17,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor
-from app.errors import AppError
-from app.models import Absence, AbsenceApprovalStatus, AbsenceType, AbsenceTypeDefinition, Employee
-from app.services.team_scope_service import ensure_employee_visible
+from app.models import Absence, AbsenceApprovalStatus, AbsenceTypeDefinition, Account, Employee
+from app.services.org_service import load_org
+from app.services.scope_service import DECIDE, able_to_decide, absent_on, acting_deputies, decidable_employee_ids
 
 CHAINS: dict[str, list[str]] = {
     "DEFAULT": ["TEAM"],
@@ -26,7 +27,7 @@ CHAINS: dict[str, list[str]] = {
     "SUPERVISOR_HR": ["SUPERVISOR", "HR"],
     "HR": ["HR"],
 }
-STEP_LABELS = {"TEAM": "Teamleitung", "SUPERVISOR": "Führungskraft", "HR": "Admin/HR"}
+STEP_LABELS = {"TEAM": "Führungskraft", "SUPERVISOR": "Führungskraft", "HR": "Admin/HR"}
 
 
 async def chain_for(db: AsyncSession, absence: Absence) -> list[str]:
@@ -40,92 +41,89 @@ def current_step(chain: list[str], absence: Absence) -> tuple[int, str]:
     return number, chain[number - 1]
 
 
-def _can_approve_as_person(employee: Employee | None) -> bool:
-    account = employee.account if employee is not None else None
-    return (
-        employee is not None
-        and employee.active
-        and account is not None
-        and account.role is not None
-        and account.email is not None
-        and account.password_hash is not None
-    )
+async def supervisor_approvers(db: AsyncSession, employee: Employee, today: date | None = None) -> list[Employee]:
+    """Wer als Führungskraft entscheidet und benachrichtigt wird – leer heißt: Admin/HR.
 
-
-async def _absent_today(db: AsyncSession, employee_id: int, today: date) -> bool:
-    return (
-        await db.execute(
-            select(Absence.id).where(
-                Absence.employee_id == employee_id,
-                Absence.approval_status == AbsenceApprovalStatus.APPROVED,
-                Absence.type != AbsenceType.WORK_TIME,
-                Absence.date_from <= today,
-                Absence.date_to >= today,
-            )
-        )
-    ).first() is not None
-
-
-async def supervisor_approver(db: AsyncSession, employee: Employee, today: date | None = None) -> Employee | None:
-    """Wer als Führungskraft entscheidet (oder deren Vertretung) – None heißt: Admin/HR."""
-    if employee.supervisor_id is None:
-        return None
-    supervisor = await db.get(Employee, employee.supervisor_id)
-    if supervisor is None or not supervisor.active:
-        return None
+    1. Ausnahme je Person, wenn sie entscheiden kann und heute da ist.
+    2. Sonst die Leitungen nach Abteilung samt Stellvertretungen, die gerade handeln (FULL immer,
+       STANDBY/ABSENCE, wenn keine Leitung verfügbar ist) – davon alle, die heute da sind.
+    3. Ist niemand da, bleiben die Zuständigen trotzdem zuständig (Ausnahme vor Abteilung), damit der
+       Antrag nicht verwaist; Admin/HR können jederzeit entscheiden.
+    Die Person selbst entscheidet nie über den eigenen Antrag."""
     today = today or date.today()
-    if supervisor.approval_delegate_id is not None and await _absent_today(db, supervisor.id, today):
-        delegate = await db.get(Employee, supervisor.approval_delegate_id)
-        if delegate is not None and delegate.id != employee.id and _can_approve_as_person(delegate):
-            return delegate
-    if _can_approve_as_person(supervisor):
-        return supervisor
-    return None
+    org = await load_org(db, employee.tenant_id)
+    override = org.override(employee.id)
+    extra = await acting_deputies(db, org, today, DECIDE)
+    department = [e for e in org.department_supervisors(employee.id, extra) if e != employee.id]
+    candidates = ([override] if override is not None else []) + [e for e in department if e != override]
+    able = await able_to_decide(db, set(candidates))
+    absent = await absent_on(db, able, today)
+    if override is not None and override in able and override not in absent:
+        chosen = [override]
+    else:
+        chosen = [e for e in department if e in able and e not in absent]
+        if not chosen:
+            chosen = [override] if override is not None and override in able else [e for e in department if e in able]
+    people = {p.id: p for p in (await db.execute(select(Employee).where(Employee.id.in_(chosen)))).scalars().all()} if chosen else {}
+    return [people[e] for e in chosen if e in people]
 
 
 async def can_decide(db: AsyncSession, actor: Actor, absence: Absence, employee: Employee) -> bool:
     if actor.is_full_hr_level:
         return True
+    if actor.employee is not None and actor.employee.id == employee.id:
+        return False  # eigene Anträge nie selbst
     _, step = current_step(await chain_for(db, absence), absence)
     if step == "TEAM":
         if not actor.is_supervisor_level:
             return False
-        try:
-            await ensure_employee_visible(db, actor, employee)
-        except AppError:
-            return False
-        return True
+        decidable = await decidable_employee_ids(db, actor)
+        return decidable is not None and employee.id in decidable
     if step == "SUPERVISOR":
-        approver = await supervisor_approver(db, employee)
-        return approver is not None and actor.employee is not None and actor.employee.id == approver.id
+        if actor.employee is None:
+            return False
+        return any(approver.id == actor.employee.id for approver in await supervisor_approvers(db, employee))
     return False
 
 
 async def waiting_for(db: AsyncSession, absence: Absence, employee: Employee) -> str | None:
-    """Für die Anzeige: bei wem der offene Antrag gerade liegt (z. B. „Führungskraft: Bea Test“)."""
+    """Für die Anzeige: bei wem der offene Antrag gerade liegt (z. B. „Führungskraft Bea Test“)."""
     if absence.approval_status != AbsenceApprovalStatus.PENDING:
         return None
     chain = await chain_for(db, absence)
     number, step = current_step(chain, absence)
     prefix = f"Schritt {number} von {len(chain)}: " if len(chain) > 1 else ""
     if step == "SUPERVISOR":
-        approver = await supervisor_approver(db, employee)
-        if approver is None:
+        approvers = await supervisor_approvers(db, employee)
+        if not approvers:
             return f"{prefix}Admin/HR (keine Führungskraft mit Zugang)"
-        return f"{prefix}Führungskraft {approver.first_name} {approver.last_name}"
+        label = "Führungskraft" if len(approvers) == 1 else "Führungskräfte"
+        return f"{prefix}{label} " + ", ".join(f"{a.first_name} {a.last_name}" for a in approvers)
     return prefix + STEP_LABELS[step]
 
 
+async def approver_recipients(db: AsyncSession, employee: Employee) -> list[tuple[int, str | None]]:
+    """Konten der zuständigen Führungskräfte (leer = niemand mit Zugang)."""
+    approvers = await supervisor_approvers(db, employee)
+    if not approvers:
+        return []
+    accounts = (
+        await db.execute(select(Account).where(Account.employee_id.in_([a.id for a in approvers])))
+    ).scalars().all()
+    by_employee = {a.employee_id: a for a in accounts}
+    return [(by_employee[a.id].id, by_employee[a.id].email) for a in approvers if a.id in by_employee]
+
+
 async def step_recipients(db: AsyncSession, absence: Absence, employee: Employee) -> list[tuple[int, str | None]] | None:
-    """Wer über den aktuellen Schritt benachrichtigt wird; None = bisherige Regel (Teamleitungen,
-    sonst Admin/HR)."""
+    """Wer über den aktuellen Schritt benachrichtigt wird; None = Standardregel (zuständige
+    Führungskräfte, sonst Admin/HR, siehe notify_absence_requested)."""
     from app.services.notification_service import full_hr_recipients
 
     _, step = current_step(await chain_for(db, absence), absence)
     if step == "TEAM":
         return None
     if step == "SUPERVISOR":
-        approver = await supervisor_approver(db, employee)
-        if approver is not None:
-            return [(approver.account.id, approver.account.email)]
+        recipients = await approver_recipients(db, employee)
+        if recipients:
+            return recipients
     return await full_hr_recipients(db, employee.tenant_id, exclude_employee_id=employee.id)

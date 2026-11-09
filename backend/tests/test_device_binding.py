@@ -42,7 +42,10 @@ async def test_pairing_moves_the_access_to_the_new_tablet(client: AsyncClient, d
     old_headers = {"Authorization": f"Bearer {old_session}"}
     assert (await client.get("/device/config", headers=old_headers)).status_code == 200
 
-    code = (await client.post(f"/devices/{device.id}/pairing-code", headers=hr)).json()["code"]
+    # Das Tablet ist verbunden: ein QR-Code nur mit ausdrücklichem Tausch
+    refused = await client.post(f"/devices/{device.id}/pairing-code", headers=hr)
+    assert refused.status_code == 409 and refused.json()["code"] == "DEVICE_BOUND"
+    code = (await client.post(f"/devices/{device.id}/pairing-code", headers=hr, json={"replace_bound": True})).json()["code"]
     paired = await client.post("/auth/device/pair", json={"code": code, "installation_id": TABLET_B})
     new_token = paired.json()["device_token"]
 

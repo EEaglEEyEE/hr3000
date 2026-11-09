@@ -92,3 +92,34 @@ async def test_email_step_without_mail_setup_stays_open(client: AsyncClient, db_
     started = (await client.post(f"/employees/{neu.id}/checklists", headers=t["chefin"], json={"template_id": template["id"]})).json()
     item = started["items"][0]
     assert item["done"] is False and "kein Mailversand" in item["note"]
+
+
+async def test_email_step_for_supervisor_goes_to_all_heads(client: AsyncClient, db_session: AsyncSession, monkeypatch) -> None:
+    from org_helpers import department
+
+    neu, t = await _setup(client, db_session)
+    heads = [
+        Employee(location_id=neu.location_id, first_name=first, last_name="Leitung", employee_number=number, login_email=email)
+        for first, number, email in (("Ada", "2", "ada@example.com"), ("Bo", "3", "bo@example.com"), ("Cy", "4", None))
+    ]
+    db_session.add_all(heads)
+    await db_session.commit()
+    await department(db_session, "Vertrieb", neu, heads=tuple(heads))  # Cy ohne E-Mail-Adresse
+    sent = []
+
+    async def fake_send(to, subject, body, config=None):
+        sent.append(to)
+        return True
+
+    async def fake_config(db, tenant_id):
+        return object()
+
+    monkeypatch.setattr("app.services.email_service.send_email", fake_send)
+    monkeypatch.setattr("app.services.email_service.resolve_smtp_config", fake_config)
+    template = (await client.post("/checklist-templates", headers=t["chefin"], json={
+        "kind": "ONBOARDING", "name": "Start",
+        "items": [{"title": "Einarbeitung planen", "responsible": "SUPERVISOR", "action": "SEND_EMAIL", "description": "{{vorname}} fängt an"}],
+    })).json()
+    started = (await client.post(f"/employees/{neu.id}/checklists", headers=t["chefin"], json={"template_id": template["id"]})).json()
+    assert sorted(sent) == ["ada@example.com", "bo@example.com"]
+    assert started["items"][0]["done"] is True

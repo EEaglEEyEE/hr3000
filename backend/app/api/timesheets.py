@@ -20,7 +20,7 @@ from app.schemas.timesheet import (
 from app.services.monthly_cap_service import WARN_SHARE, monthly_cap_status
 from app.services.notification_service import notify_open_days_digest
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import ensure_employee_visible, supervisor_team_ids
+from app.services.scope_service import ensure_employee_visible, visible_employee_ids
 from app.services.timesheet_service import (
     balance_as_of,
     balance_start,
@@ -120,8 +120,8 @@ async def list_open_days(
     if location_id is not None:
         stmt = stmt.where(Employee.location_id == location_id)
     if actor.is_supervisor_level:
-        team_ids = await supervisor_team_ids(db, actor)
-        stmt = stmt.where(Employee.team_id.in_(team_ids or set()))
+        visible = await visible_employee_ids(db, actor)
+        stmt = stmt.where(Employee.id.in_(visible or set()))
     stmt = stmt.order_by(DailySummary.work_date.asc())
 
     candidates = (await db.execute(stmt)).all()
@@ -189,7 +189,7 @@ async def list_monthly_caps(
         .distinct()
     )
     if actor.is_supervisor_level:
-        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+        stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     rows = []
     for employee in (await db.execute(stmt)).scalars().all():
         status = await monthly_cap_status(db, employee)
@@ -220,7 +220,7 @@ async def list_balance_limits(
         return []
     stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
     if actor.is_supervisor_level:
-        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+        stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     rows = []
     for employee in (await db.execute(stmt)).scalars().all():
         balance = (await balance_as_of(db, employee)).total_minutes

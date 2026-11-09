@@ -8,7 +8,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import Employee
 from app.services.shift_plan_pdf_service import render_shift_plan_pdf
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 
 router = APIRouter(tags=["shift_plan_pdf"])
 

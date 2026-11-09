@@ -231,7 +231,6 @@ describe('Mitarbeiter: Kernzeit im Arbeitszeitmodell', () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     const calls = mockApi({
       'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true, default_auto_break: true, default_show_birthday: true },
-      'GET /teams': [],
       'POST /employees': (init: ApiInit) => ({ id: 9, ...(init.body as object) }),
     })
     renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)

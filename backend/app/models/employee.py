@@ -28,19 +28,12 @@ class Employee(Base):
     # auf praktisch jedem Request gefiltert wird, siehe Plan zur Mandantenfähigkeit.
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))
-    # Grundlage für die Supervisor-Rollenbeschränkung, siehe
-    # app/services/team_scope_service.py. Nullable, da nicht jeder
-    # Mitarbeiter zwingend einem Team zugeordnet sein muss.
-    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
-    # Abteilung (hierarchisch, app/models/department.py), Position und Führungskraft (ein anderer
-    # Mitarbeiter) – Grundlage für Organigramm und Genehmigungen über die Führungskraft.
+    # Abteilung (hierarchisch, app/models/department.py) – einzige Organisationsstruktur; ihre Leitungen
+    # sind die Führungskräfte. supervisor_id ist die abweichende Führungskraft (Ausnahme je Person).
+    # Wirksame Führungskraft und Zuständigkeit: app/services/org_service.py, scope_service.py.
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
     position: Mapped[str | None] = mapped_column(String(150), nullable=True)
     supervisor_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
-    # Vertretung bei Genehmigungen: entscheidet für diese Person (als Führungskraft), solange sie abwesend ist
-    approval_delegate_id: Mapped[int | None] = mapped_column(
-        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
-    )
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     employee_number: Mapped[str] = mapped_column(String(50))

@@ -87,7 +87,7 @@ export function SelfServicePage() {
             <TabsTrigger value="overview">Übersicht</TabsTrigger>
             <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
             <TabsTrigger value="calendar">Kalender</TabsTrigger>
-            {teamCalendarEnabled && <TabsTrigger value="teamcalendar">Teamkalender</TabsTrigger>}
+            {teamCalendarEnabled && <TabsTrigger value="teamcalendar">Abteilungskalender</TabsTrigger>}
             {orgChartEnabled && <TabsTrigger value="orgchart">Organigramm</TabsTrigger>}
             <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>
             <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>

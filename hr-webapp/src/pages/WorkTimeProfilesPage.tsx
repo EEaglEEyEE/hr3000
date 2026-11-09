@@ -60,7 +60,7 @@ export function WorkTimeProfilesPage() {
           loadToken="new"
           heading="Neues Arbeitszeitmodell"
           withValidFrom={false}
-          withFlexFrame
+          withTolerance
           extraValid={name.trim() !== ''}
           pending={createProfile.isPending}
           savedText="Arbeitszeitmodell angelegt."
@@ -71,7 +71,7 @@ export function WorkTimeProfilesPage() {
             <Label htmlFor="profile-name">Name</Label>
             <Input
               id="profile-name"
-              className="w-72"
+              className="w-72 max-w-full"
               maxLength={100}
               placeholder="z. B. Vollzeit Büro"
               value={name}
@@ -225,7 +225,7 @@ function ProfileCard({ profile }: { profile: WorkTimeProfile }) {
           loadToken={`profile-${profile.id}`}
           heading={`„${profile.name}“ ändern ab Stichtag`}
           highlighted
-          withFlexFrame
+          withTolerance
           validFromHint="Gilt ab diesem Tag für alle zugewiesenen Mitarbeiter und ersetzt spätere Fassungen des Modells. Die Zeit davor bleibt unverändert; liegt bei einem Mitarbeiter ein abgeschlossener Monat ab diesem Tag, wird nichts geändert."
           pending={setModel.isPending}
           savedText="Arbeitszeitmodell gespeichert."

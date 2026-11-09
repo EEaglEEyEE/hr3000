@@ -155,7 +155,7 @@ describe('Einstellungen', () => {
     const calls = mockApi({ 'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true } })
     const { unmount } = renderSettings('/einstellungen')
     const links = await within(settingsNav()).findAllByRole('link')
-    expect(links.map((link) => link.textContent)).toEqual(['Standorte', 'Teams', 'Abteilungen', 'Kostenstellen', 'Feiertagskalender', 'Arbeitszeitmodelle', 'Tablets', 'Audit-Protokoll'])
+    expect(links.map((link) => link.textContent)).toEqual(['Standorte', 'Abteilungen', 'Kostenstellen', 'Feiertagskalender', 'Arbeitszeitmodelle', 'Tablets', 'Audit-Protokoll'])
     expect(calls.some((call) => call.path === '/settings')).toBe(false)
     unmount()
 

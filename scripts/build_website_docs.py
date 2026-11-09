@@ -27,7 +27,7 @@ OUT = ROOT / "website" / "doku"
 
 # Quelle -> (Pfad auf der Website, Kurztitel für Übersicht/Navigation, Beschreibung)
 PAGES = {
-    "handbuch-admin.md": ("admin", "Handbuch für Admins, HR und Teamleader", "Einrichtung, Tagesgeschäft, Abrechnung und alle Einstellungen."),
+    "handbuch-admin.md": ("admin", "Handbuch für Admins, HR und Führungskräfte", "Einrichtung, Tagesgeschäft, Abrechnung und alle Einstellungen."),
     "handbuch-mitarbeiter.md": ("mitarbeiter", "Handbuch für Mitarbeiter", "Stempeln am Tablet und im Browser, „Mein Bereich“."),
     "aenderungen.md": ("aenderungen", "Änderungen", "Was sich wann geändert hat."),
 }

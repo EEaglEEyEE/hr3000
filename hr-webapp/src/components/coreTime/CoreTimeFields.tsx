@@ -60,7 +60,7 @@ export function CoreTimeFields({ value, onChange }: { value: CoreTimeValue; onCh
       <Label htmlFor="core_time_mode">Kernarbeitszeit / Pünktlichkeit</Label>
       <select
         id="core_time_mode"
-        className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
+        className="h-9 w-72 max-w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
         value={value.mode}
         onChange={(event) => onChange({ ...value, mode: event.target.value as CoreTimeMode })}
       >

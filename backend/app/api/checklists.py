@@ -29,6 +29,7 @@ from app.schemas.checklist import (
     TemplateUpdateRequest,
 )
 from app.services.audit_service import log_action
+from app.services.org_service import supervisor_ids
 
 router = APIRouter(tags=["checklists"])
 
@@ -364,8 +365,9 @@ async def _send_email_step(db: AsyncSession, actor: Actor, employee: Employee, i
         private = (await personal_data_service.load(db, employee.id)).get("private_email")
         recipients = [employee.login_email or private]
     elif item.responsible == ChecklistRole.SUPERVISOR:
-        supervisor = await db.get(Employee, employee.supervisor_id) if employee.supervisor_id else None
-        recipients = [supervisor.login_email if supervisor else None]
+        ids = await supervisor_ids(db, employee)
+        supervisors = (await db.execute(select(Employee).where(Employee.id.in_(ids)))).scalars().all() if ids else []
+        recipients = [supervisor.login_email for supervisor in supervisors]
     else:
         recipients = [email for _, email in await full_hr_recipients(db, actor.tenant_id)]
     recipients = [r for r in recipients if r]

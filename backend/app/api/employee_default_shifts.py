@@ -14,7 +14,7 @@ from app.schemas.employee_default_shift import (
     EmployeeDefaultShiftUpdateRequest,
 )
 from app.services.shift_planning_service import check_max_daily_working_time, check_rest_period_for_default
-from app.services.team_scope_service import ensure_employee_visible
+from app.services.scope_service import ensure_employee_visible
 from app.services.period_service import ensure_open_from, ensure_range_open
 from app.services.timesheet_service import invalidate_balance
 
@@ -74,7 +74,7 @@ async def create_default_shift(
     schließt diesen automatisch zum Vortag ab. Zusätzlich: ArbZG-Ruhezeitprüfung über die
     gesamte Laufzeit (siehe check_rest_period_for_default), da ein Default im Gegensatz zu einem
     ShiftPlanEntry sofort und unbegrenzt in die Zukunft wirkt. Die Kernzeit übernimmt er von der
-    bisher gültigen Fassung."""
+    bisher gültigen Fassung, ebenso den Gleitzeit-Rahmen."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     template = await _get_template_in_tenant(db, payload.shift_template_id, actor.tenant_id)
     if payload.valid_to is not None and payload.valid_to < payload.valid_from:
@@ -124,6 +124,10 @@ async def create_default_shift(
         core_time_start=inherit.core_time_start if inherit else None,
         core_time_end=inherit.core_time_end if inherit else None,
         core_time_days=inherit.core_time_days if inherit else None,
+        flex_frame_mode=inherit.flex_frame_mode if inherit else None,
+        flex_frame_start=inherit.flex_frame_start if inherit else None,
+        flex_frame_end=inherit.flex_frame_end if inherit else None,
+        flex_frame_days=inherit.flex_frame_days if inherit else None,
     )
     db.add(default)
     await invalidate_balance(db, employee_id, payload.valid_from)

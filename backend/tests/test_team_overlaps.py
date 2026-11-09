@@ -1,26 +1,26 @@
-"""Überschneidungen im Team: beim Antrag (Mitarbeiter nur mit Einstellung, ohne Art) und bei der
-Genehmigung (mit Art und Resturlaub)."""
+"""Überschneidungen in der Abteilung (genau dieselbe, ohne Unterabteilungen): beim Antrag (Mitarbeiter nur
+mit Einstellung, ohne Art) und bei der Genehmigung (mit Art und Resturlaub)."""
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, Team
+from app.models import Employee
+from org_helpers import department
 from app.services.auth_service import hash_password
 from tests.test_absence_types import _setup, _types
 
 
 async def _team_setup(db_session: AsyncSession, client: AsyncClient):
     employee, headers = await _setup(db_session, client)
-    team = Team(tenant_id=employee.tenant_id, name="Vertrieb")
-    other_team = Team(tenant_id=employee.tenant_id, name="Lager")
-    db_session.add_all([team, other_team])
+    colleague = Employee(location_id=employee.location_id, first_name="Max", last_name="Kollege", employee_number="A2")
+    stranger = Employee(location_id=employee.location_id, first_name="Lea", last_name="Lager", employee_number="A3")
+    sub = Employee(location_id=employee.location_id, first_name="Uwe", last_name="Unter", employee_number="A4")
+    db_session.add_all([colleague, stranger, sub])
     await db_session.commit()
-    employee.team_id = team.id
-    colleague = Employee(location_id=employee.location_id, first_name="Max", last_name="Kollege", employee_number="A2", team_id=team.id)
-    stranger = Employee(location_id=employee.location_id, first_name="Lea", last_name="Lager", employee_number="A3", team_id=other_team.id)
-    db_session.add_all([colleague, stranger])
-    await db_session.commit()
+    sales = await department(db_session, "Vertrieb", employee, colleague)
+    await department(db_session, "Lager", stranger)
+    await department(db_session, "Innendienst", sub, parent=sales)  # Unterabteilung zählt nicht mit
     vacation = (await _types(client, headers))["Urlaub"]
-    for person in (colleague, stranger):
+    for person in (colleague, stranger, sub):
         r = await client.post(
             "/absences", headers=headers,
             json={"employee_id": person.id, "absence_type_id": vacation["id"], "date_from": "2025-03-10", "date_to": "2025-03-14"},

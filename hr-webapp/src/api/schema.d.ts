@@ -739,6 +739,8 @@ export interface paths {
         /**
          * Create Pairing Code
          * @description Kurzer Code (15 Min., einmalig) zum Einrichten eines Tablets ohne das lange Token abzutippen.
+         *     Ist das Tablet schon mit einem Gerät verbunden, nur mit replace_bound (Tablet-Tausch): sonst würde
+         *     ein zweites Gerät den Eintrag übernehmen und das verbundene unbemerkt abmelden.
          */
         post: operations["create_pairing_code_devices__device_id__pairing_code_post"];
         delete?: never;
@@ -1044,7 +1046,7 @@ export interface paths {
         /**
          * List Pending Absences
          * @description Für die "Urlaubsanträge"-Seite: offene PENDING-Anträge, für einen
-         *     Supervisor auf die eigenen Teams eingeschränkt.
+         *     Führungskräfte auf das, was gerade bei ihnen liegt.
          */
         get: operations["list_pending_absences_absences_pending_get"];
         put?: never;
@@ -1064,7 +1066,7 @@ export interface paths {
         };
         /**
          * List Team Overlaps
-         * @description Wer aus dem Team im Zeitraum abwesend ist – für den Antrag. Genehmigende sehen die Art,
+         * @description Wer aus der Abteilung im Zeitraum abwesend ist – für den Antrag. Genehmigende sehen die Art,
          *     Mitarbeiter nur Namen und Zeitraum und nur mit der Einstellung
          *     „absence_overlaps_for_employees“ (sonst leer).
          */
@@ -1137,7 +1139,7 @@ export interface paths {
         /**
          * Decide Absence
          * @description Genehmigt/lehnt einen PENDING-Urlaubsantrag ab – nur für Supervisor
-         *     (eigenes Team) oder Admin/HR.
+         *     (eigener Bereich) oder Admin/HR.
          */
         patch: operations["decide_absence_absences__absence_id__decide_patch"];
         trace?: never;
@@ -2404,81 +2406,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/teams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Teams
-         * @description Supervisor sieht nur die eigenen Teams (siehe team_scope_service),
-         *     Admin/HR sieht alle Teams des Mandanten.
-         */
-        get: operations["list_teams_teams_get"];
-        put?: never;
-        /** Create Team */
-        post: operations["create_team_teams_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/teams/{team_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Team */
-        delete: operations["delete_team_teams__team_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Team */
-        patch: operations["update_team_teams__team_id__patch"];
-        trace?: never;
-    };
-    "/supervisor-team-assignments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Supervisor Team Assignments */
-        get: operations["list_supervisor_team_assignments_supervisor_team_assignments_get"];
-        put?: never;
-        /** Create Supervisor Team Assignment */
-        post: operations["create_supervisor_team_assignment_supervisor_team_assignments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/supervisor-team-assignments/{assignment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Supervisor Team Assignment */
-        delete: operations["delete_supervisor_team_assignment_supervisor_team_assignments__assignment_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/shift-templates": {
         parameters: {
             query?: never;
@@ -2535,7 +2462,7 @@ export interface paths {
          *     schließt diesen automatisch zum Vortag ab. Zusätzlich: ArbZG-Ruhezeitprüfung über die
          *     gesamte Laufzeit (siehe check_rest_period_for_default), da ein Default im Gegensatz zu einem
          *     ShiftPlanEntry sofort und unbegrenzt in die Zukunft wirkt. Die Kernzeit übernimmt er von der
-         *     bisher gültigen Fassung.
+         *     bisher gültigen Fassung, ebenso den Gleitzeit-Rahmen.
          */
         post: operations["create_default_shift_employees__employee_id__default_shifts_post"];
         delete?: never;
@@ -2949,8 +2876,8 @@ export interface paths {
         /**
          * Get Team Calendar
          * @description Monatsübersicht über Urlaub/Krankheit/Feiertage für alle für den Actor
-         *     sichtbaren Mitarbeiter (Supervisor: nur eigene Teams, siehe
-         *     app/services/team_scope_service.py). Bewusst ohne Ist-Zeit-Berechnung –
+         *     sichtbaren Mitarbeiter (Führungskraft: der eigene Bereich, siehe
+         *     app/services/scope_service.py). Bewusst ohne Ist-Zeit-Berechnung –
          *     reine Absenz-/Feiertagsübersicht, daher zwei Bulk-Queries (Holiday,
          *     Absence) statt einer Punch-Historie-Abfrage pro Tag und Mitarbeiter wie
          *     bei calculate_day.
@@ -2973,7 +2900,7 @@ export interface paths {
         };
         /**
          * Get My Team Calendar
-         * @description Teamkalender für Mitarbeiter („Mein Bereich“): das eigene Team (ohne Team nur man selbst).
+         * @description Teamkalender für Mitarbeiter („Mein Bereich“): die eigene Abteilung (ohne Abteilung nur man selbst).
          *     Bei Kollegen erscheint die Art nur bei Abwesenheitsarten mit „im Teamkalender farbig“, sonst
          *     „ausgegraut“; Arbeitszeit-Angaben (Homeoffice) gar nicht. Nur mit Einstellung
          *     team_calendar_for_employees.
@@ -4638,14 +4565,19 @@ export interface components {
             termination_date: string | null;
             /** Location Id */
             location_id: number;
-            /** Team Id */
-            team_id: number | null;
+            /** Department Id */
+            department_id: number | null;
             /** Department */
             department: string | null;
             /** Position */
             position: string | null;
             /** Supervisor Id */
             supervisor_id: number | null;
+            /**
+             * Supervisor Ids
+             * @default []
+             */
+            supervisor_ids: number[];
         };
         /** ApiPunch */
         ApiPunch: {
@@ -5043,6 +4975,22 @@ export interface components {
             end_time?: string | null;
             /** Valid From */
             valid_from?: string | null;
+        };
+        /**
+         * BreakWindow
+         * @description Eine feste Pausenzeit (Ortszeit), z.B. 12:00–12:30.
+         */
+        BreakWindow: {
+            /**
+             * Start
+             * Format: time
+             */
+            start: string;
+            /**
+             * End
+             * Format: time
+             */
+            end: string;
         };
         /** BulkImportResult */
         BulkImportResult: {
@@ -5672,6 +5620,44 @@ export interface components {
             name: string;
             /** Parent Id */
             parent_id?: number | null;
+            /** Leaders */
+            leaders?: components["schemas"]["DepartmentLeaderInput"][];
+        };
+        /** DepartmentLeaderInput */
+        DepartmentLeaderInput: {
+            /** Employee Id */
+            employee_id: number;
+            /**
+             * Role
+             * @default HEAD
+             * @enum {string}
+             */
+            role: "HEAD" | "DEPUTY";
+            /**
+             * Deputy Rights
+             * @default STANDBY
+             * @enum {string}
+             */
+            deputy_rights: "STANDBY" | "FULL" | "ABSENCE";
+        };
+        /** DepartmentLeaderResponse */
+        DepartmentLeaderResponse: {
+            /** Employee Id */
+            employee_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "HEAD" | "DEPUTY";
+            /**
+             * Deputy Rights
+             * @enum {string}
+             */
+            deputy_rights: "STANDBY" | "FULL" | "ABSENCE";
+            /** Active */
+            active: boolean;
         };
         /** DepartmentResponse */
         DepartmentResponse: {
@@ -5681,6 +5667,11 @@ export interface components {
             name: string;
             /** Parent Id */
             parent_id: number | null;
+            /**
+             * Leaders
+             * @default []
+             */
+            leaders: components["schemas"]["DepartmentLeaderResponse"][];
             /**
              * Employee Count
              * @default 0
@@ -5698,6 +5689,8 @@ export interface components {
              * @default false
              */
             clear_parent_id: boolean;
+            /** Leaders */
+            leaders?: components["schemas"]["DepartmentLeaderInput"][] | null;
         };
         /** DeviceCreateRequest */
         DeviceCreateRequest: {
@@ -6138,16 +6131,12 @@ export interface components {
             birth_date?: string | null;
             /** Show Birthday In Calendar */
             show_birthday_in_calendar?: boolean | null;
-            /** Team Id */
-            team_id?: number | null;
             /** Department Id */
             department_id?: number | null;
             /** Position */
             position?: string | null;
             /** Supervisor Id */
             supervisor_id?: number | null;
-            /** Approval Delegate Id */
-            approval_delegate_id?: number | null;
             work_time_model?: components["schemas"]["WorkTimeModelInput"] | null;
             /**
              * No Work Time Model
@@ -6337,16 +6326,19 @@ export interface components {
             birth_date: string | null;
             /** Show Birthday In Calendar */
             show_birthday_in_calendar: boolean;
-            /** Team Id */
-            team_id: number | null;
             /** Department Id */
             department_id?: number | null;
             /** Position */
             position?: string | null;
             /** Supervisor Id */
             supervisor_id?: number | null;
-            /** Approval Delegate Id */
-            approval_delegate_id?: number | null;
+            /**
+             * Effective Supervisor Ids
+             * @default []
+             */
+            effective_supervisor_ids: number[];
+            /** Supervisor Source */
+            supervisor_source?: ("OVERRIDE" | "DEPARTMENT") | null;
             /**
              * Employment Status
              * @default ACTIVE
@@ -6407,13 +6399,6 @@ export interface components {
             clear_birth_date: boolean;
             /** Show Birthday In Calendar */
             show_birthday_in_calendar?: boolean | null;
-            /** Team Id */
-            team_id?: number | null;
-            /**
-             * Clear Team Id
-             * @default false
-             */
-            clear_team_id: boolean;
             /** Department Id */
             department_id?: number | null;
             /**
@@ -6430,13 +6415,6 @@ export interface components {
              * @default false
              */
             clear_supervisor_id: boolean;
-            /** Approval Delegate Id */
-            approval_delegate_id?: number | null;
-            /**
-             * Clear Approval Delegate Id
-             * @default false
-             */
-            clear_approval_delegate_id: boolean;
         };
         /** EmployeesPage */
         EmployeesPage: {
@@ -6548,6 +6526,19 @@ export interface components {
             default_show_birthday: boolean;
             /** Default Day Minutes */
             default_day_minutes?: number[] | null;
+        };
+        /** FlexFrameDay */
+        FlexFrameDay: {
+            /**
+             * Start
+             * Format: time
+             */
+            start: string;
+            /**
+             * End
+             * Format: time
+             */
+            end: string;
         };
         /** GenerateRequest */
         GenerateRequest: {
@@ -7096,6 +7087,32 @@ export interface components {
             /** Actual Minutes */
             actual_minutes?: number | null;
         };
+        /** OrgChartDepartment */
+        OrgChartDepartment: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: number | null;
+            /** Leaders */
+            leaders: components["schemas"]["OrgChartLeader"][];
+        };
+        /** OrgChartLeader */
+        OrgChartLeader: {
+            /** Employee Id */
+            employee_id: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "HEAD" | "DEPUTY";
+            /**
+             * Deputy Rights
+             * @enum {string}
+             */
+            deputy_rights: "STANDBY" | "FULL" | "ABSENCE";
+        };
         /** OrgChartPerson */
         OrgChartPerson: {
             /** Employee Id */
@@ -7110,8 +7127,19 @@ export interface components {
             department_id: number | null;
             /** Department */
             department: string | null;
-            /** Supervisor Id */
-            supervisor_id: number | null;
+            /** Supervisor Ids */
+            supervisor_ids: number[];
+        };
+        /**
+         * OrgChartResponse
+         * @description Abteilungsbaum mit Leitungen und Stellvertretungen; people enthält alle aktiven Mitarbeiter
+         *     (department_id = wo sie stehen, ohne Abteilung = None).
+         */
+        OrgChartResponse: {
+            /** Departments */
+            departments: components["schemas"]["OrgChartDepartment"][];
+            /** People */
+            people: components["schemas"]["OrgChartPerson"][];
         };
         /** OvertimeBalanceResponse */
         OvertimeBalanceResponse: {
@@ -7165,6 +7193,18 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /**
+         * PairingCodeRequest
+         * @description QR-Code für ein Tablet, das schon mit einem Gerät verbunden ist, nur mit ausdrücklichem
+         *     replace_bound: Koppeln meldet das bisherige Gerät ab (Tablet-Tausch).
+         */
+        PairingCodeRequest: {
+            /**
+             * Replace Bound
+             * @default false
+             */
+            replace_bound: boolean;
         };
         /** PairingCodeResponse */
         PairingCodeResponse: {
@@ -8415,29 +8455,6 @@ export interface components {
          */
         SummaryStatus: "COMPLETE" | "OPEN_MISSING_PUNCH" | "ABSENCE" | "PRESENT" | "ON_BREAK" | "ON_ERRAND" | "ERROR" | "HOLIDAY" | "PLANNED_OFF";
         /**
-         * SupervisorTeamAssignmentCreateRequest
-         * @description Teamleitung zuordnen: über den Mitarbeiter (mit Zugang) oder direkt über das Konto.
-         */
-        SupervisorTeamAssignmentCreateRequest: {
-            /** Team Id */
-            team_id: number;
-            /** Employee Id */
-            employee_id?: number | null;
-            /** Account Id */
-            account_id?: number | null;
-        };
-        /** SupervisorTeamAssignmentResponse */
-        SupervisorTeamAssignmentResponse: {
-            /** Id */
-            id: number;
-            /** Team Id */
-            team_id: number;
-            /** Account Id */
-            account_id: number;
-            /** Employee Id */
-            employee_id: number | null;
-        };
-        /**
          * SurchargeKind
          * @enum {string}
          */
@@ -8597,21 +8614,14 @@ export interface components {
             first_name: string;
             /** Last Name */
             last_name: string;
-            /** Team Id */
-            team_id: number | null;
+            /** Department Id */
+            department_id: number | null;
             /** Days */
             days: components["schemas"]["TeamCalendarDay"][];
         };
-        /** TeamCreateRequest */
-        TeamCreateRequest: {
-            /** Name */
-            name: string;
-            /** Location Id */
-            location_id?: number | null;
-        };
         /**
          * TeamOverlap
-         * @description Abwesenheit einer anderen Person aus demselben Team im gefragten Zeitraum.
+         * @description Abwesenheit einer anderen Person aus derselben Abteilung im gefragten Zeitraum.
          */
         TeamOverlap: {
             /** Employee Id */
@@ -8637,27 +8647,6 @@ export interface components {
             pending: boolean;
             /** Type Name */
             type_name?: string | null;
-        };
-        /** TeamResponse */
-        TeamResponse: {
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Location Id */
-            location_id: number | null;
-        };
-        /** TeamUpdateRequest */
-        TeamUpdateRequest: {
-            /** Name */
-            name?: string | null;
-            /** Location Id */
-            location_id?: number | null;
-            /**
-             * Clear Location Id
-             * @default false
-             */
-            clear_location_id: boolean;
         };
         /** TemplateCreateRequest */
         TemplateCreateRequest: {
@@ -9268,6 +9257,8 @@ export interface components {
             break_start?: string | null;
             /** Break End */
             break_end?: string | null;
+            /** Break Windows */
+            break_windows?: components["schemas"]["BreakWindow"][] | null;
             /** Shift Template Id */
             shift_template_id?: number | null;
             /** Core Time Mode */
@@ -9278,6 +9269,14 @@ export interface components {
             core_time_end?: string | null;
             /** Core Time Days */
             core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /** Flex Frame Mode */
+            flex_frame_mode?: ("TENANT" | "CUSTOM" | "NONE") | null;
+            /** Flex Frame Start */
+            flex_frame_start?: string | null;
+            /** Flex Frame End */
+            flex_frame_end?: string | null;
+            /** Flex Frame Days */
+            flex_frame_days?: (components["schemas"]["FlexFrameDay"] | null)[] | null;
         };
         /** WorkTimeModelResponse */
         WorkTimeModelResponse: {
@@ -9327,6 +9326,8 @@ export interface components {
             break_start: string | null;
             /** Break End */
             break_end: string | null;
+            /** Break Windows */
+            break_windows: components["schemas"]["BreakWindow"][] | null;
             /**
              * Break From Template
              * @default false
@@ -9362,6 +9363,8 @@ export interface components {
             flex_frame_start: string | null;
             /** Flex Frame End */
             flex_frame_end: string | null;
+            /** Flex Frame Days */
+            flex_frame_days: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes: number | null;
             /** Profile Id */
@@ -9405,6 +9408,8 @@ export interface components {
             break_start?: string | null;
             /** Break End */
             break_end?: string | null;
+            /** Break Windows */
+            break_windows?: components["schemas"]["BreakWindow"][] | null;
             /** Shift Template Id */
             shift_template_id?: number | null;
             /** Core Time Mode */
@@ -9415,6 +9420,14 @@ export interface components {
             core_time_end?: string | null;
             /** Core Time Days */
             core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /** Flex Frame Mode */
+            flex_frame_mode?: ("TENANT" | "CUSTOM" | "NONE") | null;
+            /** Flex Frame Start */
+            flex_frame_start?: string | null;
+            /** Flex Frame End */
+            flex_frame_end?: string | null;
+            /** Flex Frame Days */
+            flex_frame_days?: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /**
              * Valid From
              * Format: date
@@ -9472,6 +9485,8 @@ export interface components {
             break_start: string | null;
             /** Break End */
             break_end: string | null;
+            /** Break Windows */
+            break_windows: components["schemas"]["BreakWindow"][] | null;
             /**
              * Break From Template
              * @default false
@@ -9507,6 +9522,8 @@ export interface components {
             flex_frame_start: string | null;
             /** Flex Frame End */
             flex_frame_end: string | null;
+            /** Flex Frame Days */
+            flex_frame_days: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes: number | null;
             /** Profile Id */
@@ -9566,6 +9583,8 @@ export interface components {
             break_start?: string | null;
             /** Break End */
             break_end?: string | null;
+            /** Break Windows */
+            break_windows?: components["schemas"]["BreakWindow"][] | null;
             /** Shift Template Id */
             shift_template_id?: number | null;
             /** Core Time Mode */
@@ -9586,6 +9605,8 @@ export interface components {
             flex_frame_start?: string | null;
             /** Flex Frame End */
             flex_frame_end?: string | null;
+            /** Flex Frame Days */
+            flex_frame_days?: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes?: number | null;
             /** Name */
@@ -9642,6 +9663,8 @@ export interface components {
             break_start: string | null;
             /** Break End */
             break_end: string | null;
+            /** Break Windows */
+            break_windows: components["schemas"]["BreakWindow"][] | null;
             /**
              * Break From Template
              * @default false
@@ -9677,6 +9700,8 @@ export interface components {
             flex_frame_start: string | null;
             /** Flex Frame End */
             flex_frame_end: string | null;
+            /** Flex Frame Days */
+            flex_frame_days: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes: number | null;
             /** Profile Id */
@@ -9735,6 +9760,8 @@ export interface components {
             break_start?: string | null;
             /** Break End */
             break_end?: string | null;
+            /** Break Windows */
+            break_windows?: components["schemas"]["BreakWindow"][] | null;
             /** Shift Template Id */
             shift_template_id?: number | null;
             /** Core Time Mode */
@@ -9755,6 +9782,8 @@ export interface components {
             flex_frame_start?: string | null;
             /** Flex Frame End */
             flex_frame_end?: string | null;
+            /** Flex Frame Days */
+            flex_frame_days?: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes?: number | null;
             /**
@@ -9818,6 +9847,8 @@ export interface components {
             break_start: string | null;
             /** Break End */
             break_end: string | null;
+            /** Break Windows */
+            break_windows: components["schemas"]["BreakWindow"][] | null;
             /**
              * Break From Template
              * @default false
@@ -9853,6 +9884,8 @@ export interface components {
             flex_frame_start: string | null;
             /** Flex Frame End */
             flex_frame_end: string | null;
+            /** Flex Frame Days */
+            flex_frame_days: (components["schemas"]["FlexFrameDay"] | null)[] | null;
             /** Late Tolerance Minutes */
             late_tolerance_minutes: number | null;
             /** Profile Id */
@@ -10505,6 +10538,8 @@ export interface operations {
                 location_id?: number | null;
                 active?: boolean | null;
                 search?: string | null;
+                department_id?: number | null;
+                without_department?: boolean;
             };
             header?: never;
             path?: never;
@@ -11238,7 +11273,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PairingCodeRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -12440,7 +12479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrgChartPerson"][];
+                    "application/json": components["schemas"]["OrgChartResponse"];
                 };
             };
         };
@@ -14559,216 +14598,6 @@ export interface operations {
             };
         };
     };
-    list_teams_teams_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"][];
-                };
-            };
-        };
-    };
-    create_team_teams_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TeamCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_team_teams__team_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                team_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_team_teams__team_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                team_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TeamUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TeamResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_supervisor_team_assignments_supervisor_team_assignments_get: {
-        parameters: {
-            query?: {
-                team_id?: number | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupervisorTeamAssignmentResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_supervisor_team_assignment_supervisor_team_assignments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SupervisorTeamAssignmentCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SupervisorTeamAssignmentResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_supervisor_team_assignment_supervisor_team_assignments__assignment_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                assignment_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_shift_templates_shift_templates_get: {
         parameters: {
             query?: never;
@@ -15660,7 +15489,7 @@ export interface operations {
                 from: string;
                 to: string;
                 location_id?: number | null;
-                team_id?: number[];
+                department_id?: number[];
             };
             header?: never;
             path?: never;

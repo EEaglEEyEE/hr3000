@@ -20,8 +20,8 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 | Rolle | Darf |
 |---|---|
 | Admin | alles, auch alle Bereiche der „Einstellungen“ und „Vergütung & Lohn-Export“ (siehe unten) |
-| HR | Mitarbeiter, Abwesenheiten, „Zu klären“, „Monatsabschluss“, „Analysen“, „Lohn-Export“ (CSV ohne Beträge), „On- & Offboarding“, „Schichtplan-Kalender“; unter „Einstellungen“ „Standorte“, „Teams“, „Feiertagskalender“, „Schichtplanung“ (Schichtvorlagen), „Tablets“ und „Audit-Protokoll“; Vergütung und „Lohnarten“ nur mit „Vergütung & Lohn-Export“ |
-| Führungskraft | „Tagesgeschäft“ für die eigenen Teams |
+| HR | Mitarbeiter, Abwesenheiten, „Zu klären“, „Monatsabschluss“, „Analysen“, „Lohn-Export“ (CSV ohne Beträge), „On- & Offboarding“, „Schichtplan-Kalender“; unter „Einstellungen“ „Standorte“, „Abteilungen“, „Feiertagskalender“, „Schichtplanung“ (Schichtvorlagen), „Tablets“ und „Audit-Protokoll“; Vergütung und „Lohnarten“ nur mit „Vergütung & Lohn-Export“ |
+| Führungskraft | „Tagesgeschäft“ für den eigenen Bereich: sich selbst und alle direkt und indirekt Unterstellten (als Leitung oder – je nach Rechten – Stellvertretung einer Abteilung bzw. als abweichend eingetragene Führungskraft) |
 | Keine (nur Mein Bereich) | nur die eigene Ansicht, siehe Mitarbeiter-Handbuch |
 
 - **„Vergütung & Lohn-Export“:** Admins haben es immer; HR bekommt es per Häkchen unter
@@ -80,7 +80,7 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 4. **„Einstellungen“ → „Tablets“** → „Neues Tablet“, dann „QR-Code“ und mit dem Tablet scannen. Die
    Tablet-Adresse ist `https://kiosk.<firma>.hr3000.de`.
 5. Optional unter „Einstellungen“: „Pausenregeln“ prüfen (die gesetzliche Staffel nach § 4 ArbZG
-   ist vorbelegt), „Teams“ anlegen, „Abwesenheitsarten“ anpassen.
+   ist vorbelegt), „Abteilungen“ mit Leitungen anlegen, „Abwesenheitsarten“ anpassen.
 
 ## 3. Menü
 
@@ -91,7 +91,7 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 - **Unten:** „Mein Bereich“ (wenn der Login zu einem Mitarbeiter gehört), „Einstellungen“ (Admin
   und HR, je nach Rolle mit unterschiedlichen Bereichen), „Darstellung“ (Hell/Dunkel/Wie System),
   „Abmelden“
-- Standorte, Teams, Abteilungen, Kostenstellen, Feiertage, Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten und
+- Standorte, Abteilungen, Kostenstellen, Feiertage, Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten und
   das Audit-Protokoll stehen unter „Einstellungen“ (siehe Abschnitt 9); alte Links und Lesezeichen
   führen dorthin.
 - **Glocke:** Benachrichtigungen, mit „Alle als gelesen markieren“; unten jeder für sich
@@ -106,7 +106,8 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   - „Heute“: Anwesend / In Pause / Dienstgang / Abwesend
   - „Nächste Termine“
 - **Anwesenheit:** Wochenraster („Vorherige Woche“ / „Nächste Woche“ / „Heute“).
-- **Kalender:** Monatsansicht mit Abwesenheiten, Feiertagen und Geburtstagen, Filter „Teams:“.
+- **Kalender:** Monatsansicht mit Abwesenheiten, Feiertagen und Geburtstagen, Filter „Abteilungen:“ (eine
+  Abteilung zeigt auch ihre Unterabteilungen; „Ohne Abteilung“).
   „Kalender abonnieren (iCal)“ erzeugt einen privaten Abo-Link für Outlook, Google oder Apple
   Kalender (Abwesenheiten aller sichtbaren Mitarbeiter und Feiertage). Den Link wie ein Passwort
   behandeln; ein neuer Link macht den alten ungültig, „Abo beenden“ schaltet ihn ab.
@@ -137,8 +138,8 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   „Ablehnen“ mit optionalem Hinweis. Mit Bank-, Steuer- oder SV-Angaben entscheidet nur, wer
   „Vergütung & Lohn-Export“ hat. Eigene Vorschläge übernimmt jemand anderes.
 - **„Urlaubsanträge“:** „Genehmigen“ / „Ablehnen“. Führungskräfte sehen die Anträge, die gerade bei
-  ihnen liegen (ihr Team bzw. als Führungskraft oder Vertretung, je nach „Genehmigt von“ der Art).
-  Je Antrag stehen dort der Resturlaub des Jahres (bei Urlaub) und wer aus demselben Team im
+  ihnen liegen (ihr Bereich bzw. als Führungskraft oder Stellvertretung, je nach „Genehmigt von“ der Art).
+  Je Antrag stehen dort der Resturlaub des Jahres (bei Urlaub) und wer aus derselben Abteilung im
   Zeitraum ebenfalls abwesend ist oder es beantragt hat.
   Früher ein eigener Menüpunkt; alte Links führen hierher.
 - **„Grenzen“:** Aushilfen „nach Aufwand“ ab 90 % ihrer Monatsgrenze und – wenn unter
@@ -147,18 +148,40 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 
 ## 5. Mitarbeiter
 
-- **Liste:** Suche, Standortfilter, „Auch inaktive anzeigen“, Hinweis auf die Tarifgrenze.
+- **Liste:** Suche, Standortfilter, Abteilungsfilter (sobald es Abteilungen gibt: „Alle
+  Abteilungen“, „Ohne Abteilung“ oder eine Abteilung – samt ihren Unterabteilungen, z. B.
+  „Vertrieb“ zeigt auch „Vertrieb › Innendienst“), „Auch inaktive anzeigen“, Hinweis auf die
+  Tarifgrenze. Die Spalte „Abteilung“ zeigt die Abteilung je Mitarbeiter (der volle Pfad beim
+  Darüberfahren).
   „Bearbeiten“ öffnet den Mitarbeiter direkt im Reiter „Einstellungen“.
-- **„Organigramm“:** baut sich aus der „Führungskraft“ je Mitarbeiter auf. Oben stehen alle ohne
-  (aktive) Führungskraft, darunter ihre Mitarbeiter, je Person mit Position und Abteilung; die Zahl
-  zeigt, wie viele im Bereich sind. Suche nach Name, Position oder Abteilung. Mitarbeiter sehen es
+- **„Organigramm“:** der Abteilungsbaum: je Abteilung eine Karte mit Name, „Leitung: …“ bzw.
+  „Leitungen: …“ (oder „ohne Leitung“), „Stellvertretung: …“ mit den Rechten in Klammern und den
+  Mitarbeitern (ab fünf Personen zugeklappt, „… Mitarbeiter“ klappt auf), darunter
+  die Unterabteilungen mit Verbindungslinien; die Zahl zeigt, wie viele Personen in der Abteilung und
+  darunter sind. Wer keiner Abteilung angehört, steht unter „Ohne Abteilung“. Zwei Darstellungen
+  („Baum“ / „Liste“, die Wahl merkt sich der Browser): „Baum“ von oben nach unten – ist er breiter als
+  die Seite, lässt er sich in seinem Kasten seitlich verschieben; „Liste“ ist die eingerückte Ansicht,
+  am Handy der Standard. Ab der dritten Ebene sind Unterabteilungen zugeklappt (Pfeil unter der
+  Karte). Suche nach Abteilung, Name oder Position, Treffer sind markiert. Mitarbeiter sehen es
   in „Mein Bereich“ nur, wenn unter „Einstellungen“ → „Allgemein“ „Mitarbeiter sehen das
   Organigramm“ an ist.
+  **Bearbeiten (Admin und HR):** „Neue Abteilung“ oben; an jeder Karte Stift (Name, übergeordnete
+  Abteilung, Leitungen und Stellvertretungen – derselbe Dialog wie unter „Einstellungen“ →
+  „Abteilungen“), Plus (Unterabteilung anlegen) und Papierkorb (Löschen, nur leere Abteilungen); an
+  jeder Person das Pfeil-Symbol: in eine andere Abteilung oder „ohne Abteilung“ verschieben. Am
+  Computer lassen sich Personen und Abteilungen auch mit der Maus auf eine andere Karte ziehen
+  (gestrichelt umrandet = hier ablegen): eine Abteilung auf „Hierher ziehen: Abteilung auf die oberste
+  Ebene“, eine Person auf „Ohne Abteilung“. Unter sich selbst lässt sich eine Abteilung nicht ziehen;
+  würde jemand dadurch (indirekt) die eigene Führungskraft, erscheint ein Hinweis und nichts ändert
+  sich. Führungskräfte sehen das Organigramm nur zum Lesen.
 - **Dialog „Neuer Mitarbeiter“ und Reiter „Einstellungen“:** Angelegt wird im Dialog „Neuer
   Mitarbeiter“, geändert im Reiter „Einstellungen“ der Detailseite – mit denselben Feldern. Dort
   übernimmt „Speichern“ die Änderungen, „Änderungen verwerfen“ holt die gespeicherten Werte zurück.
   - Oben die Grunddaten: Vor- und Nachname, Personalnummer, Standort („Standortwechsel gilt ab“),
-    Team, „Abteilung“, „Position“, „Führungskraft“, „Vertretung bei Genehmigungen“, „Anstelldatum“.
+    „Abteilung“, „Position“, „Abweichende Führungskraft“ („Wie Abteilung (automatisch)“ = die Leitungen
+    der Abteilung bzw. der nächsten darüber; darunter steht, wer das gerade ist, samt Stellvertretung),
+    „Anstelldatum“. Eine Vertretung je Person gibt es nicht mehr – dafür sind die Stellvertretungen
+    der Abteilung da.
   - Nur beim Anlegen „Arbeitszeitmodell“: „Standard aus den Einstellungen“ (wenn dort eines
     hinterlegt ist), ein „Arbeitszeitmodell „…““ (wenn es Modelle gibt, siehe Abschnitt 8),
     „Stunden je Wochentag“, „Nach Aufwand (Aushilfe, ohne Soll)“ oder „Kein Arbeitszeitmodell (ohne
@@ -215,7 +238,10 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
       der „Verlauf“ nennen das Modell.
     - Darunter individuell eintragen („Neues Arbeitszeitmodell ab Stichtag“, bei einem Modell
       „Individuell eintragen ab Stichtag (statt zugewiesenem Modell)“) – beendet ein Modell ab diesem
-      Tag. Wer eine Modell-Fassung mit „Bearbeiten“ ändert, macht sie ebenfalls individuell.
+      Tag. Wer eine Modell-Fassung mit „Bearbeiten“ ändert, macht sie ebenfalls individuell. Auch
+      individuell gibt es den „Gleitzeit-Rahmen“ („Wie Einstellungen“, „Eigener Rahmen“, „Kein
+      Rahmen“, mit „Rahmen je Wochentag unterschiedlich“ wie im Modell); die Toleranz gibt es nur im
+      Modell.
     Die Angaben im Einzelnen:
     - „Modell“: „Feste Arbeitstage“, „Flexibel ohne feste Tage“ (Wochenstunden ohne feste
       Arbeitstage, abgerechnet je Woche – passt für Teilzeit, die mal an 2, mal an 3 Tagen
@@ -233,8 +259,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     - „Pause“: „Wie Pausenregeln“ (Standard; mit Schichtvorlage, die eine eigene Pause hat, heißt
       der Knopf „Wie Schichtvorlage“), „Feste Minuten“ ab einer Arbeitszeit („… Minuten ab … Std.
       Arbeit“, leer = ab der ersten Minute; gestempelte Pausen zählen mit) oder „Feste Uhrzeit“
-      (z. B. 12:00–12:30, abgezogen, soweit der Mitarbeiter da war). Die Pausenstaffel gilt immer
-      mindestens.
+      (z. B. 12:00–12:30, abgezogen, soweit der Mitarbeiter da war). Mit „Weitere Pausenzeit“ gibt
+      es bis zu vier feste Pausen (z. B. Frühstück 09:00–09:15 und Mittag 12:00–12:30), „Entfernen“
+      löscht eine; sie dürfen sich nicht überschneiden. Die Pausenstaffel gilt immer mindestens.
     - „Kernarbeitszeit / Pünktlichkeit“: „Wie in den Einstellungen“, „Eigene Kernzeit“ (mit „Je
       Wochentag unterschiedlich“ auch je Tag; ohne Häkchen an einem Tag gilt dort keine Kernzeit)
       oder „Keine Prüfung (z. B. Außendienst)“. Eine neue Fassung übernimmt die Kernzeit der
@@ -300,11 +327,14 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     zählen sie unter „Unbezahlt“.
   - „Mitarbeiter dürfen selbst beantragen“, „Genehmigung nötig“, „Nachweis ab Tag“,
     „Deaktivieren“
-  - „Genehmigt von“ (bei „Genehmigung nötig“): „Teamleitung oder Admin/HR“ (Standard, wie
-    bisher), „Führungskraft“ (die Führungskraft am Mitarbeiter, wenn sie eine Rolle und einen Zugang
-    hat), „erst Führungskraft, dann Admin/HR“ (zwei Schritte) oder „nur Admin/HR“. Ist die
-    Führungskraft heute abwesend und hat eine „Vertretung bei Genehmigungen“ (Mitarbeiter-Dialog),
-    entscheidet die Vertretung. Ohne passende Führungskraft entscheiden Admin und HR. Admin und HR
+  - „Genehmigt von“ (bei „Genehmigung nötig“): „Führungskraft (oder darüber) oder Admin/HR“
+    (Standard: jede Führungskraft, in deren Bereich die Person liegt), „Führungskraft“ (genau die
+    zuständigen Führungskräfte – die abweichend eingetragene oder alle Leitungen der Abteilung samt
+    Stellvertretungen mit gleichen Rechten –, wenn sie eine Rolle und einen Zugang haben; jede darf
+    entscheiden, alle werden benachrichtigt), „erst Führungskraft, dann Admin/HR“ (zwei Schritte) oder
+    „nur Admin/HR“. Ist keine Leitung da (heute abwesend oder ohne Zugang), entscheiden die
+    Stellvertretungen der Abteilung; fehlt eine abweichende Führungskraft, entscheidet die Abteilung.
+    Ohne passende Führungskraft entscheiden Admin und HR. Admin und HR
     dürfen jeden Schritt entscheiden. Bei wem ein Antrag gerade liegt, steht als „Wartet auf“ in den
     Anträgen und beim Mitarbeiter.
   - „Kommentar erforderlich“: Die „Notiz“ ist dann beim Eintragen Pflicht (nicht bei Krankheit und
@@ -405,7 +435,9 @@ Alle Seiten dieses Abschnitts stehen unter „Einstellungen“, der „Schichtpl
     „Soll“, „Schichtvorlage (Uhrzeiten, optional)“, „Pause“, „Kernarbeitszeit / Pünktlichkeit“),
     dazu „Gleitzeit-Rahmen“ („Wie Einstellungen“, „Eigener Rahmen“ mit „Rahmen von“ / „Rahmen
     bis“, „Kein Rahmen“) und „Toleranz der Pünktlichkeitsprüfung (Minuten)“ (leer = wie in den
-    Einstellungen). Ein neues Modell gilt von Anfang an, kann also auch rückwirkend zugewiesen
+    Einstellungen). Mit „Rahmen je Wochentag unterschiedlich“ gilt je Tag ein eigener Rahmen (z. B.
+    freitags 07:00–14:00); ein Tag ohne Häkchen hat keinen Rahmen, dort wird nichts geprüft. Die
+    eigene Kernzeit muss an jedem Tag im Rahmen liegen. Ein neues Modell gilt von Anfang an, kann also auch rückwirkend zugewiesen
     werden.
   - „Ändern ab Stichtag“: neue Fassung mit „Gültig ab“ – gilt für **alle zugewiesenen
     Mitarbeiter** ab diesem Tag, die Zeit davor bleibt unverändert. Hat einer davon ab diesem Tag
@@ -456,7 +488,6 @@ Alle Seiten dieses Abschnitts stehen unter „Einstellungen“, der „Schichtpl
   Hälfte wird normal gestempelt; ein Urlaubstag zählt dort als halber Tag. Bei Stundenlohn wird die
   freie Hälfte nicht als Feiertag vergütet (sonst eine Abwesenheit der Kategorie „Feiertag“ mit
   Stunden eintragen).
-- **„Teams“:** Teams anlegen, Führungskräfte zuordnen.
 - **„Kostenstellen“:** Nummer und Bezeichnung; benutzte archivieren statt löschen.
 - **„Dokumentkategorien“** (nur Admin): eigene Kategorien neben den festen, je mit „Mitarbeiter dürfen
   hochladen“, „für Mitarbeiter sichtbar (Vorgabe)“ und „vertraulich (nur Admins)“. Beim Hochladen in
@@ -473,14 +504,33 @@ Alle Seiten dieses Abschnitts stehen unter „Einstellungen“, der „Schichtpl
   Mitarbeiter sehen es, Mitarbeiter sehen es und schlagen Änderungen vor) und Felder der Art Text,
   Zahl, Datum, Auswahl, Ja/Nein oder Person, auf Wunsch „mit Verlauf“. Art und Verlauf lassen sich
   später nicht ändern; nicht mehr gebrauchte Felder und Abschnitte archivieren.
-- **„Abteilungen“:** Abteilungen anlegen und verschachteln („Übergeordnete Abteilung“, z. B.
-  Vertrieb → Innendienst). Löschen geht nur bei leeren Abteilungen. Teams bleiben daneben für
-  Schichtplanung und die Sicht der Führungskräfte.
+- **„Abteilungen“:** die einzige Organisationsstruktur (Teams gibt es seit 09.11.2026 nicht mehr;
+  bestehende Teams wurden zu Abteilungen, ihre Teamleitung zur Leitung). Abteilungen anlegen und
+  verschachteln („Übergeordnete Abteilung“, z. B. Vertrieb → Innendienst) und unter „Leitung und
+  Stellvertretung“ mit „Person hinzufügen“ eintragen, wer sie leitet (Spalte „Leitung und
+  Stellvertretung“). Auch direkt im „Organigramm“. Die erste Person wird „Leitung“, weitere
+  „Stellvertretung“; die Rolle lässt sich je Person umstellen.
+  - **Leitungen** (beliebig viele, gleichberechtigt) sind die Führungskräfte aller in der Abteilung –
+    auch in Unterabteilungen ohne eigene Leitung; eine Leitung selbst berichtet an die Leitungen
+    darüber. Mit Login und Rolle „Führungskraft“ sehen sie das Tagesgeschäft ihres Bereichs und
+    genehmigen dessen Anträge. Eine Leitung muss nicht selbst Mitglied der Abteilung sein.
+  - **Stellvertretungen** sind keine Führungskräfte im Baum, sondern springen ein. Ihre Rechte wählt
+    ihr je Person: „Sieht immer, entscheidet bei Abwesenheit“ (Standard: sieht den Bereich wie die
+    Leitung, entscheidet und wird benachrichtigt, wenn keine Leitung da ist), „Gleiche Rechte wie die
+    Leitung“ (sieht, entscheidet und wird benachrichtigt wie die Leitung) oder „Nur während
+    Abwesenheit der Leitung“ (sieht und entscheidet nur dann). „Keine Leitung da“ heißt: alle
+    Leitungen der Abteilung sind heute genehmigt abwesend, haben keinen Zugang oder es gibt keine.
+    Auch Stellvertretungen brauchen Login und Rolle „Führungskraft“.
+  Ausnahmen je Person: am Mitarbeiter „Abweichende Führungskraft“. Eine Änderung, durch die jemand
+  (indirekt) die eigene Führungskraft würde, wird abgelehnt. Löschen geht nur bei leeren Abteilungen.
 - **„Tablets“:**
   - „Neues Tablet“: Name, Standort, „Gerätename im MDM“ (optional, siehe Abschnitt 10 „Tablets per
     MDM verteilen“), Darstellung, Bildschirmzeiten
   - „QR-Code“: Mit der Kamera scannen öffnet die Tablet-App fertig eingerichtet. Ohne Kamera gibt
-    es einen Kopplungscode zum Eintippen. Der Code gilt einmal und 15 Minuten.
+    es einen Kopplungscode zum Eintippen. Der Code gilt einmal und 15 Minuten. Ist der Eintrag schon
+    mit einem Tablet verbunden (auch per MDM), fragt HR3000 erst nach: „Gerät tauschen – QR-Code
+    erzeugen“ meldet das bisherige Tablet beim Koppeln ab. Das steht im Audit-Protokoll, Admins
+    und HR bekommen eine Warnung. Für ein zusätzliches Tablet „Neues Tablet“ anlegen.
   - Jeder Tablet-Eintrag gilt für **genau ein Gerät**. Die Spalte „Gekoppelt“ zeigt, seit wann ein
     Tablet daran hängt. Versucht ein anderes Gerät, sich mit demselben Zugang anzumelden, wird es
     abgewiesen. Admins und HR bekommen dann eine Warnung (Glocke und E-Mail, höchstens einmal pro
@@ -507,7 +557,7 @@ Grundsatz: Neue Funktionen sind einzeln schaltbar und standardmäßig so eingest
 für bestehende Firmen nichts ändert.
 
 - **Aufbau:** links die Bereiche nach Themen, auf dem Handy eine Auswahlliste. Admins sehen alle
-  Bereiche. HR sieht „Standorte“, „Teams“, „Feiertagskalender“, „Schichtplanung“ (nur die Schichtvorlagen,
+  Bereiche. HR sieht „Standorte“, „Abteilungen“, „Feiertagskalender“, „Schichtplanung“ (nur die Schichtvorlagen,
   wenn die Schichtplanung an ist), „Tablets“ und „Audit-Protokoll“, mit „Vergütung & Lohn-Export“ auch
   „Lohnarten“. Kann eine Änderung nicht gespeichert werden (z. B. weil ein Monat schon vorgelegt
   oder abgeschlossen ist), steht der Grund oben im Bereich.
@@ -516,7 +566,7 @@ für bestehende Firmen nichts ändert.
     256 KB), „Erinnerungen an Admin und HR“ (Standard aus): einmal am Tag als Benachrichtigung und –
     mit Mailversand – per E-Mail: Probezeit endet in 14 Tagen, Befristung endet in 30 Tagen, Austritt
     in 14 Tagen, Resturlaub aus dem Vorjahr verfällt in 30 Tagen (das auch an die Person selbst)
-  - „Standorte“, „Teams“, „Feiertagskalender“ (siehe Abschnitt 8)
+  - „Standorte“, „Abteilungen“, „Feiertagskalender“ (siehe Abschnitt 8)
 - **Arbeitszeit & Pausen:**
   - „Arbeitszeit“:
     - „Überstundenkonten führen ab“: Datum. Leer heißt ab der ersten Stempelung; eine Änderung
@@ -532,8 +582,8 @@ für bestehende Firmen nichts ändert.
       damit nicht die ganze Vergangenheit „zu klären“ ist. An Tagen mit Schicht (Uhrzeiten aus
       einer Schichtvorlage) gelten die Schichtzeiten, der Gleitzeit-Rahmen wird dann nicht geprüft.
       Je Mitarbeiter abweichend im Arbeitszeitmodell („Kernarbeitszeit / Pünktlichkeit“);
-      Gleitzeit-Rahmen und Toleranz lassen sich je Arbeitszeitmodell abweichend festlegen
-      (Abschnitt 8). Mit „Kernzeit je Wochentag unterschiedlich“ gilt je Tag eine eigene Kernzeit (z. B. freitags
+      Gleitzeit-Rahmen (auch je Wochentag) und Toleranz lassen sich je Arbeitszeitmodell abweichend
+      festlegen (Abschnitt 8), der Gleitzeit-Rahmen auch individuell am Mitarbeiter. Mit „Kernzeit je Wochentag unterschiedlich“ gilt je Tag eine eigene Kernzeit (z. B. freitags
       09:00–12:00) oder gar keine; speichern mit „Kernzeiten übernehmen“. „Keine Kernzeit“
       entfernt auch die Zeiten je Tag.
   - „Pausenregeln“ (siehe Abschnitt 8)
@@ -551,11 +601,11 @@ für bestehende Firmen nichts ändert.
       hinterlegtem Jahresurlaub
     - „Urlaubsübertrag ins neue Jahr“
     - „Mitarbeiter dürfen Urlaub/Abwesenheiten beantragen“
-    - „Mitarbeiter sehen den Teamkalender ihres Teams“ (Standard aus): Reiter „Teamkalender“ in
-      „Mein Bereich“. Die Art steht nur bei Abwesenheitsarten mit „Im Teamkalender: farbig (mit Art)“
+    - „Mitarbeiter sehen den Kalender ihrer Abteilung“ (Standard aus): Reiter „Abteilungskalender“ in
+      „Mein Bereich“. Die Art steht nur bei Abwesenheitsarten mit „Im Abteilungskalender: farbig (mit Art)“
       (unter „Abwesenheitsarten“, Standard „ausgegraut“), sonst nur, dass jemand fehlt; Homeoffice-
       Angaben erscheinen dort nicht.
-    - „Mitarbeiter sehen beim Antrag, wer im Team gleichzeitig abwesend ist“ (nur Name und Zeitraum,
+    - „Mitarbeiter sehen beim Antrag, wer in ihrer Abteilung gleichzeitig abwesend ist“ (nur Name und Zeitraum,
       ohne Art; Standard aus). Im Antrag von HR steht der Hinweis immer, mit Art.
     - „Vier-Augen-Prinzip: eigene Anträge genehmigt jemand anderes“ (an: Admin, HR und
       Führungskräfte bekommen eigene genehmigungspflichtige Abwesenheiten nicht direkt
@@ -617,7 +667,8 @@ Zutrittskontrolle oder Auswertungen.
      Antwort `access_token` (1 Stunde gültig).
   2. Abrufen mit Kopfzeile `Authorization: Bearer <access_token>`:
      - `GET /api/v1/employees?limit=100&offset=0&active=true`: Personalnummer, Name, Login-E-Mail,
-       Status, Ein-/Austritt, Standort, Team, Abteilung, Position, Führungskraft
+       Status, Ein-/Austritt, Standort, Abteilung (`department_id`, Name), Position, Führungskräfte (wirksam: `supervisor_id` = die erste,
+       `supervisor_ids` = alle)
      - `GET /api/v1/absence-types`
      - `GET /api/v1/absences?from=2026-01-01&to=2026-01-31&employee_id=…`: Zeitraum höchstens ein Jahr,
        mit Status (APPROVED, PENDING, REJECTED)
@@ -651,8 +702,9 @@ Zutrittskontrolle oder Auswertungen.
   Central): Bildschirm-Timeout 1 Minute, „Beim Laden wach bleiben“ aus.
 - Tablet neu koppeln: am Tablet „Gerät zurücksetzen“ (mit Tablet-Admin-PIN), dann den QR-Code
   erneut scannen.
-- Tablet tauschen: Den QR-Code des Eintrags mit dem neuen Tablet scannen. Das alte ist damit
-  abgemeldet. Zeigt ein Tablet „Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt“, nutzt
+- Tablet tauschen: „QR-Code“ des Eintrags, „Gerät tauschen – QR-Code erzeugen“, dann mit dem neuen
+  Tablet scannen. Das alte ist damit abgemeldet. Ein per MDM verteiltes Tablet, das so abgemeldet
+  wurde, fragt nach einem Neustart der Kiosk-App erneut an (Freigabe unter „Tablets“). Zeigt ein Tablet „Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt“, nutzt
   ein anderes Gerät den Zugang: prüfen, ob das gewollt ist, dann neu koppeln oder einen eigenen
   Eintrag anlegen.
 

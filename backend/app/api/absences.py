@@ -31,7 +31,7 @@ from app.services.absence_type_service import CATEGORY_LABELS, resolve_absence_t
 from app.services.audit_service import log_action
 from app.services.notification_service import notify_absence_decided, notify_absence_requested, notify_substitute_assigned
 from app.services.settings_service import get_or_create_settings
-from app.services.team_scope_service import ensure_employee_visible, supervisor_team_ids
+from app.services.scope_service import ensure_employee_visible, visible_employee_ids
 from app.services import approval_service, webhook_service
 from app.services.document_service import store_document
 from app.services.leave_service import leave_balance
@@ -126,9 +126,9 @@ async def _responses(db: AsyncSession, absences: list[Absence]) -> list[AbsenceR
 async def _team_overlaps(
     db: AsyncSession, employee: Employee, date_from: date, date_to: date, with_types: bool, exclude_absence_id: int | None = None
 ) -> list[TeamOverlap]:
-    """Genehmigte und beantragte Abwesenheiten anderer aktiver Personen desselben Teams, die den
-    Zeitraum berühren (ohne Arbeitszeit-Angaben wie Homeoffice). Ohne Team: keine."""
-    if employee.team_id is None:
+    """Genehmigte und beantragte Abwesenheiten anderer aktiver Personen derselben Abteilung, die den
+    Zeitraum berühren (ohne Arbeitszeit-Angaben wie Homeoffice). Ohne Abteilung: keine."""
+    if employee.department_id is None:
         return []
     rows = (
         await db.execute(
@@ -136,7 +136,7 @@ async def _team_overlaps(
             .join(Employee, Employee.id == Absence.employee_id)
             .where(
                 Employee.tenant_id == employee.tenant_id,
-                Employee.team_id == employee.team_id,
+                Employee.department_id == employee.department_id,
                 Employee.id != employee.id,
                 Employee.active.is_(True),
                 Absence.approval_status.in_([AbsenceApprovalStatus.APPROVED, AbsenceApprovalStatus.PENDING]),
@@ -302,7 +302,7 @@ async def list_pending_absences(
     db: AsyncSession = Depends(get_db),
 ) -> list[PendingAbsenceResponse]:
     """Für die "Urlaubsanträge"-Seite: offene PENDING-Anträge, für einen
-    Supervisor auf die eigenen Teams eingeschränkt."""
+    Führungskräfte auf das, was gerade bei ihnen liegt."""
     stmt = (
         select(Absence)
         .join(Employee, Employee.id == Absence.employee_id)
@@ -312,7 +312,7 @@ async def list_pending_absences(
 
     absences = list((await db.execute(stmt)).scalars().all())
     if not actor.is_full_hr_level:
-        # Führungskräfte: nur, was gerade bei ihnen liegt (Team bzw. als Führungskraft/Vertretung)
+        # Führungskräfte: nur, was gerade bei ihnen liegt (eigener Bereich bzw. als Führungskraft/Vertretung)
         visible = []
         for absence in absences:
             employee = await db.get(Employee, absence.employee_id)
@@ -343,7 +343,7 @@ async def list_team_overlaps(
     actor: Actor = Depends(get_current_hr_or_self),
     db: AsyncSession = Depends(get_db),
 ) -> list[TeamOverlap]:
-    """Wer aus dem Team im Zeitraum abwesend ist – für den Antrag. Genehmigende sehen die Art,
+    """Wer aus der Abteilung im Zeitraum abwesend ist – für den Antrag. Genehmigende sehen die Art,
     Mitarbeiter nur Namen und Zeitraum und nur mit der Einstellung
     „absence_overlaps_for_employees“ (sonst leer)."""
     if date_to < date_from or (date_to - date_from).days > 366:
@@ -475,7 +475,7 @@ async def decide_absence(
     db: AsyncSession = Depends(get_db),
 ) -> AbsenceResponse:
     """Genehmigt/lehnt einen PENDING-Urlaubsantrag ab – nur für Supervisor
-    (eigenes Team) oder Admin/HR."""
+    (eigener Bereich) oder Admin/HR."""
     absence = await _get_absence_in_tenant(db, absence_id, actor.tenant_id)
     employee = await db.get(Employee, absence.employee_id)
     if employee is None or not await approval_service.can_decide(db, actor, absence, employee):

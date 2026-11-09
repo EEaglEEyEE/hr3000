@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Upload } from 'lucide-react'
+import { useDepartmentsQuery } from '../api/queries/departments'
 import { useEmployeesQuery, type HrRole } from '../api/queries/employees'
+import { departmentPaths } from '../lib/departments'
 import { EMPLOYMENT_STATUS_LABELS } from '../lib/labels'
 import { PlanNotice } from '../components/plan/PlanNotice'
 import { useLocationsQuery } from '../api/queries/locations'
@@ -14,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 
 const ALL_LOCATIONS = '__all__'
+const ALL_DEPARTMENTS = '__all__'
+const NO_DEPARTMENT = '__none__'
 
 const HR_ROLE_LABELS: Record<HrRole, string> = {
   HR: 'HR',
@@ -36,16 +40,25 @@ export function EmployeesPage() {
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
   const [locationFilter, setLocationFilter] = useState(ALL_LOCATIONS)
+  const [departmentFilter, setDepartmentFilter] = useState(ALL_DEPARTMENTS)
   const locationsQuery = useLocationsQuery()
+  const departmentsQuery = useDepartmentsQuery()
   const employeesQuery = useEmployeesQuery({
     search,
     active: showInactive ? undefined : true,
     locationId: locationFilter === ALL_LOCATIONS ? undefined : Number(locationFilter),
+    departmentId: departmentFilter === ALL_DEPARTMENTS || departmentFilter === NO_DEPARTMENT ? undefined : Number(departmentFilter),
+    withoutDepartment: departmentFilter === NO_DEPARTMENT,
   })
   const [dialogOpen, setDialogOpen] = useState(false)
 
   const locations = locationsQuery.data ?? []
   const locationNameById = new Map(locations.map((location) => [location.id, location.name]))
+  const departments = departmentsQuery.data ?? []
+  // Pfad wie „Vertrieb › Innendienst“ – sortiert, damit Unterabteilungen unter ihrer Abteilung stehen
+  const departmentPath = departmentPaths(departments)
+  const departmentOptions = [...departments].sort((a, b) => departmentPath.get(a.id)!.localeCompare(departmentPath.get(b.id)!, 'de'))
+  const departmentNameById = new Map(departments.map((department) => [department.id, department.name]))
 
   function openCreateDialog() {
     setDialogOpen(true)
@@ -101,6 +114,22 @@ export function EmployeesPage() {
             ))}
           </SelectContent>
         </Select>
+        {departments.length > 0 && (
+          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <SelectTrigger className="w-56 max-w-full" aria-label="Abteilung">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_DEPARTMENTS}>Alle Abteilungen</SelectItem>
+              <SelectItem value={NO_DEPARTMENT}>Ohne Abteilung</SelectItem>
+              {departmentOptions.map((department) => (
+                <SelectItem key={department.id} value={String(department.id)}>
+                  {departmentPath.get(department.id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
@@ -122,6 +151,7 @@ export function EmployeesPage() {
               <TableHead>Name</TableHead>
               <TableHead>Personalnummer</TableHead>
               <TableHead>Standort</TableHead>
+              <TableHead>Abteilung</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Berechtigung</TableHead>
               <TableHead />
@@ -140,6 +170,9 @@ export function EmployeesPage() {
                 </TableCell>
                 <TableCell>{employee.employee_number}</TableCell>
                 <TableCell>{locationNameById.get(employee.location_id) ?? '–'}</TableCell>
+                <TableCell title={employee.department_id ? departmentPath.get(employee.department_id) : undefined}>
+                  {employee.department_id ? (departmentNameById.get(employee.department_id) ?? '–') : <span className="text-slate-400">–</span>}
+                </TableCell>
                 <TableCell>
                   <Badge variant={employee.active ? 'success' : 'default'}>
                     {employee.active ? 'Aktiv' : 'Inaktiv'}

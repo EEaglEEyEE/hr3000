@@ -128,7 +128,7 @@ function AbsenceTypeRow({
                 onPatch({ approval_chain: e.target.value as 'DEFAULT' | 'SUPERVISOR' | 'SUPERVISOR_HR' | 'HR' })
               }
             >
-              <option value="DEFAULT">Teamleitung oder Admin/HR</option>
+              <option value="DEFAULT">Führungskraft (oder darüber) oder Admin/HR</option>
               <option value="SUPERVISOR">Führungskraft</option>
               <option value="SUPERVISOR_HR">erst Führungskraft, dann Admin/HR</option>
               <option value="HR">nur Admin/HR</option>
@@ -148,9 +148,9 @@ function AbsenceTypeRow({
           Kommentar erforderlich
         </label>
         <label className="flex max-w-full flex-wrap items-center gap-1.5">
-          Im Teamkalender
+          Im Abteilungskalender
           <select
-            aria-label={`Teamkalender bei ${type.name}`}
+            aria-label={`Abteilungskalender bei ${type.name}`}
             className="h-7 max-w-full rounded-md border border-slate-300 bg-white px-1 text-sm"
             value={type.calendar_visibility}
             onChange={(e) => onPatch({ calendar_visibility: e.target.value as 'GREY' | 'COLOR' })}

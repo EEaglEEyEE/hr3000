@@ -41,7 +41,7 @@ describe('Seitenleiste', () => {
     for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Monatsabschluss', 'Lohn-Export', 'On- & Offboarding']) {
       expect(within(nav()).getByRole('link', { name: new RegExp(label) })).toBeInTheDocument()
     }
-    // Standorte, Teams, Feiertage, Tablets, Pausenregeln … stehen jetzt in den Einstellungen.
+    // Standorte, Abteilungen, Feiertage, Tablets, Pausenregeln … stehen jetzt in den Einstellungen (Teams gibt es nicht mehr).
     for (const label of ['Teams', 'Audit-Protokoll', 'Feiertagskalender', 'Tablets', 'Pausenregeln', 'Standorte', 'Lohnarten', 'Zuschläge']) {
       expect(within(nav()).queryByRole('link', { name: new RegExp(label) })).not.toBeInTheDocument()
     }
@@ -49,7 +49,7 @@ describe('Seitenleiste', () => {
     expect(screen.getByRole('link', { name: 'Einstellungen' })).toBeInTheDocument()
   })
 
-  it('zeigt Teamleadern nur das Tagesgeschäft', async () => {
+  it('zeigt Führungskräften nur das Tagesgeschäft', async () => {
     loginAs({ kind: 'hr', role: 'SUPERVISOR' })
     mockApi({ ...features(), ...hrTodoRoutes() })
     renderLayout()
