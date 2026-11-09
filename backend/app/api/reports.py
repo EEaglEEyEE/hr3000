@@ -9,6 +9,8 @@ from app.api.deps import Actor, get_current_full_hr_principal, get_current_payro
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
+    EmployeeDocument,
+    SEPARATE_UNPAID_CATEGORIES,
     Absence,
     AbsenceApprovalStatus,
     AbsenceType,
@@ -35,7 +37,7 @@ from app.schemas.reports import (
 from app.services.absence_type_service import format_days
 from app.services.audit_service import log_action
 from app.services.holiday_service import location_scope
-from app.services.leave_service import is_leave_day, leave_balance
+from app.services.leave_service import leave_day_weight, leave_balance
 from app.services.pay_component_service import pay_component_amounts
 from app.services.payroll_export_service import payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges
@@ -128,6 +130,8 @@ async def absence_stats(
         AbsenceType.UNPAID: "unpaid_days",
         AbsenceType.TIME_OFF_IN_LIEU: "time_off_days",
         AbsenceType.CHILD_SICK: "child_sick_days",
+        # Mutterschutz/Elternzeit, Kurzarbeit, Unentschuldigt, Pflege: unter „Unbezahlt“
+        **{category: "unpaid_days" for category in SEPARATE_UNPAID_CATEGORIES},
     }
 
     absences = (
@@ -148,9 +152,10 @@ async def absence_stats(
         while day <= end:
             if absence.type not in key:
                 break  # Arbeitszeit/Feiertag sind keine Abwesenheitstage
-            if await is_leave_day(db, employee, day):
+            weight = await leave_day_weight(db, employee, day)
+            if weight:
                 # Stundenangaben (z.B. 3 Std. Homeoffice) sind keine Abwesenheitstage.
-                count = 0 if absence.duration_minutes is not None else 0.5 if absence.half_day else 1
+                count = 0 if absence.duration_minutes is not None else weight * (0.5 if absence.half_day else 1)
                 months[day.month][key[absence.type]] += count
                 per_employee[employee.id][key[absence.type]] += count
                 if absence.type == AbsenceType.SICK:
@@ -211,7 +216,7 @@ async def vacation_overview(
 async def overtime_overview(
     actor: Actor = Depends(get_current_full_hr_principal), db: AsyncSession = Depends(get_db)
 ) -> list[OvertimeRow]:
-    """Aktueller Gleitzeitsaldo je aktivem Mitarbeiter, höchste Überstunden zuerst."""
+    """Aktueller Kontostand je aktivem Mitarbeiter, höchste Überstunden zuerst."""
     rows = []
     for employee in await _employees(db, actor.tenant_id):
         info = await balance_as_of(db, employee)
@@ -262,7 +267,7 @@ async def attention_items(
             items.append(
                 AttentionItem(
                     **_ref(employee), kind=AttentionKind.TERMINATION, due_date=employee.termination_date,
-                    detail="Austritt steht bevor – Offboarding-Checkliste prüfen.",
+                    detail="Austritt steht bevor – Offboarding prüfen.",
                 )
             )
         contracts = (
@@ -289,6 +294,28 @@ async def attention_items(
                         detail="Befristung läuft aus – Verlängerung/Entfristung klären.",
                     )
                 )
+    # Dokumente mit abgelaufener Aufbewahrungsfrist (auch Ausgeschiedener) – nur
+    # zur Prüfung markieren, nie automatisch löschen. Vertrauliche nur für Admins.
+    everyone = {e.id: e for e in await _employees(db, actor.tenant_id, active_only=False)}
+    documents = (
+        await db.execute(
+            select(EmployeeDocument).where(
+                EmployeeDocument.tenant_id == actor.tenant_id,
+                EmployeeDocument.retention_until.is_not(None),
+                EmployeeDocument.retention_until <= today,
+                EmployeeDocument.employee_id.in_(everyone.keys() or [0]),
+            )
+        )
+    ).scalars().all()
+    for document in documents:
+        if document.confidential and not actor.is_admin_level:
+            continue
+        items.append(
+            AttentionItem(
+                **_ref(everyone[document.employee_id]), kind=AttentionKind.RETENTION_DUE, due_date=document.retention_until,
+                detail=f"Aufbewahrungsfrist von „{document.title}“ abgelaufen – prüfen und ggf. löschen (Personalakte → Dokumente).",
+            )
+        )
     return sorted(items, key=lambda i: (i.due_date is None, i.due_date or today, i.last_name))
 
 
@@ -409,8 +436,7 @@ async def labor_costs(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.COMPENSATION_VIEWED,
         entity_type="report",
         entity_id=actor.tenant_id,

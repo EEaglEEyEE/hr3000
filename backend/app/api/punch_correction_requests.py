@@ -136,8 +136,7 @@ async def decide_correction_request(
                 punch_type=item.punch_type,
                 timestamp_utc=local.astimezone(UTC).replace(tzinfo=None),
                 source=PunchSource.MANUAL_HR,
-                created_by=actor.audit_hr_user_id,
-                created_by_employee_id=actor.audit_employee_id,
+                created_by_account_id=actor.account_id,
                 correction_reason=f"Korrekturantrag: {row.reason}"[:500],
                 idempotency_key=str(uuid.uuid4()),
             )
@@ -145,15 +144,13 @@ async def decide_correction_request(
             created.append(punch)
 
     row.status = CorrectionRequestStatus.APPROVED if payload.approve else CorrectionRequestStatus.REJECTED
-    row.decided_by = actor.audit_hr_user_id
-    row.decided_by_employee_id = actor.audit_employee_id
+    row.decided_by_account_id = actor.account_id
     row.decided_at = datetime.now(UTC).replace(tzinfo=None)
     row.decision_note = payload.note
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.PUNCH_CORRECTION_DECIDED,
         entity_type="punch_correction_request",
         entity_id=row.id,

@@ -7,15 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_or_self
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, BalanceAdjustment, Employee
-from app.schemas.balance_adjustment import BalanceAdjustmentCreateRequest, BalanceAdjustmentResponse
+from app.models import AdjustmentKind, AuditAction, BalanceAdjustment, Employee
+from app.schemas.balance_adjustment import BalanceAdjustmentCreateRequest, BalanceAdjustmentResponse, SetBalanceRequest
 from app.services.audit_service import log_action
 from app.services.period_service import ensure_period_open
 from app.services.team_scope_service import ensure_employee_visible
+from app.services.timesheet_service import balance_as_of
 
 router = APIRouter(tags=["balance-adjustments"])
 
-_KIND_LABELS = {"OPENING_BALANCE": "Übertrag", "PAYOUT": "Auszahlung", "CORRECTION": "Korrektur"}
+_KIND_LABELS = {"OPENING_BALANCE": "Anfangskontostand", "PAYOUT": "Auszahlung", "CORRECTION": "Anpassung"}
 
 
 async def _employee(db: AsyncSession, employee_id: int, tenant_id: int) -> Employee:
@@ -29,8 +30,7 @@ def _audit(db: AsyncSession, actor: Actor, employee_id: int, detail: str) -> Non
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.BALANCE_ADJUSTED,
         entity_type="employee",
         entity_id=employee_id,
@@ -81,11 +81,46 @@ async def create_adjustment(
         minutes=payload.minutes,
         kind=payload.kind,
         note=payload.note,
-        created_by_hr_user_id=actor.audit_hr_user_id,
-        created_by_employee_id=actor.audit_employee_id,
+        payout_factor=payload.payout_factor,
+        created_by_account_id=actor.account_id,
     )
     db.add(adjustment)
-    _audit(db, actor, employee_id, f"{_KIND_LABELS[payload.kind.value]} {_hours(payload.minutes)} zum {payload.effective_date.isoformat()}: {payload.note}"[:500])
+    factor = f" (Faktor {payload.payout_factor})" if payload.payout_factor is not None else ""
+    _audit(db, actor, employee_id, f"{_KIND_LABELS[payload.kind.value]} {_hours(payload.minutes)}{factor} zum {payload.effective_date.isoformat()}: {payload.note}"[:500])
+    await db.commit()
+    await db.refresh(adjustment)
+    return BalanceAdjustmentResponse.model_validate(adjustment)
+
+
+@router.post("/employees/{employee_id}/balance-adjustments/set-balance", response_model=BalanceAdjustmentResponse, status_code=201)
+async def set_balance(
+    employee_id: int,
+    payload: SetBalanceRequest,
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> BalanceAdjustmentResponse:
+    """„Neuen Kontostand festlegen“ – bucht die Differenz zum Stand am Ende dieses Tages als
+    Anpassung (die Begründung nennt alten und neuen Stand)."""
+    employee = await _employee(db, employee_id, actor.tenant_id)
+    if payload.effective_date > date.today():
+        raise AppError(400, "FUTURE_DATE", "Buchungen sind nur bis heute möglich.")
+    await ensure_period_open(db, employee_id, payload.effective_date)
+    current = (await balance_as_of(db, employee, payload.effective_date)).total_minutes
+    delta = payload.balance_minutes - current
+    if delta == 0:
+        raise AppError(400, "BALANCE_UNCHANGED", "Der Kontostand hat an diesem Tag schon diesen Wert.")
+    note = f"Neuer Kontostand {_hours(payload.balance_minutes)} (vorher {_hours(current)}): {payload.note}"[:300]
+    adjustment = BalanceAdjustment(
+        tenant_id=actor.tenant_id,
+        employee_id=employee_id,
+        effective_date=payload.effective_date,
+        minutes=delta,
+        kind=AdjustmentKind.CORRECTION,
+        note=note,
+        created_by_account_id=actor.account_id,
+    )
+    db.add(adjustment)
+    _audit(db, actor, employee_id, f"Kontostand festgelegt zum {payload.effective_date.isoformat()}: {note}"[:500])
     await db.commit()
     await db.refresh(adjustment)
     return BalanceAdjustmentResponse.model_validate(adjustment)

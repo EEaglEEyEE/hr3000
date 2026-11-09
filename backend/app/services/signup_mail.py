@@ -7,7 +7,7 @@ bekommt den Link erneut (höchstens alle 10 Minuten).
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AccountTokenPurpose, HrUser, Tenant
+from app.models import Account, AccountTokenPurpose, Tenant
 from app.services import rate_limiter
 from app.services.account_tokens import EMAIL_VERIFY_TTL, issue_token
 from app.services.email_service import resolve_smtp_config, send_email
@@ -20,7 +20,7 @@ async def signup_verification_possible(db: AsyncSession, tenant_id: int | None =
     return base_domain() is not None and await resolve_smtp_config(db, tenant_id) is not None
 
 
-async def send_verification_mail(db: AsyncSession, tenant: Tenant, user: HrUser, contact_name: str | None = None) -> bool:
+async def send_verification_mail(db: AsyncSession, tenant: Tenant, user: Account, contact_name: str | None = None) -> bool:
     """Neuen Bestätigungslink ausstellen und verschicken (committet das Token). False, wenn kein
     Mailversand eingerichtet ist oder der letzte Versand weniger als 10 Minuten her ist."""
     base = base_domain()
@@ -33,7 +33,7 @@ async def send_verification_mail(db: AsyncSession, tenant: Tenant, user: HrUser,
     except Exception:  # AppError 429 – bewusst still: nicht öfter als alle 10 Minuten
         return False
     raw = await issue_token(
-        db, tenant_id=tenant.id, purpose=AccountTokenPurpose.EMAIL_VERIFY, ttl=EMAIL_VERIFY_TTL, hr_user=user
+        db, tenant_id=tenant.id, purpose=AccountTokenPurpose.EMAIL_VERIFY, ttl=EMAIL_VERIFY_TTL, account=user
     )
     await db.commit()
     rate_limiter.record_failure(key)

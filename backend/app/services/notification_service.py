@@ -1,14 +1,15 @@
+from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Absence,
     AbsenceApprovalStatus,
+    Account,
     Employee,
     HrRole,
-    HrUser,
     Notification,
     NotificationType,
     SupervisorTeamAssignment,
@@ -19,93 +20,122 @@ from app.services.settings_service import get_or_create_settings
 _FULL_HR_ROLES = (HrRole.ADMIN, HrRole.HR)
 
 
-async def _notification_mail_config(db: AsyncSession, tenant_id: int) -> SmtpConfig | None:
+@dataclass(frozen=True)
+class NotificationMailConfig:
+    smtp: SmtpConfig
+    # Adressen (klein geschrieben), die keine Benachrichtigungs-Mails wollen (notification_emails aus)
+    opted_out: frozenset[str]
+
+
+async def _notification_mail_config(db: AsyncSession, tenant_id: int) -> NotificationMailConfig | None:
     """SMTP für Benachrichtigungs-Mails: None, wenn der Mandant Mail-
     Benachrichtigungen abgeschaltet hat oder gar kein SMTP (eigener oder
-    Plattform) konfiguriert ist – die In-App-Glocke bleibt davon unberührt."""
+    Plattform) konfiguriert ist – die In-App-Glocke bleibt davon unberührt.
+    Wer selbst „keine E-Mails“ eingestellt hat, wird in _mail übersprungen."""
     row = await get_or_create_settings(db, tenant_id)
     if not row.email_notifications_enabled:
         return None
-    return await resolve_smtp_config(db, tenant_id)
+    smtp = await resolve_smtp_config(db, tenant_id)
+    if smtp is None:
+        return None
+    result = await db.execute(
+        select(Account.email).where(
+            Account.tenant_id == tenant_id, Account.notification_emails.is_(False), Account.email.is_not(None)
+        )
+    )
+    opted_out = frozenset(e.lower() for e in result.scalars() if e)
+    return NotificationMailConfig(smtp, opted_out)
 
 
-async def _mail(config: SmtpConfig | None, to: str | None, subject: str, body: str) -> None:
-    if config is not None and to:
-        await send_email(to, subject, body, config=config)
+async def _mail(config: NotificationMailConfig | None, to: str | None, subject: str, body: str) -> None:
+    if config is not None and to and to.lower() not in config.opted_out:
+        await send_email(to, subject, body, config=config.smtp)
 
 
-async def _hr_user_emails(db: AsyncSession, ids: set[int]) -> dict[int, str]:
-    if not ids:
-        return {}
-    result = await db.execute(select(HrUser.id, HrUser.email).where(HrUser.id.in_(ids)))
-    return dict(result.all())
+def _signed_in_accounts(tenant_id: int):
+    """Konten der Firma, die sich anmelden können (E-Mail gesetzt, verknüpfter Mitarbeiter aktiv)."""
+    return (
+        select(Account.id, Account.email)
+        .outerjoin(Employee, Employee.id == Account.employee_id)
+        .where(
+            Account.tenant_id == tenant_id,
+            Account.email.is_not(None),
+            Account.password_hash.is_not(None),
+            or_(Account.employee_id.is_(None), Employee.active.is_(True)),
+        )
+    )
 
 
-async def _employee_emails(db: AsyncSession, ids: set[int]) -> dict[int, str | None]:
-    if not ids:
-        return {}
-    result = await db.execute(select(Employee.id, Employee.login_email).where(Employee.id.in_(ids)))
-    return dict(result.all())
+async def full_hr_recipients(
+    db: AsyncSession, tenant_id: int, exclude_employee_id: int | None = None
+) -> list[tuple[int, str | None]]:
+    """(Konto-ID, E-Mail) aller Admins und HR der Firma."""
+    stmt = _signed_in_accounts(tenant_id).where(Account.role.in_(_FULL_HR_ROLES))
+    if exclude_employee_id is not None:
+        stmt = stmt.where(or_(Account.employee_id.is_(None), Account.employee_id != exclude_employee_id))
+    return [(account_id, email) for account_id, email in (await db.execute(stmt.order_by(Account.id))).all()]
+
+
+def _employee_login(employee: Employee) -> Account | None:
+    """Konto des Mitarbeiters, wenn er sich anmelden kann – sonst sieht niemand die Benachrichtigung."""
+    account = employee.account
+    return account if account is not None and account.email is not None else None
+
+
+async def _notify_accounts(
+    db: AsyncSession,
+    tenant_id: int,
+    recipients: list[tuple[int, str | None]],
+    type_: NotificationType,
+    message: str,
+    subject: str,
+    **extra,
+) -> None:
+    mail_config = await _notification_mail_config(db, tenant_id)
+    for account_id, email in recipients:
+        db.add(Notification(tenant_id=tenant_id, recipient_account_id=account_id, type=type_, message=message, **extra))
+        await _mail(mail_config, email, subject, message)
+
+
+async def _notify_employee(
+    db: AsyncSession, tenant_id: int, employee: Employee, type_: NotificationType, message: str, subject: str, **extra
+) -> None:
+    account = _employee_login(employee)
+    if account is not None:
+        await _notify_accounts(db, tenant_id, [(account.id, account.email)], type_, message, subject, **extra)
 
 
 async def notify_absence_requested(
-    db: AsyncSession, tenant_id: int, employee: Employee, type_name: str = "Urlaub"
+    db: AsyncSession,
+    tenant_id: int,
+    employee: Employee,
+    type_name: str = "Urlaub",
+    recipients: list[tuple[int, str | None]] | None = None,
+    step_note: str = "",
 ) -> None:
     """Benachrichtigt die Supervisor des Teams des Mitarbeiters (siehe
     SupervisorTeamAssignment) über einen neuen PENDING-Urlaubsantrag – ist
     kein Team zugeordnet oder hat es keinen Supervisor, fällt die
     Benachrichtigung ersatzweise an alle Admin/HR-Nutzer des Mandanten,
     damit ein Antrag nie unbemerkt bleibt."""
-    hr_user_ids: set[int] = set()
-    employee_ids: set[int] = set()
-
+    if recipients is not None:
+        message = f"Antrag ({type_name}) von {employee.first_name} {employee.last_name} wartet auf Genehmigung{step_note}."
+        await _notify_accounts(db, tenant_id, recipients, NotificationType.ABSENCE_REQUESTED, message, f"Neuer Antrag: {type_name}")
+        return
+    recipients = []
     if employee.team_id is not None:
         result = await db.execute(
-            select(SupervisorTeamAssignment).where(SupervisorTeamAssignment.team_id == employee.team_id)
+            _signed_in_accounts(tenant_id)
+            .join(SupervisorTeamAssignment, SupervisorTeamAssignment.account_id == Account.id)
+            .where(SupervisorTeamAssignment.team_id == employee.team_id)
+            .order_by(Account.id)
         )
-        for assignment in result.scalars().all():
-            if assignment.hr_user_id is not None:
-                hr_user_ids.add(assignment.hr_user_id)
-            if assignment.employee_id is not None:
-                employee_ids.add(assignment.employee_id)
-
-    if not hr_user_ids and not employee_ids:
-        result = await db.execute(
-            select(HrUser.id).where(HrUser.tenant_id == tenant_id, HrUser.role.in_(_FULL_HR_ROLES))
-        )
-        hr_user_ids = set(result.scalars().all())
-        result = await db.execute(
-            select(Employee.id).where(Employee.tenant_id == tenant_id, Employee.hr_role.in_(_FULL_HR_ROLES))
-        )
-        employee_ids = set(result.scalars().all())
+        recipients = list(dict.fromkeys((account_id, email) for account_id, email in result.all()))
+    if not recipients:
+        recipients = await full_hr_recipients(db, tenant_id)
 
     message = f"Neuer Antrag ({type_name}) von {employee.first_name} {employee.last_name} wartet auf Genehmigung."
-    subject = f"Neuer Antrag: {type_name}"
-
-    hr_emails = await _hr_user_emails(db, hr_user_ids)
-    employee_emails = await _employee_emails(db, employee_ids)
-    mail_config = await _notification_mail_config(db, tenant_id)
-
-    for hr_user_id in hr_user_ids:
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_hr_user_id=hr_user_id,
-                type=NotificationType.ABSENCE_REQUESTED,
-                message=message,
-            )
-        )
-        await _mail(mail_config, hr_emails.get(hr_user_id), subject, message)
-    for employee_id in employee_ids:
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_employee_id=employee_id,
-                type=NotificationType.ABSENCE_REQUESTED,
-                message=message,
-            )
-        )
-        await _mail(mail_config, employee_emails.get(employee_id), subject, message)
+    await _notify_accounts(db, tenant_id, recipients, NotificationType.ABSENCE_REQUESTED, message, f"Neuer Antrag: {type_name}")
 
 
 async def notify_open_days_digest(db: AsyncSession, tenant_id: int, open_day_count: int) -> None:
@@ -124,133 +154,54 @@ async def notify_open_days_digest(db: AsyncSession, tenant_id: int, open_day_cou
     settings_row.open_days_digest_sent_at = today
 
     message = f"{open_day_count} Tag(e) benötigen Aufmerksamkeit ('Zu klären')."
-    subject = "Zu klären: offene Tage"
-    mail_config = await _notification_mail_config(db, tenant_id)
-
-    result = await db.execute(
-        select(HrUser.id, HrUser.email).where(HrUser.tenant_id == tenant_id, HrUser.role.in_(_FULL_HR_ROLES))
+    await _notify_accounts(
+        db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.OPEN_DAYS_DIGEST, message,
+        "Zu klären: offene Tage",
     )
-    for hr_user_id, email in result.all():
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_hr_user_id=hr_user_id,
-                type=NotificationType.OPEN_DAYS_DIGEST,
-                message=message,
-            )
-        )
-        await _mail(mail_config, email, subject, message)
-    result = await db.execute(
-        select(Employee.id, Employee.login_email).where(
-            Employee.tenant_id == tenant_id, Employee.hr_role.in_(_FULL_HR_ROLES)
-        )
-    )
-    for employee_id, login_email in result.all():
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_employee_id=employee_id,
-                type=NotificationType.OPEN_DAYS_DIGEST,
-                message=message,
-            )
-        )
-        await _mail(mail_config, login_email, subject, message)
 
 
 async def notify_absence_decided(
     db: AsyncSession, tenant_id: int, absence: Absence, employee: Employee
 ) -> None:
-    """Benachrichtigt den Antragsteller über die Entscheidung – nur wenn er
-    überhaupt einen eigenen Login hat (login_email gesetzt), sonst gibt es
+    """Benachrichtigt den Antragsteller über die Entscheidung – nur mit eigenem Login, sonst gibt es
     niemanden, der die Benachrichtigung sehen könnte."""
-    if employee.login_email is None:
-        return
-
     status_label = "genehmigt" if absence.approval_status == AbsenceApprovalStatus.APPROVED else "abgelehnt"
     message = f"Dein Urlaubsantrag ({absence.date_from.isoformat()} – {absence.date_to.isoformat()}) wurde {status_label}."
-    db.add(
-        Notification(
-            tenant_id=tenant_id,
-            recipient_employee_id=employee.id,
-            type=NotificationType.ABSENCE_DECIDED,
-            message=message,
-            related_absence_id=absence.id,
-        )
+    await _notify_employee(
+        db, tenant_id, employee, NotificationType.ABSENCE_DECIDED, message, "Urlaubsantrag entschieden",
+        related_absence_id=absence.id,
     )
-    await _mail(await _notification_mail_config(db, tenant_id), employee.login_email, "Urlaubsantrag entschieden", message)
+
+
+async def notify_substitute_assigned(
+    db: AsyncSession, tenant_id: int, absence: Absence, employee: Employee, substitute: Employee, type_name: str
+) -> None:
+    """Die Vertretung erfährt, wen sie wann vertritt – sobald die Abwesenheit gilt (genehmigt).
+    Nur mit eigenem Login, sonst sieht es niemand."""
+    if absence.approval_status != AbsenceApprovalStatus.APPROVED:
+        return
+    message = (
+        f"Du vertrittst {employee.first_name} {employee.last_name} vom {absence.date_from:%d.%m.%Y} "
+        f"bis {absence.date_to:%d.%m.%Y} ({type_name})."
+    )
+    await _notify_employee(
+        db, tenant_id, substitute, NotificationType.SUBSTITUTE_ASSIGNED, message, "Vertretung", related_absence_id=absence.id
+    )
 
 
 async def notify_period_submitted(db: AsyncSession, tenant_id: int, employee: Employee, label: str) -> None:
     """Mitarbeiter soll den vorgelegten Monatsnachweis bestätigen – nur sinnvoll mit eigenem Login."""
-    if employee.login_email is None:
-        return
     message = f"Dein Monatsnachweis für {label} liegt zur Bestätigung bereit (Mein Bereich → Monatsabschluss)."
-    db.add(
-        Notification(
-            tenant_id=tenant_id,
-            recipient_employee_id=employee.id,
-            type=NotificationType.PERIOD_SUBMITTED,
-            message=message,
-        )
-    )
-    await _mail(await _notification_mail_config(db, tenant_id), employee.login_email, "Monatsnachweis zur Bestätigung", message)
+    await _notify_employee(db, tenant_id, employee, NotificationType.PERIOD_SUBMITTED, message, "Monatsnachweis zur Bestätigung")
 
 
 async def notify_period_disputed(db: AsyncSession, tenant_id: int, employee: Employee, label: str) -> None:
-    """HR (Admin/HR, HrUser und Mitarbeiter mit hr_role) erfährt vom Widerspruch."""
+    """Admin und HR erfahren vom Widerspruch (ohne die Person selbst, falls sie HR ist)."""
     message = f"{employee.first_name} {employee.last_name} hat dem Monatsnachweis {label} widersprochen."
-    subject = "Monatsnachweis beanstandet"
-    mail_config = await _notification_mail_config(db, tenant_id)
-
-    result = await db.execute(
-        select(HrUser.id, HrUser.email).where(HrUser.tenant_id == tenant_id, HrUser.role.in_(_FULL_HR_ROLES))
+    await _notify_accounts(
+        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id),
+        NotificationType.PERIOD_DISPUTED, message, "Monatsnachweis beanstandet",
     )
-    for hr_user_id, email in result.all():
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_hr_user_id=hr_user_id,
-                type=NotificationType.PERIOD_DISPUTED,
-                message=message,
-            )
-        )
-        await _mail(mail_config, email, subject, message)
-    result = await db.execute(
-        select(Employee.id, Employee.login_email).where(
-            Employee.tenant_id == tenant_id, Employee.hr_role.in_(_FULL_HR_ROLES), Employee.id != employee.id
-        )
-    )
-    for employee_id, login_email in result.all():
-        db.add(
-            Notification(
-                tenant_id=tenant_id,
-                recipient_employee_id=employee_id,
-                type=NotificationType.PERIOD_DISPUTED,
-                message=message,
-            )
-        )
-        await _mail(mail_config, login_email, subject, message)
-
-
-async def _notify_full_hr(
-    db: AsyncSession, tenant_id: int, type_: NotificationType, message: str, subject: str, exclude_employee_id: int
-) -> None:
-    """Glocke + Mail an alle Admin/HR (HrUser und Mitarbeiter mit hr_role)."""
-    mail_config = await _notification_mail_config(db, tenant_id)
-    result = await db.execute(
-        select(HrUser.id, HrUser.email).where(HrUser.tenant_id == tenant_id, HrUser.role.in_(_FULL_HR_ROLES))
-    )
-    for hr_user_id, email in result.all():
-        db.add(Notification(tenant_id=tenant_id, recipient_hr_user_id=hr_user_id, type=type_, message=message))
-        await _mail(mail_config, email, subject, message)
-    result = await db.execute(
-        select(Employee.id, Employee.login_email).where(
-            Employee.tenant_id == tenant_id, Employee.hr_role.in_(_FULL_HR_ROLES), Employee.id != exclude_employee_id
-        )
-    )
-    for employee_id, login_email in result.all():
-        db.add(Notification(tenant_id=tenant_id, recipient_employee_id=employee_id, type=type_, message=message))
-        await _mail(mail_config, login_email, subject, message)
 
 
 async def notify_correction_requested(db: AsyncSession, tenant_id: int, employee: Employee, work_date: date) -> None:
@@ -258,19 +209,63 @@ async def notify_correction_requested(db: AsyncSession, tenant_id: int, employee
         f"{employee.first_name} {employee.last_name} beantragt eine Zeitkorrektur für den "
         f"{work_date.strftime('%d.%m.%Y')} (Zu klären → Korrekturanträge)."
     )
-    await _notify_full_hr(db, tenant_id, NotificationType.CORRECTION_REQUESTED, message, "Neuer Korrekturantrag", employee.id)
+    await _notify_accounts(
+        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id),
+        NotificationType.CORRECTION_REQUESTED, message, "Neuer Korrekturantrag",
+    )
 
 
 async def notify_correction_decided(
     db: AsyncSession, tenant_id: int, employee: Employee, work_date: date, approved: bool
 ) -> None:
     message = f"Dein Korrekturantrag für den {work_date.strftime('%d.%m.%Y')} wurde {'übernommen' if approved else 'abgelehnt'}."
-    db.add(
-        Notification(
-            tenant_id=tenant_id,
-            recipient_employee_id=employee.id,
-            type=NotificationType.CORRECTION_DECIDED,
-            message=message,
-        )
+    await _notify_employee(db, tenant_id, employee, NotificationType.CORRECTION_DECIDED, message, "Korrekturantrag entschieden")
+
+
+async def notify_device_enrolled(db: AsyncSession, device, reported_name: str | None) -> None:
+    """Info an Admin/HR: ein vorbereiteter Tablet-Eintrag wurde per Registrierungsschlüssel (MDM) belegt."""
+    message = (
+        f"Das Gerät „{reported_name or '?'}“ hat sich per MDM als Tablet „{device.name}“ eingerichtet. "
+        "War das nicht geplant, in der HR-Webapp unter „Tablets“ die Kopplung aufheben und den "
+        "Registrierungsschlüssel erneuern."
     )
-    await _mail(await _notification_mail_config(db, tenant_id), employee.login_email, "Korrekturantrag entschieden", message)
+    await _notify_accounts(
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        "Tablet per MDM eingerichtet",
+    )
+
+
+async def notify_enrollment_requested(
+    db: AsyncSession,
+    tenant_id: int,
+    location_name: str,
+    reported_name: str | None,
+    verify_code: str,
+    conflict_device_name: str | None,
+) -> None:
+    """Admin/HR: ein Gerät mit gültigem Registrierungsschlüssel wartet auf Freigabe."""
+    message = (
+        f"Ein Gerät „{reported_name or 'ohne Namen'}“ möchte sich am Standort „{location_name}“ als Tablet "
+        f"einrichten (Prüfcode {verify_code}). Freigeben oder ablehnen in der HR-Webapp unter „Tablets“."
+    )
+    if conflict_device_name:
+        message += (
+            f" Achtung: Das Tablet „{conflict_device_name}“ mit diesem Gerätenamen ist bereits in Benutzung – "
+            "nur freigeben, wenn das Gerät wirklich ersetzt wurde."
+        )
+    await _notify_accounts(
+        db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.DEVICE_ALERT, message,
+        "Tablet wartet auf Freigabe",
+    )
+
+
+async def notify_device_rejected(db: AsyncSession, device) -> None:
+    """Warnung an Admin/HR: ein weiteres Gerät wollte sich mit dem Zugang eines Tablets anmelden."""
+    message = (
+        f"Ein weiteres Gerät wollte sich als Tablet „{device.name}“ anmelden und wurde abgewiesen. "
+        "Wurde das Tablet getauscht, in der HR-Webapp unter „Tablets“ neu koppeln – sonst prüfen, wer den Zugang hat."
+    )
+    await _notify_accounts(
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        "Warnung: Tablet-Zugang",
+    )

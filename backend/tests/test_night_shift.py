@@ -5,7 +5,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, EmployeeDefaultShift, HrRole, HrUser, Location, ShiftTemplate
+from app.models import Employee, EmployeeDefaultShift, HrRole, Account, Location, ShiftTemplate
 
 SATURDAY = "2026-08-15"
 
@@ -17,11 +17,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     await db_session.refresh(location)
     employee = Employee(location_id=location.id, first_name="Nina", last_name="Nacht", employee_number="N1", termination_date=date(2026, 8, 16))
     template = ShiftTemplate(name="Nacht", target_minutes=480)
-    db_session.add_all([employee, template, HrUser(email="admin@example.com", password_hash=__import__("app.services.auth_service", fromlist=["hash_password"]).hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, template, Account(email="admin@example.com", password_hash=__import__("app.services.auth_service", fromlist=["hash_password"]).hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     db_session.add(EmployeeDefaultShift(employee_id=employee.id, shift_template_id=template.id, valid_from=date(2026, 1, 1), weekdays_mask=1 << 5))  # nur Samstag
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return employee, {"Authorization": f"Bearer {token}"}
 
 

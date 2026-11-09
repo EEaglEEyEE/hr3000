@@ -63,6 +63,8 @@ class AttentionKind(str, enum.Enum):
     PROBATION_ENDING = "PROBATION_ENDING"
     FIXED_TERM_ENDING = "FIXED_TERM_ENDING"
     TERMINATION = "TERMINATION"
+    # Aufbewahrungsfrist eines Dokuments abgelaufen – prüfen, ggf. löschen (keine Automatik)
+    RETENTION_DUE = "RETENTION_DUE"
 
 
 class AttentionItem(EmployeeRef):

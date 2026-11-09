@@ -75,3 +75,90 @@ export function useCreatePairingCodeMutation() {
       ),
   })
 }
+
+// --- Verteilung per MDM ------------------------------------------------------------------------
+
+export type EnrollmentKey = components['schemas']['EnrollmentKeyResponse']
+export type CreatedEnrollmentKey = components['schemas']['EnrollmentKeyCreatedResponse']
+export type DeviceEnrollment = components['schemas']['DeviceEnrollmentResponse']
+
+export function useEnrollmentKeysQuery() {
+  return useQuery({
+    queryKey: ['enrollment-keys'],
+    queryFn: async () => unwrap(await apiClient.GET('/devices/enrollment-keys')),
+  })
+}
+
+/** Neuer Registrierungsschlüssel für einen Standort (ersetzt einen vorhandenen). valid_days null = unbefristet. */
+export function useCreateEnrollmentKeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { location_id: number; valid_days: number | null }) =>
+      unwrap(await apiClient.POST('/devices/enrollment-keys', { body: payload })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['enrollment-keys'] })
+    },
+  })
+}
+
+export function useDeleteEnrollmentKeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (locationId: number) => {
+      const result = await apiClient.DELETE('/devices/enrollment-keys/{location_id}', {
+        params: { path: { location_id: locationId } },
+      })
+      if (result.error !== undefined) throw new Error('Sperren fehlgeschlagen.')
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['enrollment-keys'] })
+    },
+  })
+}
+
+/** Geräte, die auf Freigabe warten – regelmäßig nachladen, damit neue Anfragen ohne Neuladen erscheinen. */
+export function useEnrollmentsQuery() {
+  return useQuery({
+    queryKey: ['device-enrollments'],
+    queryFn: async () => unwrap(await apiClient.GET('/devices/enrollments')),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useApproveEnrollmentMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      enrollmentId,
+      payload,
+    }: {
+      enrollmentId: number
+      payload: { device_id?: number | null; name?: string | null }
+    }) =>
+      unwrap(
+        await apiClient.POST('/devices/enrollments/{enrollment_id}/approve', {
+          params: { path: { enrollment_id: enrollmentId } },
+          body: payload,
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['device-enrollments'] })
+      void queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+  })
+}
+
+export function useRejectEnrollmentMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (enrollmentId: number) => {
+      const result = await apiClient.DELETE('/devices/enrollments/{enrollment_id}', {
+        params: { path: { enrollment_id: enrollmentId } },
+      })
+      if (result.error !== undefined) throw new Error('Ablehnen fehlgeschlagen.')
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['device-enrollments'] })
+    },
+  })
+}

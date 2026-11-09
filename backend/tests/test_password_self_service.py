@@ -11,9 +11,10 @@ import app.api.auth as auth_api
 import app.api.branding as branding_api
 import app.services.signup_mail as signup_mail
 from app.config import settings
-from app.models import AccountToken, Device, Employee, HrRole, HrUser, Location
+from app.models import AccountToken, Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 from app.services.tenant_provisioning import provision_tenant
+from app.services.pairing_service import token_hash
 
 HOST = {"Host": "musterfirma.hr3000.de"}
 PW = "altes-passwort-1"
@@ -47,8 +48,8 @@ def _token_from(mail: dict) -> str:
     return re.search(r"#token=([A-Za-z0-9_-]+)", mail["body"]).group(1)
 
 
-async def _hr(db_session, email="hr@musterfirma.example", password=PW) -> HrUser:
-    user = HrUser(email=email, password_hash=hash_password(password), role=HrRole.ADMIN)
+async def _hr(db_session, email="hr@musterfirma.example", password=PW) -> Account:
+    user = Account(email=email, password_hash=hash_password(password), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     return user
@@ -68,7 +69,7 @@ async def _employee(db_session, email="erika@musterfirma.example", password=PW) 
 
 
 async def _login(client, email, password, kind="hr", host=HOST):
-    return await client.post(f"/auth/{kind}/login", json={"email": email, "password": password}, headers=host)
+    return await client.post("/auth/login", json={"email": email, "password": password}, headers=host)
 
 
 def _auth(token: str) -> dict:
@@ -95,7 +96,7 @@ async def test_hr_user_changes_password_and_other_sessions_end(client, db_sessio
     new_tokens = ok.json()
     # Alte Sitzung (auch auf anderen Geräten) ist beendet, die neue funktioniert.
     assert (await client.get("/plan", headers=_auth(old_tokens["access_token"]))).status_code == 401
-    assert (await client.post("/auth/hr/refresh", json={"refresh_token": old_tokens["refresh_token"]}, headers=HOST)).status_code == 401
+    assert (await client.post("/auth/refresh", json={"refresh_token": old_tokens["refresh_token"]}, headers=HOST)).status_code == 401
     assert (await client.get("/plan", headers=_auth(new_tokens["access_token"]))).status_code == 200
     assert (await _login(client, "hr@musterfirma.example", PW)).status_code == 401
     assert (await _login(client, "hr@musterfirma.example", "neues-passwort-1")).status_code == 200
@@ -122,7 +123,7 @@ async def test_tablets_cannot_change_passwords(client, db_session):
     location = Location(name="Zentrale", timezone="UTC")
     db_session.add(location)
     await db_session.commit()
-    db_session.add(Device(name="Tablet", location_id=location.id, device_token="tok-pw-test"))
+    db_session.add(Device(name="Tablet", location_id=location.id, token_hash=token_hash("tok-pw-test")))
     await db_session.commit()
     token = (await client.post("/auth/device/login", json={"device_token": "tok-pw-test"}, headers=HOST)).json()["access_token"]
     r = await client.post("/auth/change-password", json={"current_password": "x", "new_password": "neues-passwort-1"}, headers=_auth(token))
@@ -262,10 +263,10 @@ async def test_password_reset_also_confirms_the_address(client, db_session, mail
 
 async def test_super_admin_reset_unblocks_unconfirmed_admin(client, db_session, mails):
     await client.post("/public/signup", json=SIGNUP, headers={"Host": "hr3000.de"})
-    db_session.add(HrUser(tenant_id=None, email="chef@example.com", password_hash=hash_password("sehr-geheim-123"), role=HrRole.SUPER_ADMIN))
+    db_session.add(Account(tenant_id=None, email="chef@example.com", password_hash=hash_password("sehr-geheim-123"), role=HrRole.SUPER_ADMIN))
     await db_session.commit()
     admin_host = {"Host": settings.super_admin_hostname}
-    sa = (await client.post("/auth/hr/login", json={"email": "chef@example.com", "password": "sehr-geheim-123"}, headers=admin_host)).json()["access_token"]
+    sa = (await client.post("/auth/login", json={"email": "chef@example.com", "password": "sehr-geheim-123"}, headers=admin_host)).json()["access_token"]
     tenants = (await client.get("/tenants", headers={**admin_host, "Authorization": f"Bearer {sa}"})).json()
     tenant_id = next(t["id"] for t in tenants if t["subdomain"] == "neue-firma")
     reset = await client.post(f"/tenants/{tenant_id}/reset-admin-password", headers={**admin_host, "Authorization": f"Bearer {sa}"})

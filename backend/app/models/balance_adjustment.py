@@ -1,7 +1,8 @@
 import enum
 from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -14,8 +15,8 @@ class AdjustmentKind(str, enum.Enum):
 
 
 class BalanceAdjustment(Base):
-    """Manuelle Buchung auf dem Gleitzeitkonto. Unveränderlich (Korrektur = löschen + neu),
-    jede Buchung landet im Audit-Log."""
+    """Manuelle Buchung auf dem Überstundenkonto. Unveränderlich (Korrektur = löschen + neu),
+    jede Buchung landet im Audit-Protokoll."""
 
     __tablename__ = "balance_adjustments"
 
@@ -26,6 +27,8 @@ class BalanceAdjustment(Base):
     minutes: Mapped[int] = mapped_column(Integer)
     kind: Mapped[AdjustmentKind] = mapped_column(Enum(AdjustmentKind))
     note: Mapped[str] = mapped_column(String(300))
-    created_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    created_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    # Nur bei Auszahlung: Faktor für die Vergütung (z. B. 1,5 = mit 50 % Zuschlag); leer = 1.
+    # Das Konto sinkt immer um die Stunden selbst.
+    payout_factor: Mapped[Decimal | None] = mapped_column(Numeric(4, 2), nullable=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

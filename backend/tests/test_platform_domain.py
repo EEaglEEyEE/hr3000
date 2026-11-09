@@ -6,10 +6,11 @@ import pytest
 from starlette.requests import Request
 
 from app.config import settings
-from app.models import Device, HrRole, HrUser, Location, Tenant, TenantStatus
+from app.models import Device, HrRole, Account, Location, Tenant, TenantStatus
 from app.services.auth_service import hash_password
 from app.services.credentials_mail import login_url
 from app.services.platform_domain import kiosk_url_for_host, tenant_subdomain_for_host
+from app.services.pairing_service import token_hash
 
 ASK = "/internal/tls-allowed"
 
@@ -156,10 +157,10 @@ async def test_unknown_platform_host_is_rejected(client, two_tenants, host):
 
 async def test_kiosk_host_cannot_reach_other_tenant(client, two_tenants, db_session):
     # Ein Login am Kiosk-Host von Lassner gilt nicht für Musterfirma (Mandantentrennung).
-    db_session.add(HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR, tenant_id=1))
+    db_session.add(Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR, tenant_id=1))
     await db_session.commit()
     login = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "pw"}, headers={"Host": "kiosk.musterfirma.hr3000.de"}
+        "/auth/login", json={"email": "hr@example.com", "password": "pw"}, headers={"Host": "kiosk.musterfirma.hr3000.de"}
     )
     assert login.status_code == 200, login.text
     token = login.json()["access_token"]
@@ -199,12 +200,12 @@ async def test_pairing_code_returns_kiosk_url(client, db_session, base_domain):
     location = Location(name="Zentrale", timezone="UTC")
     db_session.add(location)
     await db_session.commit()
-    device = Device(name="Tablet", location_id=location.id, device_token="long-device-token-123456")
-    db_session.add_all([device, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    device = Device(name="Tablet", location_id=location.id, token_hash=token_hash("long-device-token-123456"))
+    db_session.add_all([device, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     host = {"Host": "musterfirma.hr3000.de"}
     token = (
-        await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"}, headers=host)
+        await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"}, headers=host)
     ).json()["access_token"]
     response = await client.post(
         f"/devices/{device.id}/pairing-code", headers={**host, "Authorization": f"Bearer {token}"}

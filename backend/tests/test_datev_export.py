@@ -6,7 +6,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Compensation, Employee, HrRole, HrUser, Location, PayType
+from app.models import Compensation, Employee, HrRole, Account, Location, PayType
 from app.services.auth_service import hash_password
 
 AUGUST = {"month": "2026-08"}
@@ -24,8 +24,8 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[list[Em
             hourly,
             salaried,
             odd,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-            HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
         ]
     )
     await db_session.commit()
@@ -40,7 +40,7 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[list[Em
     await db_session.commit()
     tokens = []
     for email in ("admin@example.com", "hr@example.com"):
-        login = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+        login = await client.post("/auth/login", json={"email": email, "password": "pw"})
         tokens.append({"Authorization": f"Bearer {login.json()['access_token']}"})
     return [hourly, salaried, odd], tokens[0], tokens[1]
 

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.models.hr_user import HrRole
+from app.models.account import HrRole
 from app.schemas.common import NewPassword
 
 
@@ -10,6 +10,7 @@ class HrUserCreateRequest(BaseModel):
     role: HrRole = HrRole.HR
     # Berechtigung „Vergütung & Lohn-Export“ (nur Rolle HR; Admins haben sie immer)
     payroll_access: bool = False
+    two_factor_enabled: bool = False
 
 
 class HrUserResponse(BaseModel):

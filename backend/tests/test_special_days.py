@@ -6,7 +6,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, EmployeeDefaultShift, Holiday, HrRole, HrUser, Location, ShiftTemplate, Team
+from app.models import Employee, EmployeeDefaultShift, Holiday, HrRole, Account, Location, ShiftTemplate, Team
 from app.services.auth_service import hash_password
 
 
@@ -17,11 +17,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     await db_session.refresh(location)
     employee = Employee(location_id=location.id, first_name="Erika", last_name="Muster", employee_number="E1", termination_date=date(2025, 3, 31))
     template = ShiftTemplate(name="Normal", target_minutes=480)
-    db_session.add_all([employee, template, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([employee, template, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     db_session.add(EmployeeDefaultShift(employee_id=employee.id, shift_template_id=template.id, valid_from=date(2025, 1, 1), weekdays_mask=0b0011111))
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
     return employee, {"Authorization": f"Bearer {token}"}
 
 
@@ -74,7 +74,7 @@ async def test_work_during_absence_holiday_and_outside_employment(client: AsyncC
 async def test_team_calendar_filters_by_team(client: AsyncClient, db_session: AsyncSession) -> None:
     location = Location(name="A", timezone="UTC")
     team_a, team_b = Team(name="A-Team"), Team(name="B-Team")
-    db_session.add_all([location, team_a, team_b, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([location, team_a, team_b, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     db_session.add_all([
         Employee(location_id=location.id, team_id=team_a.id, first_name="A", last_name="A", employee_number="1"),
@@ -82,7 +82,7 @@ async def test_team_calendar_filters_by_team(client: AsyncClient, db_session: As
         Employee(location_id=location.id, first_name="C", last_name="C", employee_number="3"),
     ])
     await db_session.commit()
-    headers = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]}
+    headers = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]}
     params = {"from": "2025-03-01", "to": "2025-03-31"}
 
     def names(r):

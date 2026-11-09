@@ -2,14 +2,14 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser, Location
+from app.models import HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
 async def _admin(db_session: AsyncSession, client: AsyncClient, role: HrRole = HrRole.ADMIN, email: str = "admin@example.com") -> dict:
-    db_session.add(HrUser(email=email, password_hash=hash_password("pw"), role=role))
+    db_session.add(Account(email=email, password_hash=hash_password("pw"), role=role))
     await db_session.commit()
-    login = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    login = await client.post("/auth/login", json={"email": email, "password": "pw"})
     assert login.status_code == 200, login.text
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
@@ -99,12 +99,12 @@ async def test_location_list_for_team_leader_is_team_scoped_without_chip_ids(cli
     await db_session.commit()
     mine = Employee(location_id=location.id, first_name="Mia", last_name="Mein", employee_number="1", team_id=team_a.id, nfc_uid="AAA")
     other = Employee(location_id=location.id, first_name="Olf", last_name="Other", employee_number="2", team_id=team_b.id, nfc_uid="BBB")
-    lead = HrUser(email="lead@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
+    lead = Account(email="lead@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add_all([mine, other, lead])
     await db_session.commit()
-    db_session.add(SupervisorTeamAssignment(hr_user_id=lead.id, team_id=team_a.id))
+    db_session.add(SupervisorTeamAssignment(account_id=lead.id, team_id=team_a.id))
     await db_session.commit()
-    login = await client.post("/auth/hr/login", json={"email": "lead@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "lead@example.com", "password": "pw"})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     rows = (await client.get(f"/locations/{location.id}/employees", headers=headers)).json()
     assert [(r["employee_number"], r["nfc_uid"]) for r in rows] == [("1", None)]
@@ -189,7 +189,7 @@ async def test_four_eyes_switch_prevents_self_approval(client: AsyncClient, db_s
     types = (await client.get("/absence-types", headers=admin)).json()
     vacation = next(t for t in types if t["category"] == "VACATION")
     assert (await client.patch(f"/absence-types/{vacation['id']}", headers=admin, json={"requires_approval": True})).status_code == 200
-    login = await client.post("/auth/employee/login", json={"email": "hanne@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "hanne@example.com", "password": "pw"})
     assert login.status_code == 200, login.text
     hanne = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

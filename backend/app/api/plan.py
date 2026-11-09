@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_admin_principal, get_current_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, HrRole, HrUser, Tenant
+from app.models import Account, AuditAction, HrRole, Tenant
 from app.schemas.plan import CancellationRequest, PlanResponse
 from app.services.audit_service import log_action
 from app.services.email_service import resolve_smtp_config, send_email
@@ -50,7 +50,9 @@ async def _notify_cancellation(db: AsyncSession, tenant: Tenant) -> None:
     if config is None:
         return
     to = tenant.contact_email or await db.scalar(
-        select(HrUser.email).where(HrUser.tenant_id == tenant.id, HrUser.role == HrRole.ADMIN).order_by(HrUser.id)
+        select(Account.email)
+        .where(Account.tenant_id == tenant.id, Account.role == HrRole.ADMIN, Account.email.is_not(None))
+        .order_by(Account.id)
     )
     if not to:
         return
@@ -84,8 +86,7 @@ async def cancel_account(
         log_action(
             db,
             tenant_id=tenant_id,
-            actor_hr_user_id=actor.hr_user.id if actor.hr_user else None,
-            actor_employee_id=actor.employee.id if actor.employee else None,
+            actor_account_id=actor.account_id,
             action=AuditAction.SETTINGS_CHANGED,
             entity_type="tenant",
             entity_id=tenant_id,
@@ -108,8 +109,7 @@ async def revoke_account_cancellation(
         log_action(
             db,
             tenant_id=tenant_id,
-            actor_hr_user_id=actor.hr_user.id if actor.hr_user else None,
-            actor_employee_id=actor.employee.id if actor.employee else None,
+            actor_account_id=actor.account_id,
             action=AuditAction.SETTINGS_CHANGED,
             entity_type="tenant",
             entity_id=tenant_id,

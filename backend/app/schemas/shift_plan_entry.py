@@ -18,8 +18,7 @@ class ShiftPlanEntryResponse(BaseModel):
     shift_template_id: int | None
     is_workday: bool
     target_minutes: int | None
-    planned_by_hr_user_id: int | None
-    planned_by_employee_id: int | None
+    planned_by_account_id: int | None
 
 
 class EffectiveShiftDayResponse(BaseModel):

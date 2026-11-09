@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BreakRule, Employee, HrRole, HrUser, Location, Punch, PunchSource, PunchType
+from app.models import BreakRule, Employee, HrRole, Account, Location, Punch, PunchSource, PunchType
 from app.services.auth_service import hash_password
 from app.services.timesheet_service import pair_punches_detail
 
@@ -23,14 +23,14 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[Employe
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
             BreakRule(min_work_minutes=360, deduct_minutes=30),
             BreakRule(min_work_minutes=540, deduct_minutes=45),
         ]
     )
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return employee, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 

@@ -43,6 +43,19 @@ class AuditAction(str, enum.Enum):
     PUNCH_CORRECTION_DECIDED = "PUNCH_CORRECTION_DECIDED"
     EMPLOYEE_CARD_REGISTERED = "EMPLOYEE_CARD_REGISTERED"
     EMPLOYEE_PIN_SET_AT_KIOSK = "EMPLOYEE_PIN_SET_AT_KIOSK"
+    # Erfolgreiche Anmeldung in der Webapp (ohne IP-Adresse; Super-Admin ohne Mandant nicht).
+    LOGIN = "LOGIN"
+    # Korrektur am Urlaubskonto (± Tage, ggf. mit Verfall)
+    LEAVE_ADJUSTED = "LEAVE_ADJUSTED"
+    # Anmeldung eines weiteren Geräts mit dem Zugang eines gebundenen Tablets abgewiesen
+    DEVICE_LOGIN_REJECTED = "DEVICE_LOGIN_REJECTED"
+    TWO_FACTOR_CHANGED = "TWO_FACTOR_CHANGED"
+    DEPARTMENT_CHANGED = "DEPARTMENT_CHANGED"
+    PERSONAL_DATA_CHANGED = "PERSONAL_DATA_CHANGED"
+    COST_CENTERS_CHANGED = "COST_CENTERS_CHANGED"
+    ATTRIBUTE_CHANGED = "ATTRIBUTE_CHANGED"
+    # Registrierungsschlüssel erzeugt/gesperrt, Tablet per MDM eingerichtet, Anfrage freigegeben/abgelehnt
+    DEVICE_ENROLLMENT = "DEVICE_ENROLLMENT"
 
 
 class AuditLogEntry(Base):
@@ -60,9 +73,8 @@ class AuditLogEntry(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
-    # Dual-Actor-Muster wie überall sonst im Projekt (siehe z.B. Punch.created_by).
-    actor_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    actor_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    # Wer gehandelt hat (Konto); NULL = System bzw. Tablet ohne Konto.
+    actor_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     action: Mapped[AuditAction] = mapped_column(Enum(AuditAction))
     entity_type: Mapped[str] = mapped_column(String(50))
     entity_id: Mapped[int] = mapped_column(Integer)

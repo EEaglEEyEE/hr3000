@@ -22,6 +22,26 @@ class AbsenceType(str, enum.Enum):
     PUBLIC_HOLIDAY = "PUBLIC_HOLIDAY"
     # Krankheit eines Kindes: Gutschrift wie Krankheit, wird aber getrennt gezählt (kein BEM).
     CHILD_SICK = "CHILD_SICK"
+    # Rechnen wie UNPAID (Soll entfällt), sind aber für die Lohnabrechnung zu unterscheiden: eigene
+    # Spalte im Lohn-Export (nur wenn im Zeitraum genutzt), in Berichten unter „Unbezahlt“.
+    PARENTAL_LEAVE = "PARENTAL_LEAVE"  # Mutterschutz/Elternzeit
+    SHORT_TIME_WORK = "SHORT_TIME_WORK"  # Kurzarbeit
+    UNEXCUSED = "UNEXCUSED"  # Unentschuldigtes Fehlen
+    CARE_LEAVE = "CARE_LEAVE"  # Pflege von Angehörigen
+
+
+# Kategorien ohne Gutschrift, bei denen das Soll entfällt.
+UNPAID_CATEGORIES = frozenset(
+    {
+        AbsenceType.UNPAID,
+        AbsenceType.PARENTAL_LEAVE,
+        AbsenceType.SHORT_TIME_WORK,
+        AbsenceType.UNEXCUSED,
+        AbsenceType.CARE_LEAVE,
+    }
+)
+# Davon mit eigener Spalte im Lohn-Export (UNPAID hat seine feste Spalte „Unbezahlte Tage“).
+SEPARATE_UNPAID_CATEGORIES = UNPAID_CATEGORIES - {AbsenceType.UNPAID}
 
 
 class AbsenceApprovalStatus(str, enum.Enum):
@@ -54,15 +74,37 @@ class Absence(Base):
     # Genaue Dauer in Minuten statt ganzem/halbem Tag (nur einzelner Tag), z.B. 3 Std. Homeoffice:
     # bezahlte Arten schreiben genau diese Zeit gut, unbezahlte senken das Soll um diese Zeit.
     duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    created_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Vertretung während der Abwesenheit (anderer Mitarbeiter desselben Mandanten), optional.
+    substitute_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    # Hochgeladener Nachweis (z. B. AU-Bescheinigung), liegt als Dokument „Krankmeldung“ in der Akte.
+    certificate_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employee_documents.id", ondelete="SET NULL"), nullable=True
+    )
 
     approval_status: Mapped[AbsenceApprovalStatus] = mapped_column(
         Enum(AbsenceApprovalStatus), default=AbsenceApprovalStatus.APPROVED
     )
-    # Wer entschieden hat (Supervisor/Admin/HR) – dasselbe Dual-Actor-Muster
-    # wie created_by/created_by_employee_id.
-    decided_by: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    decided_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    # Wer entschieden hat (Konto mit Rolle Führungskraft/Admin/HR).
+    decided_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Aktueller Schritt der Genehmigungskette (1 = erster), siehe app/services/approval_service.py
+    approval_step: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
+class AbsenceApproval(Base):
+    """Eine Entscheidung in der Genehmigungskette eines Antrags (Verlauf: wer hat welchen Schritt
+    genehmigt bzw. abgelehnt)."""
+
+    __tablename__ = "absence_approvals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    absence_id: Mapped[int] = mapped_column(ForeignKey("absences.id", ondelete="CASCADE"), index=True)
+    step: Mapped[int] = mapped_column(Integer)
+    # SUPERVISOR, HR oder TEAM (Art des Schritts zum Zeitpunkt der Entscheidung)
+    step_type: Mapped[str] = mapped_column(String(20))
+    decided_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    approved: Mapped[bool] = mapped_column(Boolean)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime)

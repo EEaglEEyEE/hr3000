@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AccountToken, AccountTokenPurpose, Employee, HrUser
+from app.models import Account, AccountToken, AccountTokenPurpose
 
 PASSWORD_RESET_TTL = timedelta(hours=1)
 EMAIL_VERIFY_TTL = timedelta(days=7)
@@ -32,24 +32,19 @@ async def issue_token(
     tenant_id: int,
     purpose: AccountTokenPurpose,
     ttl: timedelta,
-    hr_user: HrUser | None = None,
-    employee: Employee | None = None,
+    account: Account,
 ) -> str:
     """Neues Token ausstellen (ältere offene desselben Kontos/Zwecks verfallen). Ruft kein commit."""
-    if (hr_user is None) == (employee is None):
-        raise ValueError("Genau ein Konto (HR-Nutzer oder Mitarbeiter) angeben.")
-    owner = AccountToken.hr_user_id == hr_user.id if hr_user else AccountToken.employee_id == employee.id
     await db.execute(
         update(AccountToken)
-        .where(owner, AccountToken.purpose == purpose.value, AccountToken.used_at.is_(None))
+        .where(AccountToken.account_id == account.id, AccountToken.purpose == purpose.value, AccountToken.used_at.is_(None))
         .values(used_at=_now())
     )
     raw = secrets.token_urlsafe(32)
     db.add(
         AccountToken(
             tenant_id=tenant_id,
-            hr_user_id=hr_user.id if hr_user else None,
-            employee_id=employee.id if employee else None,
+            account_id=account.id,
             purpose=purpose.value,
             token_hash=_hash(raw),
             expires_at=_now() + ttl,

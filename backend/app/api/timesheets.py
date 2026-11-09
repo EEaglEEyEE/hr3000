@@ -9,6 +9,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import DailySummary, DayReview, Employee, EmployeeDefaultShift, SummaryStatus
 from app.schemas.timesheet import (
+    BalanceLimitRow,
     DayReviewRequest,
     MonthlyCapRow,
     OpenDayResponse,
@@ -206,6 +207,38 @@ async def list_monthly_caps(
     return sorted(rows, key=lambda r: (not r.exceeded, r.last_name, r.first_name))
 
 
+@router.get("/timesheet/balance-limits", response_model=list[BalanceLimitRow])
+async def list_balance_limits(
+    actor: Actor = Depends(get_current_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> list[BalanceLimitRow]:
+    """Überstundenkonten an den Grenzen aus den Einstellungen („Zu klären“ → „Grenzen“): ab 90 % der
+    Obergrenze oder unter der Untergrenze. Ohne eingestellte Grenzen leer."""
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    max_hours, min_hours = settings_row.overtime_limit_max_hours, settings_row.overtime_limit_min_hours
+    if max_hours is None and min_hours is None:
+        return []
+    stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
+    if actor.is_supervisor_level:
+        stmt = stmt.where(Employee.team_id.in_(await supervisor_team_ids(db, actor) or set()))
+    rows = []
+    for employee in (await db.execute(stmt)).scalars().all():
+        balance = (await balance_as_of(db, employee)).total_minutes
+        if max_hours is not None and balance >= max_hours * 60 * WARN_SHARE:
+            limit, kind, exceeded = max_hours * 60, "MAX", balance > max_hours * 60
+        elif min_hours is not None and balance < min_hours * 60:
+            limit, kind, exceeded = min_hours * 60, "MIN", True
+        else:
+            continue
+        rows.append(
+            BalanceLimitRow(
+                employee_id=employee.id, first_name=employee.first_name, last_name=employee.last_name,
+                balance_minutes=balance, limit_minutes=limit, kind=kind, exceeded=exceeded,
+            )
+        )
+    return sorted(rows, key=lambda r: (not r.exceeded, r.last_name, r.first_name))
+
+
 @router.get("/employees/{employee_id}/timesheet", response_model=list[TimesheetDay])
 async def get_timesheet(
     employee_id: int,
@@ -286,16 +319,14 @@ async def mark_day_reviewed(
                 employee_id=employee_id,
                 work_date=work_date,
                 note=(payload.note.strip() or None) if payload and payload.note else None,
-                reviewed_by_hr_user_id=actor.audit_hr_user_id,
-                reviewed_by_employee_id=actor.audit_employee_id,
+                reviewed_by_account_id=actor.account_id,
                 fingerprint=fingerprint,
             )
         )
     else:
         # erneut abgehakt (der Tag hatte sich geändert): neuer Stand
         existing.fingerprint = fingerprint
-        existing.reviewed_by_hr_user_id = actor.audit_hr_user_id
-        existing.reviewed_by_employee_id = actor.audit_employee_id
+        existing.reviewed_by_account_id = actor.account_id
     await db.commit()
 
 

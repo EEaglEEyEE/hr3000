@@ -91,6 +91,15 @@ export function useOpenDaysCount(): number {
   return data?.length ?? 0
 }
 
+/** Überstundenkonten ab 90 % der Obergrenze bzw. unter der Untergrenze (Einstellungen). */
+export function useBalanceLimitsQuery() {
+  return useQuery({
+    queryKey: ['balance-limits'],
+    queryFn: async () => unwrap(await apiClient.GET('/timesheet/balance-limits')),
+    refetchInterval: 60_000,
+  })
+}
+
 /** Aushilfen "nach Aufwand", die ≥ 90 % ihrer Monatsgrenze erreicht haben. */
 export function useMonthlyCapsQuery() {
   return useQuery({

@@ -13,12 +13,9 @@ async def supervisor_team_ids(db: AsyncSession, actor: Actor) -> set[int] | None
     if not actor.is_supervisor_level:
         return None
 
-    stmt = select(SupervisorTeamAssignment.team_id)
-    if actor.hr_user is not None:
-        stmt = stmt.where(SupervisorTeamAssignment.hr_user_id == actor.hr_user.id)
-    else:
-        stmt = stmt.where(SupervisorTeamAssignment.employee_id == actor.employee.id)
-    result = await db.execute(stmt)
+    result = await db.execute(
+        select(SupervisorTeamAssignment.team_id).where(SupervisorTeamAssignment.account_id == actor.account_id)
+    )
     return set(result.scalars().all())
 
 

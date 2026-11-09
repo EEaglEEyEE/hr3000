@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
 from app.models import (
+    SEPARATE_UNPAID_CATEGORIES,
     LOCKING_STATUSES,
     AbsenceType,
     Employee,
@@ -67,6 +68,10 @@ _ABSENCE_LABELS = {
     AbsenceType.WORK_TIME: "Arbeitszeit",
     AbsenceType.PUBLIC_HOLIDAY: "Feiertag",
     AbsenceType.CHILD_SICK: "Kind krank",
+    AbsenceType.PARENTAL_LEAVE: "Mutterschutz/Elternzeit",
+    AbsenceType.SHORT_TIME_WORK: "Kurzarbeit",
+    AbsenceType.UNEXCUSED: "Unentschuldigt",
+    AbsenceType.CARE_LEAVE: "Pflege von Angehörigen",
 }
 
 
@@ -300,6 +305,7 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
             AbsenceType.UNPAID: "unpaid_days",
             AbsenceType.TIME_OFF_IN_LIEU: "time_off_days",
             AbsenceType.CHILD_SICK: "child_sick_days",
+            **{category: "unpaid_days" for category in SEPARATE_UNPAID_CATEGORIES},
         }
         for category, count in absence_day_counts(calc).items():
             if category in counters:  # Arbeitszeit/Feiertag sind keine Abwesenheitstage

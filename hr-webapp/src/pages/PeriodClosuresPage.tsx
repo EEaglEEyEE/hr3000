@@ -184,7 +184,7 @@ export function PeriodClosuresPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        if (window.confirm('Abschluss ohne Bestätigung des Mitarbeiters? Das wird im Audit-Log vermerkt.')) {
+                        if (window.confirm('Abschluss ohne Bestätigung des Mitarbeiters? Das wird im Audit-Protokoll vermerkt.')) {
                           void run(() => close.mutateAsync({ employeeId: row.employee_id, year, month }))
                         }
                       }}

@@ -29,8 +29,7 @@ def _audit(db: AsyncSession, actor: Actor, detail: str) -> None:
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SETTINGS_CHANGED,
         entity_type="wage_types",
         entity_id=actor.tenant_id,

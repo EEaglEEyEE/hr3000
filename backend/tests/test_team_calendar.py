@@ -10,7 +10,7 @@ from app.models import (
     Employee,
     Holiday,
     HrRole,
-    HrUser,
+    Account,
     Location,
     SupervisorTeamAssignment,
     Team,
@@ -42,8 +42,8 @@ async def _create_employee(
     return employee
 
 
-async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.HR) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=role)
+async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.HR) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -51,7 +51,7 @@ async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.HR) ->
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -154,15 +154,15 @@ async def test_supervisor_sees_only_own_team(client: AsyncClient, db_session: As
     own_employee = await _create_employee(db_session, location, "EMP-OWN", team_id=team.id)
     await _create_employee(db_session, location, "EMP-OTHER", team_id=other_team.id)
 
-    supervisor = HrUser(email="super@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
+    supervisor = Account(email="super@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(supervisor)
     await db_session.commit()
     await db_session.refresh(supervisor)
-    db_session.add(SupervisorTeamAssignment(team_id=team.id, hr_user_id=supervisor.id))
+    db_session.add(SupervisorTeamAssignment(team_id=team.id, account_id=supervisor.id))
     await db_session.commit()
 
     login_response = await client.post(
-        "/auth/hr/login", json={"email": "super@example.com", "password": "pw"}
+        "/auth/login", json={"email": "super@example.com", "password": "pw"}
     )
     token = login_response.json()["access_token"]
 

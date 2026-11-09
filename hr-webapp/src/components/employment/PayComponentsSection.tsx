@@ -23,12 +23,23 @@ function euro(value: number): string {
 }
 
 function describeAmount(component: PayComponent): string {
-  if (component.kind === 'ONE_TIME') return `${euro(component.amount)} EUR einmalig`
+  if (component.kind === 'ONE_TIME') {
+    const value =
+      component.percent_of_salary != null
+        ? `${String(component.percent_of_salary).replace('.', ',')} % des Monatsgehalts`
+        : `${euro(component.amount)} EUR`
+    return `${value} ${component.recurs_yearly ? 'jährlich' : 'einmalig'}`
+  }
   return `${euro(component.amount)} EUR ${component.unit === 'PER_HOUR' ? 'je Ist-Stunde' : 'je Monat'}`
 }
 
 function describeWhen(component: PayComponent): string {
-  if (component.kind === 'ONE_TIME') return component.pay_date ? `am ${formatDate(component.pay_date)}` : ''
+  if (component.kind === 'ONE_TIME') {
+    if (!component.pay_date) return ''
+    if (!component.recurs_yearly) return `am ${formatDate(component.pay_date)}`
+    const end = component.valid_to ? `, bis ${formatDate(component.valid_to)}` : ''
+    return `jährlich am ${formatDate(component.pay_date).slice(0, 6)} ab ${component.pay_date.slice(0, 4)}${end}`
+  }
   return `ab ${formatDate(component.valid_from!)}${component.valid_to ? ` bis ${formatDate(component.valid_to)}` : ', unbefristet'}`
 }
 
@@ -106,7 +117,7 @@ export function PayComponentsSection({ employeeId }: { employeeId: number }) {
               <TableCell>{component.wage_type ?? '–'}</TableCell>
               <TableCell>{component.note ?? '–'}</TableCell>
               <TableCell className="whitespace-nowrap text-right">
-                {component.kind === 'ALLOWANCE' && !component.valid_to && ending?.id !== component.id && (
+                {(component.kind === 'ALLOWANCE' || component.recurs_yearly) && !component.valid_to && ending?.id !== component.id && (
                   <Button variant="ghost" size="sm" onClick={() => setEnding({ id: component.id, date: todayIsoDate() })}>
                     Beenden
                   </Button>
@@ -160,6 +171,9 @@ function PayComponentDialog({
   const allowance = kind === 'ALLOWANCE'
   const [name, setName] = useState(allowance ? '' : 'Weihnachtsgeld')
   const [amount, setAmount] = useState('')
+  // Einmalzahlung: Betrag in EUR oder % des Monatsgehalts; „jährlich“ wiederholen
+  const [mode, setMode] = useState<'EUR' | 'PERCENT'>('EUR')
+  const [yearly, setYearly] = useState(false)
   const [unit, setUnit] = useState<'PER_MONTH' | 'PER_HOUR'>('PER_MONTH')
   const [from, setFrom] = useState(todayIsoDate())
   const [to, setTo] = useState('')
@@ -179,13 +193,15 @@ function PayComponentDialog({
     }
     const parsed = Number(amount.replace(',', '.'))
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Bitte einen Betrag größer 0 angeben.')
+      setError(mode === 'PERCENT' && !allowance ? 'Bitte einen Prozentsatz größer 0 angeben.' : 'Bitte einen Betrag größer 0 angeben.')
       return
     }
+    const percent = !allowance && mode === 'PERCENT'
     const payload: PayComponentCreateRequest = {
       kind,
       ...(existing ? { type_id: existing.id } : { type_name: name.trim(), wage_type: wageType.trim() || null }),
-      amount: parsed,
+      ...(percent ? { percent_of_salary: parsed } : { amount: parsed }),
+      recurs_yearly: !allowance && yearly,
       note: note.trim() || null,
       ...(allowance ? { unit, valid_from: from, valid_to: to || null } : { pay_date: from }),
     }
@@ -253,8 +269,28 @@ function PayComponentDialog({
           )}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pc_amount">{allowance ? (unit === 'PER_HOUR' ? 'Betrag je Stunde (EUR)' : 'Betrag je Monat (EUR)') : 'Betrag (EUR)'}</Label>
+              <Label htmlFor="pc_amount">
+                {allowance
+                  ? unit === 'PER_HOUR'
+                    ? 'Betrag je Stunde (EUR)'
+                    : 'Betrag je Monat (EUR)'
+                  : mode === 'PERCENT'
+                    ? '% des Monatsgehalts'
+                    : 'Betrag (EUR)'}
+              </Label>
               <Input id="pc_amount" inputMode="decimal" required value={amount} onChange={(e) => setAmount(e.target.value)} />
+              {!allowance && (
+                <div className="flex flex-col gap-1 text-xs text-slate-600">
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={mode === 'PERCENT'} onChange={(e) => setMode(e.target.checked ? 'PERCENT' : 'EUR')} />
+                    in % des Monatsgehalts (z. B. 50 = Urlaubsgeld, 100 = 13. Gehalt)
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={yearly} onChange={(e) => setYearly(e.target.checked)} />
+                    jährlich wiederholen (bis „Beenden“)
+                  </label>
+                </div>
+              )}
             </div>
             {!existing && (
               <div className="flex flex-col gap-1.5">

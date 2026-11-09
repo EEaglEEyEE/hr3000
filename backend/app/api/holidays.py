@@ -83,7 +83,9 @@ async def create_holiday(
     await _ensure_no_overlap(db, actor.tenant_id, payload.date, {l.id for l in locations} or None)
     await ensure_holiday_change_allowed(db, actor.tenant_id, payload.date, {l.id for l in locations} or None)
 
-    holiday = Holiday(tenant_id=actor.tenant_id, date=payload.date, name=payload.name, locations=locations)
+    holiday = Holiday(
+        tenant_id=actor.tenant_id, date=payload.date, name=payload.name, locations=locations, half_day=payload.half_day
+    )
     db.add(holiday)
     await invalidate_tenant_balances(db, actor.tenant_id, payload.date)
     await db.commit()
@@ -145,6 +147,8 @@ async def update_holiday(
     holiday.locations = new_locations
     if payload.name is not None:
         holiday.name = payload.name
+    if payload.half_day is not None:
+        holiday.half_day = payload.half_day
 
     await db.commit()
     await db.refresh(holiday)

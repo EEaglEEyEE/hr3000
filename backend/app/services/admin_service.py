@@ -1,46 +1,46 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
-from app.models import Employee, HrRole, HrUser
+from app.models import Account, Employee, HrRole
 
 
 async def count_other_admins(
     db: AsyncSession,
     tenant_id: int,
     exclude_employee_id: int | None = None,
-    exclude_hr_user_id: int | None = None,
+    exclude_account_id: int | None = None,
 ) -> int:
-    """Anzahl der Administratoren eines Mandanten ohne den ausgenommenen: HR-User
-    mit ADMIN sowie aktive Mitarbeiter mit hr_role=ADMIN und Login."""
-    user_filter = [HrUser.tenant_id == tenant_id, HrUser.role == HrRole.ADMIN]
-    if exclude_hr_user_id is not None:
-        user_filter.append(HrUser.id != exclude_hr_user_id)
-    admin_users = (await db.execute(select(func.count()).select_from(HrUser).where(*user_filter))).scalar_one()
-
-    employee_filter = [
-        Employee.tenant_id == tenant_id,
-        Employee.hr_role == HrRole.ADMIN,
-        Employee.active.is_(True),
-        Employee.login_email.is_not(None),
-    ]
+    """Anzahl der Administratoren eines Mandanten ohne den ausgenommenen: Konten mit Rolle ADMIN und
+    Zugang (E-Mail gesetzt); ist das Konto mit einem Mitarbeiter verknüpft, muss dieser aktiv sein."""
+    stmt = (
+        select(func.count())
+        .select_from(Account)
+        .outerjoin(Employee, Employee.id == Account.employee_id)
+        .where(
+            Account.tenant_id == tenant_id,
+            Account.role == HrRole.ADMIN,
+            Account.email.is_not(None),
+            Account.password_hash.is_not(None),
+            or_(Account.employee_id.is_(None), Employee.active.is_(True)),
+        )
+    )
+    if exclude_account_id is not None:
+        stmt = stmt.where(Account.id != exclude_account_id)
     if exclude_employee_id is not None:
-        employee_filter.append(Employee.id != exclude_employee_id)
-    admin_employees = (
-        await db.execute(select(func.count()).select_from(Employee).where(*employee_filter))
-    ).scalar_one()
-    return admin_users + admin_employees
+        stmt = stmt.where(or_(Account.employee_id.is_(None), Account.employee_id != exclude_employee_id))
+    return (await db.execute(stmt)).scalar_one()
 
 
 async def ensure_not_last_admin(
     db: AsyncSession,
     tenant_id: int,
     exclude_employee_id: int | None = None,
-    exclude_hr_user_id: int | None = None,
+    exclude_account_id: int | None = None,
 ) -> None:
     """Ein Mandant darf nie ohne Administrator dastehen (Rolle entziehen,
     deaktivieren, anonymisieren, löschen)."""
-    if await count_other_admins(db, tenant_id, exclude_employee_id, exclude_hr_user_id) == 0:
+    if await count_other_admins(db, tenant_id, exclude_employee_id, exclude_account_id) == 0:
         raise AppError(
             400,
             "LAST_ADMIN",

@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, Pencil, ShieldOff } from 'lucide-react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Download, ShieldOff } from 'lucide-react'
 import { downloadEmployeeDataExport } from '../api/employeeDataExport'
 import { useAnonymizeEmployeeMutation, useEmployeeQuery } from '../api/queries/employees'
 import { useLocationsQuery } from '../api/queries/locations'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../api/client'
 import { AbsencesTab } from '../components/absences/AbsencesTab'
-import { EmployeeFormDialog } from '../components/employees/EmployeeFormDialog'
+import { EmployeeForm } from '../components/employees/EmployeeFormDialog'
 import { PunchHistoryTab } from '../components/punches/PunchHistoryTab'
 import { Button } from '../components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
@@ -18,19 +18,22 @@ import { WorkTimeModelTab } from '../components/workTimeModel/WorkTimeModelTab'
 import { EmploymentTab } from '../components/employment/EmploymentTab'
 import { DocumentsTab } from '../components/documents/DocumentsTab'
 import { EmployeeChecklistsTab } from '../components/checklists/EmployeeChecklistsTab'
+import { MasterDataTab } from '../components/employees/MasterDataTab'
+import { AttributesTab, EmployeeHistoryTab } from '../components/employees/AttributesTab'
 import { MonthReportButton } from '../components/periods/MonthReportButton'
 import { useFeaturesQuery } from '../api/queries/workTimeModel'
 
 export function EmployeeDetailPage() {
   const { employeeId } = useParams<{ employeeId: string }>()
   const id = Number(employeeId)
+  // ?reiter=einstellungen: direkt in den Reiter „Einstellungen“ (z. B. „Bearbeiten“ in der Mitarbeiterliste)
+  const [searchParams] = useSearchParams()
   const { isAdmin, isFullHr, canPayroll } = useAuth()
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
   const employeeQuery = useEmployeeQuery(id)
   const locationsQuery = useLocationsQuery()
   const anonymizeEmployee = useAnonymizeEmployeeMutation()
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
 
@@ -102,12 +105,6 @@ export function EmployeeDetailPage() {
               Anonymisieren
             </Button>
           )}
-          {isFullHr && (
-            <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(true)}>
-              <Pencil className="h-4 w-4" />
-              Bearbeiten
-            </Button>
-          )}
         </div>
       </div>
       {exportError && <p className="text-sm text-red-600">{exportError}</p>}
@@ -120,22 +117,16 @@ export function EmployeeDetailPage() {
         </p>
       )}
 
-      <EmployeeFormDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        employee={employee}
-        locations={locationsQuery.data ?? []}
-      />
-
-      {/* Sechs Reiter: Arbeitszeit = Modell + Schichtplanung, Personalakte = Vertrag, Dokumente, Checklisten */}
-      <Tabs defaultValue="punches">
+      {/* Arbeitszeit = Modell + Schichtplanung, Personalakte = Stammdaten, Vertrag, Dokumente …, Einstellungen = Grunddaten, Login, Rolle */}
+      <Tabs defaultValue={isFullHr && searchParams.get('reiter') === 'einstellungen' ? 'settings' : 'punches'}>
         <TabsList>
           <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
           <TabsTrigger value="calendar">Kalender</TabsTrigger>
-          <TabsTrigger value="timesheet">Saldenübersicht</TabsTrigger>
+          <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>
           <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
           <TabsTrigger value="worktime">Arbeitszeit</TabsTrigger>
           {isFullHr && <TabsTrigger value="file">Personalakte</TabsTrigger>}
+          {isFullHr && <TabsTrigger value="settings">Einstellungen</TabsTrigger>}
         </TabsList>
         <TabsContent value="punches">
           <PunchHistoryTab employeeId={id} readOnly={!isFullHr} />
@@ -162,12 +153,18 @@ export function EmployeeDetailPage() {
         </TabsContent>
         {isFullHr && (
           <TabsContent value="file">
-            <Tabs defaultValue="employment">
+            <Tabs defaultValue="masterdata">
               <TabsList>
+                <TabsTrigger value="masterdata">Stammdaten</TabsTrigger>
+                <TabsTrigger value="attributes">Weitere Angaben</TabsTrigger>
                 <TabsTrigger value="employment">Vertrag{canPayroll ? ' & Vergütung' : ''}</TabsTrigger>
                 <TabsTrigger value="documents">Dokumente</TabsTrigger>
-                <TabsTrigger value="checklists">Checklisten</TabsTrigger>
+                <TabsTrigger value="checklists">On- & Offboarding</TabsTrigger>
+                <TabsTrigger value="history">Verlauf</TabsTrigger>
               </TabsList>
+              <TabsContent value="masterdata">
+                <MasterDataTab employee={employee} />
+              </TabsContent>
               <TabsContent value="employment">
                 <EmploymentTab employeeId={id} isAdmin={canPayroll} />
               </TabsContent>
@@ -177,7 +174,18 @@ export function EmployeeDetailPage() {
               <TabsContent value="checklists">
                 <EmployeeChecklistsTab employeeId={id} />
               </TabsContent>
+              <TabsContent value="attributes">
+                <AttributesTab employeeId={id} />
+              </TabsContent>
+              <TabsContent value="history">
+                <EmployeeHistoryTab employeeId={id} />
+              </TabsContent>
             </Tabs>
+          </TabsContent>
+        )}
+        {isFullHr && (
+          <TabsContent value="settings">
+            <EmployeeForm employee={employee} locations={locationsQuery.data ?? []} />
           </TabsContent>
         )}
       </Tabs>

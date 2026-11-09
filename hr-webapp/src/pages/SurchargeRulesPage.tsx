@@ -74,7 +74,7 @@ export function SurchargeRulesPage() {
       </div>
       <p className="text-sm text-slate-500">
         Die Regeln werten die tatsächlich gearbeitete Zeit aus (Stunden je Regel) und erscheinen im Monatsnachweis, im
-        Lohn-Export und in den Auswertungen. Regeln derselben „Gruppe“ werden nicht addiert – je Minute zählt nur der höchste
+        Lohn-Export und in den Analysen. Regeln derselben „Gruppe“ werden nicht addiert – je Minute zählt nur der höchste
         Satz (z. B. Sonntag + Feiertag). Die steuerliche bzw. tarifliche Bewertung bleibt bei der Lohnbuchhaltung; die
         Standardregeln sind nur ein Vorschlag (orientiert an § 3b EStG) und müssen geprüft werden. Änderungen an Satz,
         Zeitfenster oder Wochentagen gelten ab „Änderung gilt ab“ – zurückliegende Monate rechnen mit der bisherigen Fassung.

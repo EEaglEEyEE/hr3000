@@ -40,7 +40,7 @@ class PeriodDisputeRequest(BaseModel):
 
 class PeriodCloseRequest(BaseModel):
     # Abschluss durch HR ist immer ohne Bestätigung des Mitarbeiters (die Bestätigung schließt selbst
-    # ab) – wird im Audit-Log vermerkt. Feld nur noch aus Kompatibilität.
+    # ab) – wird im Audit-Protokoll vermerkt. Feld nur noch aus Kompatibilität.
     without_confirmation: bool = True
 
 

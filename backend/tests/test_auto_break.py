@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BreakRule, Device, Employee, Location, Punch, PunchSource, PunchType
+from app.services.pairing_service import token_hash
 
 
 async def _create_location(db_session: AsyncSession) -> Location:
@@ -29,7 +30,7 @@ async def _create_employee(db_session: AsyncSession, location: Location, auto_br
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)

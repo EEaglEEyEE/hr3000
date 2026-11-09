@@ -149,6 +149,7 @@ async def update_default_shift(
     default = await db.get(EmployeeDefaultShift, default_id)
     if default is None or default.employee_id != employee_id:
         raise AppError(404, "DEFAULT_SHIFT_NOT_FOUND", "Standard-Schicht nicht gefunden.")
+    _ensure_not_profile(default)
     await _ensure_default_unlocked(db, employee_id, default.valid_from, default.valid_to)
 
     if payload.shift_template_id is not None:
@@ -190,11 +191,22 @@ async def delete_default_shift(
     default = await db.get(EmployeeDefaultShift, default_id)
     if default is None or default.employee_id != employee_id:
         raise AppError(404, "DEFAULT_SHIFT_NOT_FOUND", "Standard-Schicht nicht gefunden.")
+    _ensure_not_profile(default)
     await _ensure_default_unlocked(db, employee_id, default.valid_from, default.valid_to)
 
     await db.delete(default)
     await invalidate_balance(db, employee_id, default.valid_from)
     await db.commit()
+
+
+def _ensure_not_profile(default: EmployeeDefaultShift) -> None:
+    """Zuweisungen eines Arbeitszeitmodells nur über das Arbeitszeitmodell ändern (sie folgen dem Modell)."""
+    if default.profile_id is not None:
+        raise AppError(
+            409,
+            "WORK_TIME_PROFILE_ASSIGNED",
+            "Diese Fassung kommt aus einem Arbeitszeitmodell – bitte im Arbeitszeitmodell des Mitarbeiters ändern.",
+        )
 
 
 async def _ensure_default_unlocked(db: AsyncSession, employee_id: int, valid_from: date, valid_to: date | None) -> None:

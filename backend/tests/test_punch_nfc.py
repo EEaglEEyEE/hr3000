@@ -1,7 +1,8 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, Employee, HrRole, HrUser, Location
+from app.models import Device, Employee, HrRole, Account, Location
+from app.services.pairing_service import token_hash
 
 
 async def _create_location(db_session: AsyncSession) -> Location:
@@ -33,15 +34,15 @@ async def _create_employee(
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
     return device
 
 
-async def _create_admin(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash="x", role=HrRole.ADMIN)
+async def _create_admin(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash="x", role=HrRole.ADMIN)
     from app.services.auth_service import hash_password
 
     user.password_hash = hash_password("pw")
@@ -53,7 +54,7 @@ async def _create_admin(db_session: AsyncSession) -> HrUser:
 
 async def _admin_token(client: AsyncClient) -> str:
     response = await client.post(
-        "/auth/hr/login", json={"email": "admin@example.com", "password": "pw"}
+        "/auth/login", json={"email": "admin@example.com", "password": "pw"}
     )
     return response.json()["access_token"]
 
@@ -164,4 +165,9 @@ async def test_location_employees_report_nfc_uid(client: AsyncClient, db_session
     )
 
     assert response.status_code == 200
-    assert response.json()[0]["nfc_uid"] == "04:AA:BB:CC"
+    row = response.json()[0]
+    # Tablets bekommen den Chip nur als Hash: SHA-256(card_salt + normalisierte UID)
+    import hashlib
+
+    assert row["nfc_uid"] is None
+    assert row["card_hash"] == hashlib.sha256(f"{device_login['card_salt']}04aabbcc".encode()).hexdigest()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
 import { templateBreakLabel, useShiftTemplatesQuery } from '../../api/queries/shiftTemplates'
 import {
@@ -9,8 +9,10 @@ import {
   useWorkTimeModelHistoryQuery,
   useWorkTimeModelQuery,
   type WorkTimeModel,
+  type WorkTimeModelSetRequest,
   type WorkTimeModelVersion,
 } from '../../api/queries/workTimeModel'
+import { useAssignWorkTimeProfileMutation, useWorkTimeProfilesQuery } from '../../api/queries/workTimeProfiles'
 import { formatDate } from '../../lib/format'
 import { cn } from '../../lib/utils'
 import {
@@ -25,43 +27,23 @@ import {
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
+import {
+  breakLabel,
+  describeVersion,
+  flexFrameLabel,
+  formatHours,
+  formatRange,
+  hhmm,
+  shiftLabel,
+  WEEKDAYS,
+  type ModelSource,
+} from './modelText'
 
-const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 const WORKWEEK = [0, 1, 2, 3, 4]
 
 function toIsoDate(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-function hhmm(value: string | null | undefined): string {
-  return value ? value.slice(0, 5) : ''
-}
-
-/** Pause einer Fassung als Text, z. B. ", Pause 30 Min." (leer = Pausenregeln). */
-function breakLabel(source: {
-  break_minutes?: number | null
-  break_after_minutes?: number
-  break_start?: string | null
-  break_end?: string | null
-}): string {
-  if (source.break_minutes) {
-    const after = source.break_after_minutes ? ` ab ${formatHours(source.break_after_minutes)} Std.` : ''
-    return `, Pause ${source.break_minutes} Min.${after}`
-  }
-  if (source.break_start && source.break_end) return `, Pause ${hhmm(source.break_start)}–${hhmm(source.break_end)}`
-  return ''
-}
-
-/** Schichtvorlage einer Fassung als Text, z. B. ", Schicht „Früh“ 06:00–14:30". */
-function shiftLabel(source: { shift_template_name?: string | null; shift_start?: string | null; shift_end?: string | null }): string {
-  if (!source.shift_template_name) return ''
-  const times = source.shift_start && source.shift_end ? ` ${hhmm(source.shift_start)}–${hhmm(source.shift_end)}` : ''
-  return `, Schicht „${source.shift_template_name}“${times}`
-}
-
-function formatHours(minutes: number): string {
-  return (minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
 function decimal(value: number): string {
@@ -85,20 +67,58 @@ type DaysKind = 'fixed' | 'flex' | 'onDemand'
 // Soll bei festen Tagen: Wochenstunden (gleichmäßig oder je Wochentag) oder festes Monatssoll.
 type Period = 'week' | 'month'
 
-export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; canEdit: boolean }) {
-  const modelQuery = useWorkTimeModelQuery(employeeId)
-  const setModel = useSetWorkTimeModelMutation(employeeId)
-  const updateVersion = useUpdateWorkTimeModelVersionMutation(employeeId)
-  const deleteVersion = useDeleteWorkTimeModelVersionMutation(employeeId)
-  const historyQuery = useWorkTimeModelHistoryQuery(employeeId)
-  const templatesQuery = useShiftTemplatesQuery({ enabled: canEdit })
+type FlexFrameMode = 'TENANT' | 'CUSTOM' | 'NONE'
+
+/** Was das Formular liefert (ohne „gültig ab“); Gleitzeit-Rahmen und Toleranz nur bei Modellen. */
+export type ModelFormPayload = Omit<WorkTimeModelSetRequest, 'valid_from'> & {
+  flex_frame_mode?: FlexFrameMode
+  flex_frame_start?: string | null
+  flex_frame_end?: string | null
+  late_tolerance_minutes?: number | null
+}
+
+/** Formular eines Arbeitszeitmodells – am Mitarbeiter (neue Fassung bzw. nachträgliche Änderung) und
+ * für Arbeitszeitmodelle (mit Gleitzeit-Rahmen und Toleranz). Wechselt `loadToken`, wird es mit
+ * `source` neu vorbelegt; ändert sich nur `source` (z. B. nach dem Speichern), werden die Werte
+ * übernommen. */
+export function WorkTimeModelForm({
+  source,
+  loadToken,
+  initialValidFrom,
+  heading,
+  highlighted = false,
+  withValidFrom = true,
+  validFromHint,
+  withFlexFrame = false,
+  children,
+  extraValid = true,
+  pending,
+  savedText,
+  onSubmit,
+  onCancel,
+  cancelLabel = 'Abbrechen',
+}: {
+  source: ModelSource | null
+  loadToken: string
+  initialValidFrom?: string
+  heading: string
+  highlighted?: boolean
+  withValidFrom?: boolean
+  validFromHint?: string
+  withFlexFrame?: boolean
+  /** Zusätzliche Felder oben im Formular (z. B. Name eines Modells). */
+  children?: ReactNode
+  extraValid?: boolean
+  pending: boolean
+  savedText: string
+  onSubmit: (payload: ModelFormPayload, validFrom: string) => Promise<void>
+  onCancel?: () => void
+  cancelLabel?: string
+}) {
+  const templatesQuery = useShiftTemplatesQuery()
   // Schichtvorlagen gibt es mit Schichtplanung (Einstellungen); eine schon zugeordnete bleibt sichtbar.
   const shiftPlanningEnabled = useFeaturesQuery().data?.shift_planning_enabled ?? false
   const templates = templatesQuery.data ?? []
-  const model = modelQuery.data
-  // Nachträgliche Änderung einer bestehenden Fassung statt neuer Fassung ab Stichtag
-  const [editing, setEditing] = useState<WorkTimeModelVersion | null>(null)
-  const formRef = useRef<HTMLFormElement>(null)
 
   const [daysKind, setDaysKind] = useState<DaysKind>('fixed')
   const [period, setPeriod] = useState<Period>('week')
@@ -119,6 +139,11 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   // Vorlage der geladenen Fassung (auch eine alte, archivierte Fassung einer Vorlage)
   const [loadedShift, setLoadedShift] = useState<{ id: number; name: string; breakFromTemplate: boolean } | null>(null)
   const [coreTime, setCoreTime] = useState<CoreTimeValue>(DEFAULT_CORE_TIME)
+  // Nur Modelle: Gleitzeit-Rahmen und Toleranz der Pünktlichkeitsprüfung ('' = wie Einstellungen)
+  const [frameMode, setFrameMode] = useState<FlexFrameMode>('TENANT')
+  const [frameStart, setFrameStart] = useState('07:00')
+  const [frameEnd, setFrameEnd] = useState('19:00')
+  const [tolerance, setTolerance] = useState('')
   const [validFrom, setValidFrom] = useState(() => toIsoDate(new Date()))
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -156,6 +181,9 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
       : breakKind === 'window'
         ? { break_start: breakStart, break_end: breakEnd }
         : {}
+  const frameValid = frameMode !== 'CUSTOM' || (frameStart !== '' && frameEnd !== '' && frameStart < frameEnd)
+  const toleranceNumber = tolerance.trim() ? Number(tolerance) : null
+  const toleranceValid = toleranceNumber === null || (Number.isInteger(toleranceNumber) && toleranceNumber >= 0 && toleranceNumber <= 120)
   const dailyPreview = hoursValid && weekdays.length > 0 ? formatHours(Math.round((hours * 60) / weekdays.length)) : null
   // Monatssoll: Tagessoll je nach Monat zwischen (Monat mit den meisten) und (Monat mit den wenigsten Arbeitstagen).
   const monthlyPreview =
@@ -195,22 +223,33 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
     setPerDay(checked)
   }
 
-  // Formular immer mit dem aktuell gültigen Modell vorbelegen (einmal je geladenem Stand).
-  const loadedFor = useRef<string | null>(null)
+  // Vorbelegen: bei neuem loadToken immer (samt „gültig ab“), sonst einmal je geladenem Stand.
+  const loadedToken = useRef<string | null>(null)
+  const loadedSource = useRef<string | null>(null)
+  // Nach dem Speichern einer nachträglichen Änderung wechselt der Token – die Meldung bleibt stehen.
+  const keepNotice = useRef(false)
   useEffect(() => {
-    const key = model ? JSON.stringify(model) : null
-    if (!model?.configured || key === loadedFor.current) return
-    loadedFor.current = key
-    loadCurrent()
+    const sourceKey = source ? JSON.stringify(source) : null
+    if (loadToken !== loadedToken.current) {
+      loadedToken.current = loadToken
+      loadedSource.current = sourceKey
+      if (source) loadFrom(source)
+      setValidFrom(initialValidFrom ?? toIsoDate(new Date()))
+      if (!keepNotice.current) {
+        setError(null)
+        setSaved(false)
+      }
+      keepNotice.current = false
+      return
+    }
+    if (source && sourceKey !== loadedSource.current) {
+      loadedSource.current = sourceKey
+      loadFrom(source)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model])
+  }, [loadToken, source])
 
-  function loadCurrent() {
-    if (!model?.configured) return
-    loadFrom(model)
-  }
-
-  function loadFrom(source: WorkTimeModel | WorkTimeModelVersion) {
+  function loadFrom(source: ModelSource) {
     if (source.break_minutes && !source.break_from_template) {
       setBreakKind('minutes')
       setBreakMinutes(String(source.break_minutes))
@@ -229,6 +268,10 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
         : null,
     )
     setCoreTime(coreTimeFromApi(source))
+    setFrameMode((source.flex_frame_mode as FlexFrameMode | undefined) ?? 'TENANT')
+    setFrameStart(hhmm(source.flex_frame_start) || '07:00')
+    setFrameEnd(hhmm(source.flex_frame_end) || '19:00')
+    setTolerance(source.late_tolerance_minutes != null ? String(source.late_tolerance_minutes) : '')
     if (source.on_demand) {
       setDaysKind('onDemand')
       setCapHours(source.monthly_cap_minutes ? decimal(source.monthly_cap_minutes / 60) : '')
@@ -252,59 +295,38 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
     setPerDay(!!source.uneven)
   }
 
-  function startEditing(version: WorkTimeModelVersion) {
-    setEditing(version)
-    setError(null)
-    setSaved(false)
-    loadFrom(version)
-    setValidFrom(version.valid_from)
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  function stopEditing() {
-    setEditing(null)
-    setValidFrom(toIsoDate(new Date()))
-    loadCurrent()
-  }
-
-  async function handleDelete(version: WorkTimeModelVersion) {
-    if (!window.confirm(`Fassung ab ${formatDate(version.valid_from)} löschen? Die vorherige Fassung gilt dann weiter.`)) return
-    setError(null)
-    try {
-      await deleteVersion.mutateAsync(version.id)
-      if (editing?.id === version.id) stopEditing()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Löschen fehlgeschlagen.')
-    }
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setSaved(false)
     const modelPayload =
       mode === 'onDemand'
-        ? { on_demand: true, flexible: false, monthly_cap_hours: cap, valid_from: validFrom }
+        ? { on_demand: true, flexible: false, monthly_cap_hours: cap }
         : mode === 'perDay'
-        ? { daily_hours: parsedDaily, flexible: false, on_demand: false, valid_from: validFrom }
+        ? { daily_hours: parsedDaily, flexible: false, on_demand: false }
         : mode === 'monthly'
-        ? { monthly_hours: monthly, weekdays, flexible: false, on_demand: false, valid_from: validFrom }
+        ? { monthly_hours: monthly, weekdays, flexible: false, on_demand: false }
         : mode === 'flex'
-          ? { weekly_hours: hours, flexible: true, on_demand: false, valid_from: validFrom }
-          : { weekly_hours: hours, weekdays, flexible: false, on_demand: false, valid_from: validFrom }
-    const payload = {
+          ? { weekly_hours: hours, flexible: true, on_demand: false }
+          : { weekly_hours: hours, weekdays, flexible: false, on_demand: false }
+    const framePayload = withFlexFrame
+      ? {
+          flex_frame_mode: frameMode,
+          flex_frame_start: frameMode === 'CUSTOM' ? frameStart : null,
+          flex_frame_end: frameMode === 'CUSTOM' ? frameEnd : null,
+          late_tolerance_minutes: toleranceNumber,
+        }
+      : {}
+    const payload: ModelFormPayload = {
       ...modelPayload,
       ...breakPayload,
       shift_template_id: shiftTemplateId ? Number(shiftTemplateId) : null,
       ...coreTimePayload(coreTime),
+      ...framePayload,
     }
     try {
-      if (editing) {
-        await updateVersion.mutateAsync({ versionId: editing.id, payload })
-        setEditing(null)
-      } else {
-        await setModel.mutateAsync(payload)
-      }
+      await onSubmit(payload, validFrom)
+      keepNotice.current = !!onCancel
       setSaved(true)
     } catch (err) {
       setError(
@@ -316,351 +338,482 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   }
 
   return (
+    <form
+      className={cn(
+        'flex flex-col gap-4 rounded-md border bg-white p-4',
+        highlighted ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200',
+      )}
+      onSubmit={handleSubmit}
+    >
+      <p className="font-medium text-slate-900">{heading}</p>
+
+      {children}
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-sm font-medium">Modell</legend>
+        <div className="flex flex-wrap gap-2 text-sm">
+          {(
+            [
+              ['fixed', 'Feste Arbeitstage'],
+              ['flex', 'Flexibel ohne feste Tage'],
+              ['onDemand', 'Nach Aufwand (Aushilfe)'],
+            ] as const
+          ).map(([kind, label]) => (
+            <Button
+              key={kind}
+              type="button"
+              size="sm"
+              variant={daysKind === kind ? 'default' : 'outline'}
+              aria-pressed={daysKind === kind}
+              onClick={() => setDaysKind(kind)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
+
+      {daysKind === 'fixed' && (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1.5 text-sm font-medium">Soll</legend>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Button
+              type="button"
+              size="sm"
+              variant={period === 'week' ? 'default' : 'outline'}
+              aria-pressed={period === 'week'}
+              onClick={() => setPeriod('week')}
+            >
+              Wochenstunden
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={period === 'month' ? 'default' : 'outline'}
+              aria-pressed={period === 'month'}
+              onClick={() => setPeriod('month')}
+            >
+              Monatsstunden (fest)
+            </Button>
+          </div>
+        </fieldset>
+      )}
+
+      {mode === 'onDemand' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="cap-hours">Monatsgrenze in Stunden (optional, z. B. für Minijob)</Label>
+          <Input
+            id="cap-hours"
+            inputMode="decimal"
+            className="w-32"
+            placeholder="keine"
+            value={capHours}
+            onChange={(e) => setCapHours(e.target.value)}
+          />
+          <p className="text-sm text-slate-500">
+            Kein Soll und kein Überstundenkonto: jede Stempelung zählt als Ist-Zeit, Monate ohne Einsatz sind kein Minus,
+            und es gibt keine „fehlt“- oder „außerplanmäßig“-Tage. Geplante Schichten liefern nur die Uhrzeiten.
+            Abgerechnet werden die Ist-Stunden je Monat (Monatsbericht, Lohn-Export). Mit Monatsgrenze erscheint ab 90 %
+            ein Hinweis unter „Zu klären“. Urlaub und Feiertagsbezahlung laufen über die Lohnabrechnung.
+          </p>
+        </div>
+      )}
+
+      {mode === 'flex' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="flex-hours">Wochenstunden (ungefähr)</Label>
+          <Input id="flex-hours" inputMode="decimal" className="w-32" value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
+          <p className="text-sm text-slate-500">
+            Kein Tagessoll und keine festen Arbeitstage: abgerechnet wird je Woche (Soll = Wochenstunden). An keinem Tag gilt
+            eine Stempelung als „außerplanmäßig“ oder ein Tag als „fehlt“. Urlaub/Feiertage an Mo–Fr werden mit Wochenstunden ÷ 5
+            gutgeschrieben.
+          </p>
+        </div>
+      )}
+
+      {mode === 'monthly' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="monthly-hours">Monatsstunden</Label>
+          <Input
+            id="monthly-hours"
+            inputMode="decimal"
+            className="w-32"
+            placeholder="z. B. 108,5"
+            value={monthlyHours}
+            onChange={(event) => setMonthlyHours(event.target.value)}
+          />
+        </div>
+      )}
+
+      {daysKind === 'fixed' && period === 'week' && (
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={perDay} onChange={(event) => togglePerDay(event.target.checked)} />
+          Stunden je Wochentag unterschiedlich (Teilzeit)
+        </label>
+      )}
+
+      {mode === 'perDay' && (
+        <div className="flex flex-col gap-1.5">
+          <Label>Stunden je Wochentag (leer = frei)</Label>
+          <div className="grid grid-cols-7 gap-1.5">
+            {WEEKDAYS.map((label, day) => (
+              <div key={label} className="flex flex-col items-center gap-1">
+                <span className="text-xs text-slate-500">{label}</span>
+                <Input
+                  inputMode="decimal"
+                  aria-label={`Stunden ${label}`}
+                  className="w-full px-1 text-center"
+                  value={dailyHours[day]}
+                  onChange={(event) =>
+                    setDailyHours((current) => current.map((value, index) => (index === day ? event.target.value : value)))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-sm text-slate-500">
+            = {dailySum.toLocaleString('de-DE', { maximumFractionDigits: 2 })} h pro Woche an{' '}
+            {parsedDaily.filter((h) => h > 0).length} Arbeitstagen. Urlaub zählt nur an diesen Tagen, Feiertage und
+            Abwesenheiten werden mit den Stunden des jeweiligen Tages gutgeschrieben.
+          </p>
+        </div>
+      )}
+
+      {(mode === 'even' || mode === 'monthly') && (
+        <>
+          {mode === 'even' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="weekly-hours">Wochenstunden</Label>
+              <Input
+                id="weekly-hours"
+                inputMode="decimal"
+                className="w-32"
+                value={weeklyHours}
+                onChange={(event) => setWeeklyHours(event.target.value)}
+              />
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <Label>Arbeitstage</Label>
+            <div className="flex gap-1.5">
+              {WEEKDAYS.map((label, day) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={weekdays.includes(day)}
+                  onClick={() => toggleWeekday(day)}
+                  className={cn(
+                    'h-9 w-10 rounded-md border text-sm font-medium',
+                    weekdays.includes(day)
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {mode === 'even' && dailyPreview && (
+              <p className="text-sm text-slate-500">
+                = {dailyPreview} h pro Arbeitstag. Feiertage und genehmigte Abwesenheiten an Arbeitstagen werden
+                mit diesem Tagessoll gutgeschrieben.
+              </p>
+            )}
+            {mode === 'monthly' && (
+              <p className="text-sm text-slate-500">
+                Jeden Monat dasselbe Soll, egal wie viele Arbeitstage der Monat hat. Es wird gleichmäßig auf die Arbeitstage
+                des Monats verteilt
+                {monthlyPreview ? ` (je nach Monat ${monthlyPreview.low}–${monthlyPreview.high} h pro Arbeitstag)` : ''}.
+                Feiertage und genehmigte Abwesenheiten werden mit dem Tagessoll des jeweiligen Monats gutgeschrieben.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {(shiftPlanningEnabled || shiftTemplateId !== '') && (
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="shift-template">Schichtvorlage (Uhrzeiten, optional)</Label>
+        <select
+          id="shift-template"
+          className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          value={shiftTemplateId}
+          onChange={(event) => setShiftTemplateId(event.target.value)}
+        >
+          <option value="">Keine festen Uhrzeiten</option>
+          {templateOptions.map((option) => (
+            <option key={option.id} value={String(option.id)}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-sm text-slate-500">
+          Beginn und Ende für Schichtplan, Pünktlichkeit und Ruhezeit-Prüfung. Das Soll bleibt das des
+          Arbeitszeitmodells.
+        </p>
+      </div>
+      )}
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-sm font-medium">Pause</legend>
+        <div className="flex flex-wrap gap-2 text-sm">
+          {(
+            [
+              ['rules', templateBreak ? 'Wie Schichtvorlage' : 'Wie Pausenregeln'],
+              ['minutes', 'Feste Minuten'],
+              ['window', 'Feste Uhrzeit'],
+            ] as const
+          ).map(([kind, label]) => (
+            <Button
+              key={kind}
+              type="button"
+              size="sm"
+              variant={breakKind === kind ? 'default' : 'outline'}
+              aria-pressed={breakKind === kind}
+              onClick={() => setBreakKind(kind)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {breakKind === 'minutes' && (
+          <div className="flex items-center gap-2">
+            <Input
+              id="break-minutes"
+              aria-label="Pausenminuten"
+              inputMode="numeric"
+              className="w-24"
+              value={breakMinutes}
+              onChange={(event) => setBreakMinutes(event.target.value)}
+            />
+            <span className="text-sm text-slate-600">Minuten ab</span>
+            <Input
+              aria-label="Pause ab Stunden"
+              inputMode="decimal"
+              className="w-20"
+              placeholder="0"
+              value={breakAfterHours}
+              onChange={(event) => setBreakAfterHours(event.target.value)}
+            />
+            <span className="text-sm text-slate-600">Std. Arbeit (leer = ab der ersten Minute), auch ohne Stempelung</span>
+          </div>
+        )}
+        {breakKind === 'window' && (
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label="Pause von"
+              type="time"
+              className="w-32"
+              value={breakStart}
+              onChange={(event) => setBreakStart(event.target.value)}
+            />
+            <span className="text-sm text-slate-600">bis</span>
+            <Input
+              aria-label="Pause bis"
+              type="time"
+              className="w-32"
+              value={breakEnd}
+              onChange={(event) => setBreakEnd(event.target.value)}
+            />
+          </div>
+        )}
+        <p className="text-sm text-slate-500">
+          {breakKind === 'rules'
+            ? templateBreak
+              ? `Es gilt die Pause der Schichtvorlage (${templateBreak}).`
+              : 'Es gelten die Pausenregeln (gesetzliche Staffel und ggf. feste Pausen des Betriebs).'
+            : breakKind === 'minutes'
+              ? 'Gestempelte Pausen zählen mit; nur was fehlt, wird abgezogen.'
+              : 'Abgezogen wird, soweit der Mitarbeiter in dieser Zeit da war.'}{' '}
+          Die gesetzliche Pause gilt immer mindestens.
+        </p>
+      </fieldset>
+
+      <CoreTimeFields value={coreTime} onChange={setCoreTime} />
+
+      {withFlexFrame && (
+        <>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1.5 text-sm font-medium">Gleitzeit-Rahmen</legend>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {(
+                [
+                  ['TENANT', 'Wie Einstellungen'],
+                  ['CUSTOM', 'Eigener Rahmen'],
+                  ['NONE', 'Kein Rahmen'],
+                ] as const
+              ).map(([kind, label]) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  size="sm"
+                  variant={frameMode === kind ? 'default' : 'outline'}
+                  aria-pressed={frameMode === kind}
+                  onClick={() => setFrameMode(kind)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            {frameMode === 'CUSTOM' && (
+              <div className="flex items-center gap-2">
+                <Input
+                  aria-label="Rahmen von"
+                  type="time"
+                  className="w-32"
+                  value={frameStart}
+                  onChange={(event) => setFrameStart(event.target.value)}
+                />
+                <span className="text-sm text-slate-600">bis</span>
+                <Input
+                  aria-label="Rahmen bis"
+                  type="time"
+                  className="w-32"
+                  value={frameEnd}
+                  onChange={(event) => setFrameEnd(event.target.value)}
+                />
+              </div>
+            )}
+            <p className="text-sm text-slate-500">
+              Kommen oder Gehen außerhalb des Rahmens erscheint unter „Zu klären“ – nur ein Hinweis, an den Stunden
+              ändert sich nichts. Schichten mit Uhrzeiten haben Vorrang.
+            </p>
+          </fieldset>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="late-tolerance">Toleranz der Pünktlichkeitsprüfung (Minuten)</Label>
+            <Input
+              id="late-tolerance"
+              inputMode="numeric"
+              className="w-24"
+              placeholder="wie Einst."
+              value={tolerance}
+              onChange={(event) => setTolerance(event.target.value)}
+            />
+            <p className="text-sm text-slate-500">Leer = wie in den Einstellungen (0–120 Minuten).</p>
+          </div>
+        </>
+      )}
+
+      {withValidFrom && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="valid-from">Gültig ab</Label>
+          <Input
+            id="valid-from"
+            type="date"
+            className="w-44"
+            value={validFrom}
+            onChange={(event) => setValidFrom(event.target.value)}
+          />
+          {validFromHint && <p className="text-sm text-slate-500">{validFromHint}</p>}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {saved && <p className="text-sm text-emerald-600">{savedText}</p>}
+
+      <div className="flex gap-2">
+        <Button
+          type="submit"
+          disabled={
+            pending ||
+            !extraValid ||
+            !hoursValid ||
+            !breakValid ||
+            !coreTimeValid(coreTime) ||
+            (withFlexFrame && (!frameValid || !toleranceValid)) ||
+            ((mode === 'even' || mode === 'monthly') && weekdays.length === 0) ||
+            (withValidFrom && !validFrom)
+          }
+        >
+          {pending ? 'Speichere…' : 'Speichern'}
+        </Button>
+        {onCancel ? (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {cancelLabel}
+          </Button>
+        ) : source && (
+          <Button type="button" variant="outline" onClick={() => loadFrom(source)}>
+            Zurücksetzen
+          </Button>
+        )}
+      </div>
+    </form>
+  )
+}
+
+/** Reiter „Arbeitszeit“ am Mitarbeiter: aktuelles Modell, Modell zuweisen oder individuell eintragen, Verlauf. */
+export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; canEdit: boolean }) {
+  const modelQuery = useWorkTimeModelQuery(employeeId)
+  const setModel = useSetWorkTimeModelMutation(employeeId)
+  const updateVersion = useUpdateWorkTimeModelVersionMutation(employeeId)
+  const deleteVersion = useDeleteWorkTimeModelVersionMutation(employeeId)
+  const historyQuery = useWorkTimeModelHistoryQuery(employeeId)
+  const model = modelQuery.data
+  // Nachträgliche Änderung einer bestehenden Fassung statt neuer Fassung ab Stichtag
+  const [editing, setEditing] = useState<WorkTimeModelVersion | null>(null)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const formRef = useRef<HTMLDivElement>(null)
+
+  function startEditing(version: WorkTimeModelVersion) {
+    setEditing(version)
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  async function handleDelete(version: WorkTimeModelVersion) {
+    if (!window.confirm(`Fassung ab ${formatDate(version.valid_from)} löschen? Die vorherige Fassung gilt dann weiter.`)) return
+    setHistoryError(null)
+    try {
+      await deleteVersion.mutateAsync(version.id)
+      if (editing?.id === version.id) setEditing(null)
+    } catch (err) {
+      setHistoryError(err instanceof ApiError ? err.message : 'Löschen fehlgeschlagen.')
+    }
+  }
+
+  async function handleSubmit(payload: ModelFormPayload, validFrom: string) {
+    if (editing) {
+      await updateVersion.mutateAsync({ versionId: editing.id, payload: { ...payload, valid_from: validFrom } })
+      setEditing(null)
+    } else {
+      await setModel.mutateAsync({ ...payload, valid_from: validFrom })
+    }
+  }
+
+  const heading = editing
+    ? `Fassung ${formatRange(editing)} nachträglich ändern${
+        editing.profile_name ? ` (danach individuell statt Modell „${editing.profile_name}“)` : ''
+      }`
+    : model?.profile_name
+      ? 'Individuell eintragen ab Stichtag (statt zugewiesenem Modell)'
+      : 'Neues Arbeitszeitmodell ab Stichtag'
+
+  return (
     <div className="flex max-w-3xl flex-col gap-4">
       <WorkTimeModelSummary model={model} loading={modelQuery.isLoading} />
 
       {canEdit ? (
-        <form
-          ref={formRef}
-          className={cn(
-            'flex flex-col gap-4 rounded-md border bg-white p-4',
-            editing ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200',
-          )}
-          onSubmit={handleSubmit}
-        >
-          <p className="font-medium text-slate-900">
-            {editing
-              ? `Fassung ${formatRange(editing)} nachträglich ändern`
-              : 'Neues Arbeitszeitmodell ab Stichtag'}
-          </p>
-
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-sm font-medium">Modell</legend>
-            <div className="flex flex-wrap gap-2 text-sm">
-              {(
-                [
-                  ['fixed', 'Feste Arbeitstage'],
-                  ['flex', 'Flexibel ohne feste Tage'],
-                  ['onDemand', 'Nach Aufwand (Aushilfe)'],
-                ] as const
-              ).map(([kind, label]) => (
-                <Button
-                  key={kind}
-                  type="button"
-                  size="sm"
-                  variant={daysKind === kind ? 'default' : 'outline'}
-                  aria-pressed={daysKind === kind}
-                  onClick={() => setDaysKind(kind)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          </fieldset>
-
-          {daysKind === 'fixed' && (
-            <fieldset className="flex flex-col gap-1.5">
-              <legend className="mb-1.5 text-sm font-medium">Soll</legend>
-              <div className="flex flex-wrap gap-2 text-sm">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={period === 'week' ? 'default' : 'outline'}
-                  aria-pressed={period === 'week'}
-                  onClick={() => setPeriod('week')}
-                >
-                  Wochenstunden
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={period === 'month' ? 'default' : 'outline'}
-                  aria-pressed={period === 'month'}
-                  onClick={() => setPeriod('month')}
-                >
-                  Monatsstunden (fest)
-                </Button>
-              </div>
-            </fieldset>
-          )}
-
-          {mode === 'onDemand' && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cap-hours">Monatsgrenze in Stunden (optional, z. B. für Minijob)</Label>
-              <Input
-                id="cap-hours"
-                inputMode="decimal"
-                className="w-32"
-                placeholder="keine"
-                value={capHours}
-                onChange={(e) => setCapHours(e.target.value)}
-              />
-              <p className="text-sm text-slate-500">
-                Kein Soll und kein Gleitzeitkonto: jede Stempelung zählt als Ist-Zeit, Monate ohne Einsatz sind kein Minus,
-                und es gibt keine „fehlt“- oder „außerplanmäßig“-Tage. Geplante Schichten liefern nur die Uhrzeiten.
-                Abgerechnet werden die Ist-Stunden je Monat (Monatsbericht, Lohn-Export). Mit Monatsgrenze erscheint ab 90 %
-                ein Hinweis unter „Zu klären“. Urlaub und Feiertagsbezahlung laufen über die Lohnabrechnung.
-              </p>
-            </div>
-          )}
-
-          {mode === 'flex' && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="flex-hours">Wochenstunden (ungefähr)</Label>
-              <Input id="flex-hours" inputMode="decimal" className="w-32" value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
-              <p className="text-sm text-slate-500">
-                Kein Tagessoll und keine festen Arbeitstage: abgerechnet wird je Woche (Soll = Wochenstunden). An keinem Tag gilt
-                eine Stempelung als „außerplanmäßig“ oder ein Tag als „fehlt“. Urlaub/Feiertage an Mo–Fr werden mit Wochenstunden ÷ 5
-                gutgeschrieben.
-              </p>
-            </div>
-          )}
-
-          {mode === 'monthly' && (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="monthly-hours">Monatsstunden</Label>
-              <Input
-                id="monthly-hours"
-                inputMode="decimal"
-                className="w-32"
-                placeholder="z. B. 108,5"
-                value={monthlyHours}
-                onChange={(event) => setMonthlyHours(event.target.value)}
-              />
-            </div>
-          )}
-
-          {daysKind === 'fixed' && period === 'week' && (
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={perDay} onChange={(event) => togglePerDay(event.target.checked)} />
-              Stunden je Wochentag unterschiedlich (Teilzeit)
-            </label>
-          )}
-
-          {mode === 'perDay' && (
-            <div className="flex flex-col gap-1.5">
-              <Label>Stunden je Wochentag (leer = frei)</Label>
-              <div className="grid grid-cols-7 gap-1.5">
-                {WEEKDAYS.map((label, day) => (
-                  <div key={label} className="flex flex-col items-center gap-1">
-                    <span className="text-xs text-slate-500">{label}</span>
-                    <Input
-                      inputMode="decimal"
-                      aria-label={`Stunden ${label}`}
-                      className="w-full px-1 text-center"
-                      value={dailyHours[day]}
-                      onChange={(event) =>
-                        setDailyHours((current) => current.map((value, index) => (index === day ? event.target.value : value)))
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-              <p className="text-sm text-slate-500">
-                = {dailySum.toLocaleString('de-DE', { maximumFractionDigits: 2 })} h pro Woche an{' '}
-                {parsedDaily.filter((h) => h > 0).length} Arbeitstagen. Urlaub zählt nur an diesen Tagen, Feiertage und
-                Abwesenheiten werden mit den Stunden des jeweiligen Tages gutgeschrieben.
-              </p>
-            </div>
-          )}
-
-          {(mode === 'even' || mode === 'monthly') && (
-            <>
-              {mode === 'even' && (
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="weekly-hours">Wochenstunden</Label>
-                  <Input
-                    id="weekly-hours"
-                    inputMode="decimal"
-                    className="w-32"
-                    value={weeklyHours}
-                    onChange={(event) => setWeeklyHours(event.target.value)}
-                  />
-                </div>
-              )}
-              <div className="flex flex-col gap-1.5">
-                <Label>Arbeitstage</Label>
-                <div className="flex gap-1.5">
-                  {WEEKDAYS.map((label, day) => (
-                    <button
-                      key={label}
-                      type="button"
-                      aria-pressed={weekdays.includes(day)}
-                      onClick={() => toggleWeekday(day)}
-                      className={cn(
-                        'h-9 w-10 rounded-md border text-sm font-medium',
-                        weekdays.includes(day)
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {mode === 'even' && dailyPreview && (
-                  <p className="text-sm text-slate-500">
-                    = {dailyPreview} h pro Arbeitstag. Feiertage und genehmigte Abwesenheiten an Arbeitstagen werden
-                    mit diesem Tagessoll gutgeschrieben.
-                  </p>
-                )}
-                {mode === 'monthly' && (
-                  <p className="text-sm text-slate-500">
-                    Jeden Monat dasselbe Soll, egal wie viele Arbeitstage der Monat hat. Es wird gleichmäßig auf die Arbeitstage
-                    des Monats verteilt
-                    {monthlyPreview ? ` (je nach Monat ${monthlyPreview.low}–${monthlyPreview.high} h pro Arbeitstag)` : ''}.
-                    Feiertage und genehmigte Abwesenheiten werden mit dem Tagessoll des jeweiligen Monats gutgeschrieben.
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-
-          {(shiftPlanningEnabled || shiftTemplateId !== '') && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="shift-template">Schichtvorlage (Uhrzeiten, optional)</Label>
-            <select
-              id="shift-template"
-              className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
-              value={shiftTemplateId}
-              onChange={(event) => setShiftTemplateId(event.target.value)}
-            >
-              <option value="">Keine festen Uhrzeiten</option>
-              {templateOptions.map((option) => (
-                <option key={option.id} value={String(option.id)}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-sm text-slate-500">
-              Beginn und Ende für Schichtplan, Pünktlichkeit und Ruhezeit-Prüfung. Das Soll bleibt das des
-              Arbeitszeitmodells.
-            </p>
-          </div>
-          )}
-
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-sm font-medium">Pause</legend>
-            <div className="flex flex-wrap gap-2 text-sm">
-              {(
-                [
-                  ['rules', templateBreak ? 'Wie Schichtvorlage' : 'Wie Pausenregeln'],
-                  ['minutes', 'Feste Minuten'],
-                  ['window', 'Feste Uhrzeit'],
-                ] as const
-              ).map(([kind, label]) => (
-                <Button
-                  key={kind}
-                  type="button"
-                  size="sm"
-                  variant={breakKind === kind ? 'default' : 'outline'}
-                  aria-pressed={breakKind === kind}
-                  onClick={() => setBreakKind(kind)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            {breakKind === 'minutes' && (
-              <div className="flex items-center gap-2">
-                <Input
-                  id="break-minutes"
-                  aria-label="Pausenminuten"
-                  inputMode="numeric"
-                  className="w-24"
-                  value={breakMinutes}
-                  onChange={(event) => setBreakMinutes(event.target.value)}
-                />
-                <span className="text-sm text-slate-600">Minuten ab</span>
-                <Input
-                  aria-label="Pause ab Stunden"
-                  inputMode="decimal"
-                  className="w-20"
-                  placeholder="0"
-                  value={breakAfterHours}
-                  onChange={(event) => setBreakAfterHours(event.target.value)}
-                />
-                <span className="text-sm text-slate-600">Std. Arbeit (leer = ab der ersten Minute), auch ohne Stempelung</span>
-              </div>
-            )}
-            {breakKind === 'window' && (
-              <div className="flex items-center gap-2">
-                <Input
-                  aria-label="Pause von"
-                  type="time"
-                  className="w-32"
-                  value={breakStart}
-                  onChange={(event) => setBreakStart(event.target.value)}
-                />
-                <span className="text-sm text-slate-600">bis</span>
-                <Input
-                  aria-label="Pause bis"
-                  type="time"
-                  className="w-32"
-                  value={breakEnd}
-                  onChange={(event) => setBreakEnd(event.target.value)}
-                />
-              </div>
-            )}
-            <p className="text-sm text-slate-500">
-              {breakKind === 'rules'
-                ? templateBreak
-                  ? `Es gilt die Pause der Schichtvorlage (${templateBreak}).`
-                  : 'Es gelten die Pausenregeln (gesetzliche Staffel und ggf. feste Pausen des Betriebs).'
-                : breakKind === 'minutes'
-                  ? 'Gestempelte Pausen zählen mit; nur was fehlt, wird abgezogen.'
-                  : 'Abgezogen wird, soweit der Mitarbeiter in dieser Zeit da war.'}{' '}
-              Die gesetzliche Pause gilt immer mindestens.
-            </p>
-          </fieldset>
-
-          <CoreTimeFields value={coreTime} onChange={setCoreTime} />
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="valid-from">Gültig ab</Label>
-            <Input
-              id="valid-from"
-              type="date"
-              className="w-44"
-              value={validFrom}
-              onChange={(event) => setValidFrom(event.target.value)}
-            />
-            <p className="text-sm text-slate-500">
-              {editing
-                ? 'Ändert diese Fassung rückwirkend (Soll und Salden werden neu berechnet). Ein früherer Beginn kürzt die vorherige Fassung, ein späterer verlängert sie.'
-                : 'Gilt ab diesem Tag und ersetzt alles ab dann (auch rückwirkend, solange der Monat nicht abgeschlossen ist). Die vorherige Fassung endet am Vortag.'}
-            </p>
-          </div>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {saved && <p className="text-sm text-emerald-600">Arbeitszeitmodell gespeichert.</p>}
-
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              disabled={
-                setModel.isPending ||
-                updateVersion.isPending ||
-                !hoursValid ||
-                !breakValid ||
-                !coreTimeValid(coreTime) ||
-                ((mode === 'even' || mode === 'monthly') && weekdays.length === 0) ||
-                !validFrom
+        <>
+          <ProfileAssignCard employeeId={employeeId} model={model} />
+          <div ref={formRef}>
+            <WorkTimeModelForm
+              source={editing ?? (model?.configured ? model : null)}
+              loadToken={editing ? `version-${editing.id}` : 'current'}
+              initialValidFrom={editing?.valid_from}
+              heading={heading}
+              highlighted={editing !== null}
+              validFromHint={
+                editing
+                  ? 'Ändert diese Fassung rückwirkend (Soll und Salden werden neu berechnet). Ein früherer Beginn kürzt die vorherige Fassung, ein späterer verlängert sie.'
+                  : 'Gilt ab diesem Tag und ersetzt alles ab dann (auch rückwirkend, solange der Monat nicht abgeschlossen ist). Die vorherige Fassung endet am Vortag.'
               }
-            >
-              {setModel.isPending || updateVersion.isPending ? 'Speichere…' : 'Speichern'}
-            </Button>
-            {editing ? (
-              <Button type="button" variant="outline" onClick={stopEditing}>
-                Bearbeitung abbrechen
-              </Button>
-            ) : model?.configured && (
-              <Button type="button" variant="outline" onClick={loadCurrent}>
-                Zurücksetzen
-              </Button>
-            )}
+              pending={setModel.isPending || updateVersion.isPending}
+              savedText="Arbeitszeitmodell gespeichert."
+              onSubmit={handleSubmit}
+              onCancel={editing ? () => setEditing(null) : undefined}
+              cancelLabel="Bearbeitung abbrechen"
+            />
           </div>
-        </form>
+        </>
       ) : (
         <p className="text-sm text-slate-500">Änderungen am Arbeitszeitmodell sind Admin/HR vorbehalten.</p>
       )}
@@ -668,6 +821,7 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
       {(historyQuery.data?.length ?? 0) > 0 && (
         <div className="rounded-md border border-slate-200 bg-white p-4 text-sm">
           <p className="mb-2 font-medium text-slate-900">Verlauf</p>
+          {historyError && <p className="mb-2 text-red-600">{historyError}</p>}
           <div className="flex flex-col divide-y divide-slate-100">
             {historyQuery.data!.map((version) => (
               <div key={version.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
@@ -692,38 +846,77 @@ export function WorkTimeModelTab({ employeeId, canEdit }: { employeeId: number; 
   )
 }
 
+/** Arbeitszeitmodell ab Stichtag zuweisen – nur sichtbar, wenn es Modelle gibt (oder eines zugewiesen ist). */
+function ProfileAssignCard({ employeeId, model }: { employeeId: number; model: WorkTimeModel | undefined }) {
+  const profilesQuery = useWorkTimeProfilesQuery()
+  const assign = useAssignWorkTimeProfileMutation(employeeId)
+  const profiles = profilesQuery.data ?? []
+  const [profileId, setProfileId] = useState('')
+  const [validFrom, setValidFrom] = useState(() => toIsoDate(new Date()))
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  if (profiles.length === 0 && !model?.profile_id) return null
+
+  async function handleAssign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    setSaved(false)
+    try {
+      await assign.mutateAsync({ profile_id: Number(profileId), valid_from: validFrom })
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Zuweisen fehlgeschlagen.')
+    }
+  }
+
+  return (
+    <form className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={handleAssign}>
+      <p className="font-medium text-slate-900">Arbeitszeitmodell zuweisen</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="assign-profile">Arbeitszeitmodell</Label>
+          <select
+            id="assign-profile"
+            className="h-9 w-72 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            value={profileId}
+            onChange={(event) => setProfileId(event.target.value)}
+          >
+            <option value="">Bitte wählen</option>
+            {profiles.map((profile) => (
+              <option key={profile.id} value={String(profile.id)}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="assign-valid-from">Modell gültig ab</Label>
+          <Input
+            id="assign-valid-from"
+            type="date"
+            className="w-44"
+            value={validFrom}
+            onChange={(event) => setValidFrom(event.target.value)}
+          />
+        </div>
+        <Button type="submit" disabled={!profileId || !validFrom || assign.isPending}>
+          {assign.isPending ? 'Weise zu…' : 'Modell zuweisen'}
+        </Button>
+      </div>
+      <p className="text-sm text-slate-500">
+        Soll, Arbeitstage, Pause, Kernzeit, Gleitzeit-Rahmen und Toleranz kommen dann aus dem Modell und folgen automatisch
+        dessen Änderungen. Ersetzt alles ab diesem Tag; wer eigene Werte braucht, trägt sie unten individuell ein.
+      </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {saved && <p className="text-sm text-emerald-600">Arbeitszeitmodell zugewiesen.</p>}
+    </form>
+  )
+}
+
 function templateOptionLabel(template: { name: string; start_time: string | null; end_time: string | null }): string {
   return template.start_time && template.end_time
     ? `${template.name} (${hhmm(template.start_time)}–${hhmm(template.end_time)})`
     : template.name
-}
-
-function formatRange(version: WorkTimeModelVersion): string {
-  return `${formatDate(version.valid_from)} – ${version.valid_to ? formatDate(version.valid_to) : 'heute'}`
-}
-
-function describeVersion(version: WorkTimeModelVersion): string {
-  const core = coreTimeLabel(version)
-  return describeTarget(version) + breakLabel(version) + shiftLabel(version) + (core ? `, ${core}` : '')
-}
-
-function describeTarget(version: WorkTimeModelVersion): string {
-  if (version.on_demand) {
-    return `Nach Aufwand ohne Soll${version.monthly_cap_minutes ? `, Monatsgrenze ${formatHours(version.monthly_cap_minutes)} h` : ''}`
-  }
-  if (version.monthly_minutes != null) {
-    return `${formatHours(version.monthly_minutes)} h/Monat an ${version.weekdays.map((d) => WEEKDAYS[d]).join(', ')}`
-  }
-  const weekly = version.weekly_minutes != null ? `${formatHours(version.weekly_minutes)} h/Woche` : ''
-  if (version.flexible) return `${weekly}, flexibel ohne feste Tage`
-  if (version.day_minutes && version.uneven) {
-    return `${weekly}: ${version.day_minutes
-      .map((m, d) => (m > 0 ? `${WEEKDAYS[d]} ${formatHours(m)} h` : null))
-      .filter(Boolean)
-      .join(', ')}`
-  }
-  const days = version.weekdays.map((d) => WEEKDAYS[d]).join(', ')
-  return `${weekly} an ${days}${version.daily_minutes ? ` (${formatHours(version.daily_minutes)} h/Tag)` : ''}`
 }
 
 /** Aktuell gültige Fassung: Soll, Uhrzeiten, Pause und Kernzeit (auch lesend, z. B. im Schichtplan). */
@@ -753,6 +946,13 @@ export function WorkTimeModelSummary({ model, loading }: { model: WorkTimeModel 
                 : 'wie Pausenregeln'}
             </p>
             <p>Kernarbeitszeit: {core || 'wie in den Einstellungen'}</p>
+            {flexFrameLabel(model) && <p>Gleitzeit-Rahmen: {flexFrameLabel(model)}</p>}
+            {model.late_tolerance_minutes != null && <p>Toleranz der Pünktlichkeitsprüfung: {model.late_tolerance_minutes} Min.</p>}
+            {model.profile_name && (
+              <p className="text-slate-700">
+                Arbeitszeitmodell „{model.profile_name}“ – Änderungen am Modell gelten automatisch.
+              </p>
+            )}
             {model.target_from_template && (
               <p className="text-amber-700">
                 Das Soll kommt bisher aus der Schichtvorlage „{model.shift_template_name}“ (ältere Zuordnung) und folgt
@@ -781,7 +981,7 @@ function CurrentModel({ model }: { model: WorkTimeModel }) {
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">ohne Soll</span>
         </div>
         <p className="text-slate-500">
-          Abrechnung nach Ist-Stunden je Monat, kein Gleitzeitkonto.
+          Abrechnung nach Ist-Stunden je Monat, kein Überstundenkonto.
           {model.monthly_cap_minutes
             ? ` Monatsgrenze ${formatHours(model.monthly_cap_minutes)} Std. – ab 90 % erscheint ein Hinweis unter „Zu klären“.`
             : ' Keine Monatsgrenze hinterlegt.'}

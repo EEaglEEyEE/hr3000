@@ -6,8 +6,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditAction, AuditLogEntry, Device, Employee, HrRole, HrUser, Location
+from app.models import AuditAction, AuditLogEntry, Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def test_pin_self_setup_and_reset_by_hr(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -15,10 +16,10 @@ async def test_pin_self_setup_and_reset_by_hr(client: AsyncClient, db_session: A
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Paula", last_name="Neu", employee_number="N1")
-    device = Device(name="Tablet Halle", location_id=location.id, device_token="tok-pin-setup")
-    db_session.add_all([employee, device, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    device = Device(name="Tablet Halle", location_id=location.id, token_hash=token_hash("tok-pin-setup"))
+    db_session.add_all([employee, device, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
-    admin = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
+    admin = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
     await client.patch("/settings", headers=admin, json={"require_pin_for_punch": True})
     login = (await client.post("/auth/device/login", json={"device_token": "tok-pin-setup"})).json()
     assert login["pin_self_setup"] is True and login["require_pin"] is True

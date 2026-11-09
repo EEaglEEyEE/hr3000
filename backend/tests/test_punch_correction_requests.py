@@ -3,7 +3,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, Notification, Punch, PunchSource
+from app.models import Employee, HrRole, Account, Location, Notification, Punch, PunchSource
 from app.services.auth_service import hash_password
 
 
@@ -28,12 +28,12 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
         login_email="otto@example.com",
         password_hash=hash_password("pw123456"),
     )
-    db_session.add_all([employee, other, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([employee, other, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     await db_session.refresh(employee)
-    hr = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
-    me = (await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"})).json()["access_token"]
-    otto = (await client.post("/auth/employee/login", json={"email": "otto@example.com", "password": "pw123456"})).json()["access_token"]
+    hr = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    me = (await client.post("/auth/login", json={"email": "erika@example.com", "password": "pw123456"})).json()["access_token"]
+    otto = (await client.post("/auth/login", json={"email": "otto@example.com", "password": "pw123456"})).json()["access_token"]
     return (
         employee,
         {"Authorization": f"Bearer {hr}"},
@@ -63,7 +63,7 @@ async def test_request_is_approved_into_punches(client: AsyncClient, db_session:
     pending = (await client.get("/punch-correction-requests", headers=hr, params={"status": "PENDING"})).json()
     assert [p["id"] for p in pending] == [request_id] and pending[0]["employee_name"] == "Muster, Erika"
     assert (await client.get("/punch-correction-requests", headers=otto)).json() == []
-    notes = (await db_session.execute(select(Notification).where(Notification.recipient_hr_user_id.is_not(None)))).scalars().all()
+    notes = (await db_session.execute(select(Notification).where(Notification.recipient_account_id.is_not(None)))).scalars().all()
     assert any("Zeitkorrektur" in n.message for n in notes)
 
     # Mitarbeiter darf nicht selbst entscheiden.

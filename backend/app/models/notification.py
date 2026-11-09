@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -15,24 +15,29 @@ class NotificationType(str, enum.Enum):
     PERIOD_DISPUTED = "PERIOD_DISPUTED"
     CORRECTION_REQUESTED = "CORRECTION_REQUESTED"
     CORRECTION_DECIDED = "CORRECTION_DECIDED"
+    # Jemand ist als Vertretung einer (genehmigten) Abwesenheit eingetragen.
+    SUBSTITUTE_ASSIGNED = "SUBSTITUTE_ASSIGNED"
+    # Erinnerung (Probezeit, Befristung, Austritt, verfallender Urlaub)
+    REMINDER = "REMINDER"
+    # Ein weiteres Gerät wollte sich mit dem Zugang eines Tablets anmelden (abgewiesen)
+    DEVICE_ALERT = "DEVICE_ALERT"
+    # Mitarbeiter schlägt eine Änderung eigener Daten vor bzw. die Entscheidung dazu
+    DATA_CHANGE_REQUESTED = "DATA_CHANGE_REQUESTED"
+    DATA_CHANGE_DECIDED = "DATA_CHANGE_DECIDED"
+    # Mitarbeiter hat selbst ein Dokument hochgeladen
+    DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED"
 
 
 class Notification(Base):
-    """In-App-Benachrichtigung (kein E-Mail-Versand – dafür wäre ein
-    SMTP-Server samt Zugangsdaten nötig, die es in dieser Umgebung nicht
-    gibt; die Glocke im HR-Webapp-Header, siehe hr-webapp, deckt den
-    eigentlichen Bedarf "wer muss worauf reagieren" bereits ab).
-
-    Dual-Recipient wie überall sonst im Projekt (HrUser ODER Employee mit
-    hr_role/Self-Service-Login, genau einer von beiden), siehe
-    app/services/notification_service.py."""
+    """In-App-Benachrichtigung (Glocke in der Webapp) an ein Konto; zusätzlich per E-Mail, wenn ein
+    Mailversand eingerichtet ist und das Konto Mails will, siehe app/services/notification_service.py."""
 
     __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_recipient_account", "tenant_id", "recipient_account_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
-    recipient_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    recipient_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    recipient_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     type: Mapped[NotificationType] = mapped_column(Enum(NotificationType))
     message: Mapped[str] = mapped_column(String(500))
     related_absence_id: Mapped[int | None] = mapped_column(ForeignKey("absences.id"), nullable=True)

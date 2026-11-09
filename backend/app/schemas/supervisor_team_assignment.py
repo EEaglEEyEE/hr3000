@@ -2,14 +2,16 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class SupervisorTeamAssignmentCreateRequest(BaseModel):
+    """Teamleitung zuordnen: über den Mitarbeiter (mit Zugang) oder direkt über das Konto."""
+
     team_id: int
-    hr_user_id: int | None = None
     employee_id: int | None = None
+    account_id: int | None = None
 
     @model_validator(mode="after")
-    def _exactly_one_actor(self) -> "SupervisorTeamAssignmentCreateRequest":
-        if (self.hr_user_id is None) == (self.employee_id is None):
-            raise ValueError("Genau eines von hr_user_id/employee_id muss gesetzt sein.")
+    def _exactly_one(self) -> "SupervisorTeamAssignmentCreateRequest":
+        if (self.employee_id is None) == (self.account_id is None):
+            raise ValueError("Genau eines von employee_id/account_id muss gesetzt sein.")
         return self
 
 
@@ -18,5 +20,5 @@ class SupervisorTeamAssignmentResponse(BaseModel):
 
     id: int
     team_id: int
-    hr_user_id: int | None
+    account_id: int
     employee_id: int | None

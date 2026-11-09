@@ -8,6 +8,7 @@ from app.schemas.employee import EmployeeResponse
 from app.schemas.employee_default_shift import EmployeeDefaultShiftResponse
 from app.schemas.leave_entitlement import LeaveEntitlementResponse
 from app.schemas.notification import NotificationResponse
+from app.schemas.personal_data import PersonalData
 from app.schemas.punch import PunchResponse
 from app.schemas.shift_plan_entry import ShiftPlanEntryResponse
 
@@ -30,3 +31,5 @@ class EmployeeDataExportResponse(BaseModel):
     # Nur Metadaten der Personalakte (Titel, Kategorie, Datum) – die Dateien selbst
     # werden auf Anfrage separat ausgehändigt.
     documents: list[DocumentResponse]
+    # Adresse, Familie, Bank, Steuer, Sozialversicherung (Personalakte → „Stammdaten“)
+    personal_data: PersonalData | None = None

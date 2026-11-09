@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSettings, Employee, Holiday, HrRole, HrUser, Location
+from app.models import AppSettings, Employee, Holiday, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -17,10 +17,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, role: HrRole = H
         location_id=location.id, first_name="Erika", last_name="Musterfrau", employee_number="EMP-1"
     )
     db_session.add(employee)
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=role))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=role))
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return employee, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 

@@ -28,6 +28,7 @@ import {
   type ResumeResult,
 } from './deviceAuth'
 import { getCachedEmployees, setCachedEmployees } from './employeeCache'
+import { enrollFromMdm, enrollmentFromHash } from './enrollment'
 import { describeNfcError, isNfcSupported, startNfcScan, type NfcScanSession } from './nfcScanner'
 import { discardQueuedPunch, enqueuePunch, flushQueue, getQueuedPunches, type QueuedPunch } from './offlineQueue'
 import { CardScan, type CardScanStatus } from './components/CardScan'
@@ -40,16 +41,27 @@ import { TERMINAL_ARM_SECONDS, TerminalBar, type TerminalResult } from './compon
 import { normalizeCardUid, useKeyboardCardReader } from './cardReader'
 import { useWakeLock } from './wakeLock'
 import { useScreenHours } from './screenHours'
-import { tokenFromQr } from './components/QrScanner'
+import { cardUidFromQr, isQrScanSupported, QrScanner, tokenFromQr } from './components/QrScanner'
+import { sha256Hex } from './installation'
 import { formatDays, formatMinutesAsHours } from './format'
 import { PUNCH_TYPE_LABELS } from './labels'
 
 const QUEUE_FLUSH_INTERVAL_MS = 20_000
 
-/** Einrichtung per QR-Code-Link ".../#token=…" (Kamera-App des Tablets): Token einmalig beim Laden
- * übernehmen und sofort aus der Adresse entfernen (steht im Fragment, geht nie an den Server). */
+/** Verteilung per MDM: Start-URL ".../#enroll=<Registrierungsschlüssel>&name=<Gerätename>". Das MDM
+ * öffnet sie bei jedem Start; gebraucht wird sie nur, solange das Gerät kein gültiges Token hat. Nur im
+ * Speicher gehalten (nicht in localStorage) und sofort aus der Adresse entfernt. */
+const ENROLLMENT = (() => {
+  const params = enrollmentFromHash(window.location.hash)
+  if (params) window.history.replaceState(null, '', window.location.pathname)
+  return params
+})()
+
+/** Einrichtung per QR-Code-Link ".../#pair=<Kopplungscode>" (Kamera-App des Tablets; ältere Codes
+ * ".../#token=…"): Wert einmalig beim Laden übernehmen und sofort aus der Adresse entfernen (steht im
+ * Fragment, geht nie an den Server). */
 const LINK_TOKEN = (() => {
-  if (!window.location.hash.includes('token=')) return null
+  if (!window.location.hash.includes('token=') && !window.location.hash.includes('pair=')) return null
   const token = tokenFromQr(window.location.hash)
   window.history.replaceState(null, '', window.location.pathname)
   return token || null
@@ -59,6 +71,8 @@ const CONFIG_REFRESH_MS = 30_000
 const RESUME_RETRY_MS = 60_000
 
 function resumeMessage(kind: Exclude<ResumeResult['kind'], 'ok'>): string | undefined {
+  if (kind === 'in_use')
+    return 'Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt. Zum Wechseln in der HR-Webapp unter „Tablets“ den QR-Code öffnen und hier scannen.'
   if (kind === 'rejected')
     return 'Der Server hat die Anmeldung dieses Tablets abgelehnt. Es versucht es jede Minute erneut – wurde es in der HR-Webapp entfernt, bitte neu einrichten.'
   if (kind === 'unreachable')
@@ -89,6 +103,10 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>({ kind: 'loading' })
   const [setupError, setSetupError] = useState<string | undefined>(undefined)
   const [setupSubmitting, setSetupSubmitting] = useState(false)
+  // Per MDM registriert, wartet auf Freigabe in der HR-Webapp (Prüfcode am Bildschirm)
+  const [pending, setPending] = useState<{ code: string | null } | null>(null)
+  // Registrierung per MDM ist vorübergehend gescheitert (Netz, Server) – jede Minute erneut versuchen
+  const [enrollRetry, setEnrollRetry] = useState(false)
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [employeesLoading, setEmployeesLoading] = useState(false)
@@ -107,6 +125,10 @@ export default function App() {
 
   const [nfcSession, setNfcSession] = useState<NfcScanSession | null>(null)
   const [nfcError, setNfcError] = useState<string | null>(null)
+  // Anmeldung per QR-Code (Frontkamera) statt Chip
+  // Ein anderes Gerät ist mit diesem Zugang gekoppelt: nicht automatisch erneut anmelden
+  const [deviceInUse, setDeviceInUse] = useState(false)
+  const [qrScanning, setQrScanning] = useState(false)
 
   // RFID-Terminalmodus: gewählte Aktion bleibt 10 s (ab letztem Scan) aktiv.
   const [armed, setArmed] = useState<PunchType | null>(null)
@@ -137,14 +159,17 @@ export default function App() {
     async function bootstrap() {
       if (LINK_TOKEN) {
         try {
-          const result = await deviceLogin(LINK_TOKEN)
-          storeDeviceToken(LINK_TOKEN)
+          // Aktuelle QR-Codes enthalten einen einmaligen Kopplungscode, ältere das Token selbst.
+          const compact = LINK_TOKEN.replace(/[\s-]/g, '')
+          const linkToken = /^[A-Za-z0-9]{8}$/.test(compact) ? (await pairDevice(compact)).device_token : LINK_TOKEN
+          const result = await deviceLogin(linkToken)
+          storeDeviceToken(linkToken)
           if (cancelled) return
           setSession(result)
           setScreen({ kind: 'grid' })
           return
         } catch {
-          if (!cancelled) setSetupError('Der QR-Code enthält kein gültiges Tablet-Token.')
+          if (!cancelled) setSetupError('Der QR-Code ist ungültig oder abgelaufen – bitte in der HR-Webapp neu öffnen.')
         }
       }
       // Token bleibt auch bei Fehlern erhalten (siehe resumeSession); der Einrichtungsbildschirm
@@ -156,7 +181,28 @@ export default function App() {
         setScreen({ kind: 'grid' })
         return
       }
-      setSetupError(resumeMessage(result.kind))
+      // Per MDM verteilt und (noch) kein gültiges Token: mit dem Schlüssel aus der Start-URL registrieren.
+      // Einmal je Start – eine abgelehnte Anfrage kommt so höchstens nach einem Neustart wieder.
+      if (ENROLLMENT && (result.kind === 'none' || result.kind === 'rejected')) {
+        const outcome = await enrollFromMdm(ENROLLMENT)
+        if (cancelled) return
+        if (outcome.kind === 'ok') {
+          setSession(outcome.session)
+          setScreen({ kind: 'grid' })
+          return
+        }
+        if (outcome.kind === 'pending') {
+          setPending({ code: outcome.verifyCode })
+        } else {
+          setSetupError(outcome.message)
+          setEnrollRetry(outcome.retry)
+        }
+        setScreen({ kind: 'setup' })
+        return
+      }
+      if (result.kind === 'pending') setPending({ code: result.verifyCode })
+      else setSetupError(resumeMessage(result.kind))
+      if (result.kind === 'in_use') setDeviceInUse(true)
       setScreen({ kind: 'setup' })
     }
     void bootstrap()
@@ -167,22 +213,58 @@ export default function App() {
 
   // Einrichtungsbildschirm, obwohl ein Token gespeichert ist (Server war nicht erreichbar oder hat
   // abgelehnt): jede Minute erneut anmelden – nach einer Störung ist das Tablet so von selbst zurück.
+  // Ohne Token, aber mit gescheiterter MDM-Registrierung (Netz, Server): die Registrierung wiederholen.
+  // Wartet das Gerät auf Freigabe, meldet es sich so innerhalb einer Minute nach der Freigabe an.
   useEffect(() => {
-    if (screen.kind !== 'setup' || setupSubmitting || !getStoredDeviceToken()) return
+    if (screen.kind !== 'setup' || setupSubmitting || deviceInUse) return
+    if (!getStoredDeviceToken() && !(ENROLLMENT && enrollRetry)) return
     let active = true
     const interval = setInterval(() => {
-      void resumeSession().then((result) => {
-        if (!active || result.kind !== 'ok') return
+      void (async () => {
+        if (!getStoredDeviceToken() && ENROLLMENT) {
+          const outcome = await enrollFromMdm(ENROLLMENT)
+          if (!active) return
+          if (outcome.kind === 'ok') {
+            setSession(outcome.session)
+            setSetupError(undefined)
+            setPending(null)
+            setScreen({ kind: 'grid' })
+          } else if (outcome.kind === 'pending') {
+            setPending({ code: outcome.verifyCode })
+            setSetupError(undefined)
+          } else {
+            setSetupError(outcome.message)
+            setEnrollRetry(outcome.retry)
+          }
+          return
+        }
+        const result = await resumeSession()
+        if (!active) return
+        if (result.kind === 'in_use') {
+          setDeviceInUse(true)
+          setSetupError(resumeMessage('in_use'))
+        }
+        if (result.kind === 'pending') {
+          setPending({ code: result.verifyCode })
+          return
+        }
+        if (result.kind === 'rejected' && pending) {
+          // Anfrage wurde in der HR-Webapp abgelehnt
+          setPending(null)
+          setSetupError(resumeMessage('rejected'))
+        }
+        if (result.kind !== 'ok') return
         setSession(result.session)
         setSetupError(undefined)
+        setPending(null)
         setScreen({ kind: 'grid' })
-      })
+      })()
     }, RESUME_RETRY_MS)
     return () => {
       active = false
       clearInterval(interval)
     }
-  }, [screen.kind, setupSubmitting])
+  }, [screen.kind, setupSubmitting, deviceInUse, enrollRetry, pending])
 
   const loadEmployees = useCallback(async (activeSession: DeviceLoginResponse) => {
     setEmployeesLoading(true)
@@ -245,12 +327,16 @@ export default function App() {
       const deviceToken = /^[A-Za-z0-9]{8}$/.test(compact) ? (await pairDevice(compact)).device_token : input
       const result = await deviceLogin(deviceToken)
       storeDeviceToken(deviceToken)
+      setDeviceInUse(false)
+      setPending(null)
       setSession(result)
       setScreen({ kind: 'grid' })
     } catch (err) {
       setSetupError(
         err instanceof ApiError && err.code === 'INVALID_DEVICE_TOKEN'
           ? 'Unbekanntes Gerätetoken.'
+          : err instanceof ApiError && err.code === 'DEVICE_IN_USE'
+            ? resumeMessage('in_use')
           : err instanceof ApiError && err.code === 'PAIRING_CODE_INVALID'
             ? 'Kopplungscode ungültig oder abgelaufen – bitte in der HR-Webapp neu erzeugen.'
             : genericErrorMessage(err),
@@ -332,7 +418,7 @@ export default function App() {
   const showBalance = session?.show_balance !== false
   const showVacation = session?.show_vacation !== false
 
-  // Resturlaub/Gleitzeitsaldo sind nur Zusatzinfo bei der Mitarbeiterauswahl –
+  // Resturlaub/Überstundenkonto sind nur Zusatzinfo bei der Mitarbeiterauswahl –
   // schlägt der Abruf fehl (z.B. offline), wird einfach nichts angezeigt.
   useEffect(() => {
     if (punchpadEmployeeId === null || !session) {
@@ -411,7 +497,15 @@ export default function App() {
     }
     if (screen.kind !== 'grid') return
     const uid = normalizeCardUid(rawUid)
-    const employee = employees.find((candidate) => candidate.nfc_uid && normalizeCardUid(candidate.nfc_uid) === uid)
+    void sha256Hex(`${session?.card_salt ?? ''}${uid}`).then((hash) => handleKnownCard(uid, hash))
+  }
+
+  /** Gelesenen Chip einem Mitarbeiter zuordnen – über den Hash (card_hash), ältere Server über die UID. */
+  function handleKnownCard(uid: string, hash: string) {
+    const employee = employees.find(
+      (candidate) =>
+        candidate.card_hash === hash || (candidate.nfc_uid != null && normalizeCardUid(candidate.nfc_uid) === uid),
+    )
     if (!employee) {
       const message = `Chip ist keinem Mitarbeiter zugeordnet (UID: ${uid}).`
       if (armed) setTerminalResult({ ok: false, title: message })
@@ -652,7 +746,32 @@ export default function App() {
   }
 
   if (screen.kind === 'setup') {
-    return <DeviceSetup onSubmit={handleSetupSubmit} error={setupError} isSubmitting={setupSubmitting} />
+    return (
+      <DeviceSetup
+        onSubmit={handleSetupSubmit}
+        error={setupError}
+        isSubmitting={setupSubmitting}
+        pending={pending}
+      />
+    )
+  }
+
+  if (screen.kind === 'grid' && session && qrScanning) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 p-6 text-slate-100">
+        <p className="text-lg">Eigenen QR-Code vor die Kamera halten</p>
+        <QrScanner
+          facingMode="user"
+          onCancel={() => setQrScanning(false)}
+          onResult={(value) => {
+            setQrScanning(false)
+            const uid = cardUidFromQr(value)
+            if (uid) handleCard(uid)
+            else setNfcError('Das ist kein HR3000-QR-Code.')
+          }}
+        />
+      </div>
+    )
   }
 
   if (screen.kind === 'grid' && session) {
@@ -671,6 +790,7 @@ export default function App() {
         nfcActive={nfcSession !== null}
         nfcError={nfcError}
         onToggleNfc={() => void handleToggleNfc()}
+        onScanQr={rfidEnabled && isQrScanSupported() ? () => setQrScanning(true) : undefined}
         onSelect={handleSelectEmployee}
         onReset={handleReset}
         rfidRequired={rfidEnabled && Boolean(session.rfid_required)}

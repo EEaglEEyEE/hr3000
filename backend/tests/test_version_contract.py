@@ -15,7 +15,7 @@ from app.models import (
     Employee,
     EmployeeDefaultShift,
     HrRole,
-    HrUser,
+    Account,
     Location,
 )
 from app.services.auth_service import hash_password
@@ -45,10 +45,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, number: str = "V
     employee = Employee(location_id=location.id, first_name="Vera", last_name="Vertrag", employee_number=number, auto_break_enabled=False)
     db_session.add(employee)
     if number == "V1":
-        db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+        db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
     await db_session.refresh(employee)
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return employee, {"Authorization": f"Bearer {token}"}
 
 

@@ -54,7 +54,7 @@ export function PunchPad({
         )}
         {(balance || leaveEntitlement) && (
           <div className="flex gap-4 text-sm text-slate-400">
-            {balance && <span>Gleitzeitsaldo: {formatMinutesAsHours(balance.running_balance_minutes)} Std.</span>}
+            {balance && <span>Überstundenkonto: {formatMinutesAsHours(balance.running_balance_minutes)} Std.</span>}
             {leaveEntitlement && <span>Resturlaub: {formatDays(leaveEntitlement.remaining_days)} Tage</span>}
           </div>
         )}

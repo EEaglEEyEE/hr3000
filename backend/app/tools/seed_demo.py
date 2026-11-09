@@ -20,12 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     Absence,
+    Account,
     AbsenceApprovalStatus,
     AbsenceType,
     Compensation,
     Employee,
     HrRole,
-    HrUser,
     Location,
     PayComponent,
     PayComponentKind,
@@ -68,8 +68,13 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     """Legt die Demo-Firma an; False, wenn es sie schon gibt (dann wird nichts geändert)."""
     from app.api.deps import Actor
     from app.api.surcharges import create_default_surcharge_rules
-    from app.api.work_time_model import set_work_time_model
-    from app.schemas.work_time_model import WorkTimeModelSetRequest
+    from app.api.work_time_model import assign_work_time_profile, set_work_time_model
+    from app.api.work_time_profiles import create_work_time_profile
+    from app.schemas.work_time_model import (
+        WorkTimeModelSetRequest,
+        WorkTimeProfileAssignRequest,
+        WorkTimeProfileCreateRequest,
+    )
     from app.services.settings_service import get_or_create_settings
     from app.services.tenant_provisioning import provision_tenant
 
@@ -81,8 +86,8 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     tenant = await provision_tenant(
         db, subdomain=SUBDOMAIN, name="Demo GmbH", admin_email=admin_email, admin_password=password, plan=TenantPlan.UNLIMITED
     )
-    admin = (await db.execute(select(HrUser).where(HrUser.tenant_id == tenant.id))).scalar_one()
-    actor = Actor(hr_user=admin)
+    admin = (await db.execute(select(Account).where(Account.tenant_id == tenant.id))).scalar_one()
+    actor = Actor(account=admin)
     settings_row = await get_or_create_settings(db, tenant.id, commit=False)
     settings_row.default_bundesland = "BW"
     settings_row.default_annual_vacation_days = 30
@@ -101,9 +106,9 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
             employee_number=number, hire_date=start - timedelta(days=365), **extra,
         )
 
-    erika = person("Erika", "Muster", "1001", stuttgart, sales, login_email="erika@demo.invalid", password_hash=hash_password(password))
-    tom = person("Tom", "Teamleiter", "1002", stuttgart, sales, login_email="tom@demo.invalid", password_hash=hash_password(password), hr_role=HrRole.SUPERVISOR)
-    hanna = person("Hanna", "Personal", "1003", stuttgart, sales, login_email="hanna@demo.invalid", password_hash=hash_password(password), hr_role=HrRole.HR)
+    erika = person("Erika", "Muster", "1001", stuttgart, sales, login_email="erika@example.com", password_hash=hash_password(password))
+    tom = person("Tom", "Teamleiter", "1002", stuttgart, sales, login_email="tom@example.com", password_hash=hash_password(password), hr_role=HrRole.SUPERVISOR)
+    hanna = person("Hanna", "Personal", "1003", stuttgart, sales, login_email="hanna@example.com", password_hash=hash_password(password), hr_role=HrRole.HR)
     max_ = person("Max", "Beispiel", "1004", stuttgart, store)
     lena = person("Lena", "Teilzeit", "1005", berlin, store)
     ali = person("Ali", "Aushilfe", "1006", berlin, store)
@@ -111,7 +116,7 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     people = [erika, tom, hanna, max_, lena, ali, fiona]
     db.add_all(people)
     await db.flush()
-    db.add(SupervisorTeamAssignment(team_id=sales.id, employee_id=tom.id))
+    db.add(SupervisorTeamAssignment(team_id=sales.id, account_id=tom.account.id))
     await db.commit()
 
     # Schichtvorlage liefert im Arbeitszeitmodell nur die Uhrzeiten (Soll bleibt das des Modells).
@@ -119,7 +124,6 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     db.add(early)
     await db.flush()
     models = {
-        erika: {"weekly_hours": 40, "weekdays": [0, 1, 2, 3, 4]},
         tom: {"weekly_hours": 40, "weekdays": [0, 1, 2, 3, 4], "break_minutes": 45, "shift_template_id": early.id},
         hanna: {"weekly_hours": 38.5, "weekdays": [0, 1, 2, 3, 4], "core_time_mode": "CUSTOM", "core_time_start": "09:00", "core_time_end": "15:00"},
         max_: {"daily_hours": [8, 8, 4, 0, 0, 0, 0]},
@@ -129,6 +133,14 @@ async def seed_demo(db: AsyncSession, admin_email: str, password: str, today: da
     }
     for employee, model in models.items():
         await set_work_time_model(employee.id, WorkTimeModelSetRequest(**model, valid_from=start), actor, db)
+    # Arbeitszeitmodelle: eines zugewiesen (Erika), eines noch frei.
+    office = await create_work_time_profile(
+        WorkTimeProfileCreateRequest(name="Vollzeit Büro", weekly_hours=40, weekdays=[0, 1, 2, 3, 4], late_tolerance_minutes=10), actor, db
+    )
+    await create_work_time_profile(
+        WorkTimeProfileCreateRequest(name="Teilzeit 30 Std.", weekly_hours=30, weekdays=[0, 1, 2, 3, 4], flex_frame_mode="NONE"), actor, db
+    )
+    await assign_work_time_profile(erika.id, WorkTimeProfileAssignRequest(profile_id=office.id, valid_from=start), actor, db)
 
     # Stempelungen bis gestern; ein paar Lücken, damit "Zu klären" etwas zeigt.
     punches: list[Punch] = []
@@ -187,7 +199,7 @@ async def _main() -> int:
     if os.environ.get("DEMO_SEED_ALLOWED") != "1":
         print("Nur für die Testumgebung: DEMO_SEED_ALLOWED=1 fehlt.")
         return 1
-    admin_email = os.environ.get("DEMO_ADMIN_EMAIL", "admin@demo.invalid")
+    admin_email = os.environ.get("DEMO_ADMIN_EMAIL", "admin@example.com")
     password = secrets.token_urlsafe(12)
     async with AsyncSessionLocal() as db:
         created = await seed_demo(db, admin_email, password)
@@ -200,7 +212,7 @@ async def _main() -> int:
         f"  HR-Webapp: https://{SUBDOMAIN}.{base}\n"
         f"  Tablet:    https://kiosk.{SUBDOMAIN}.{base}\n"
         f"  Admin:     {admin_email}\n"
-        "  HR:        hanna@demo.invalid · Teamleiter: tom@demo.invalid · Mitarbeiterin: erika@demo.invalid\n"
+        "  HR:        hanna@example.com · Führungskraft: tom@example.com · Mitarbeiterin: erika@example.com\n"
         f"  Passwort (für alle): {password}\n"
     )
     return 0

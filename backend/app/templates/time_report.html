@@ -55,7 +55,7 @@
     <tr><td>Ist gesamt</td><td class="num"><b>{{ fmt(r.actual_minutes) }} h</b></td></tr>
     <tr><td>Pausen gesamt</td><td class="num"><b>{{ fmt(r.break_minutes) }} h</b></td></tr>
     <tr><td>Saldo im Monat</td><td class="num"><b>{{ fmt(r.delta_minutes, true) }} h</b></td></tr>
-    <tr><td>Gleitzeitkonto zum Monatsende</td><td class="num"><b>{{ fmt(r.balance_end_minutes, true) }} h</b></td></tr>
+    <tr><td>Überstundenkonto zum Monatsende</td><td class="num"><b>{{ fmt(r.balance_end_minutes, true) }} h</b></td></tr>
     <tr><td>Urlaubstage / Krankheitstage / Sonderurlaub</td><td class="num"><b>{{ r.vacation_days|days }} / {{ r.sick_days|days }} / {{ r.special_leave_days|days }}</b></td></tr>
     {% if r.child_sick_days %}<tr><td>Kind krank</td><td class="num"><b>{{ r.child_sick_days|days }}</b></td></tr>{% endif %}
     {% if r.unpaid_days or r.time_off_days %}<tr><td>Unbezahlt / Freizeitausgleich</td><td class="num"><b>{{ r.unpaid_days|days }} / {{ r.time_off_days|days }}</b></td></tr>{% endif %}

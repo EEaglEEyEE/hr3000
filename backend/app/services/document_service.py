@@ -101,8 +101,7 @@ async def store_document(
     employee_visible: bool,
     confidential: bool,
     retention_until: date | None,
-    uploaded_by_hr_user_id: int | None,
-    uploaded_by_employee_id: int | None,
+    uploaded_by_account_id: int | None,
     content_type: str | None = None,
 ) -> EmployeeDocument:
     """Gemeinsamer Weg für Uploads UND intern erzeugte Dokumente (z.B.
@@ -132,8 +131,7 @@ async def store_document(
         confidential=confidential,
         employee_visible=employee_visible,
         retention_until=retention_until,
-        uploaded_by_hr_user_id=uploaded_by_hr_user_id,
-        uploaded_by_employee_id=uploaded_by_employee_id,
+        uploaded_by_account_id=uploaded_by_account_id,
     )
     db.add(document)
     return document

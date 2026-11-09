@@ -10,6 +10,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import (
     Absence,
+    Account,
     EmployeeDocument,
     AuditAction,
     Employee,
@@ -28,6 +29,8 @@ from app.schemas.leave_entitlement import LeaveEntitlementResponse
 from app.schemas.notification import NotificationResponse
 from app.schemas.punch import PunchResponse
 from app.schemas.shift_plan_entry import ShiftPlanEntryResponse
+from app.schemas.personal_data import PersonalData
+from app.services import personal_data_service
 from app.services.audit_service import log_action
 from app.services.leave_service import leave_balance
 from app.services.team_scope_service import ensure_employee_visible
@@ -75,7 +78,8 @@ async def export_employee_data(
     )
     notifications_result = await db.execute(
         select(Notification)
-        .where(Notification.recipient_employee_id == employee_id)
+        .join(Account, Account.id == Notification.recipient_account_id)
+        .where(Account.employee_id == employee_id)
         .order_by(Notification.created_at.asc())
     )
 
@@ -119,13 +123,13 @@ async def export_employee_data(
             for d in documents_result.scalars().all()
             if actor.is_admin_level or not d.confidential
         ],
+        personal_data=PersonalData(**await personal_data_service.load(db, employee.id)),
     )
 
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_DATA_EXPORTED,
         entity_type="employee",
         entity_id=employee.id,

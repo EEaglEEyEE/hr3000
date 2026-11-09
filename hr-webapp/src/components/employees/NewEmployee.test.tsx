@@ -3,7 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { loginAs, mockApi, renderWithProviders, type ApiCall, type ApiInit } from '../../test/utils'
-import { EmployeeFormDialog } from './EmployeeFormDialog'
+import { EmployeeForm, EmployeeFormDialog } from './EmployeeFormDialog'
 
 const LOCATIONS = [{ id: 1, name: 'Zentrale', timezone: 'Europe/Berlin' }] as never
 
@@ -63,6 +63,21 @@ describe('Neuer Mitarbeiter', () => {
     await waitFor(() => expect(postBody(calls2)).toMatchObject({ no_work_time_model: false, work_time_model: { on_demand: true } }))
   })
 
+  it('weist beim Anlegen ein Arbeitszeitmodell zu', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = mockApi({
+      ...features([480, 480, 480, 480, 480, 0, 0]),
+      'GET /work-time-profiles': [{ id: 4, name: 'Vollzeit Büro' }],
+    })
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    await fillBasics()
+    await userEvent.selectOptions(await screen.findByLabelText('Arbeitszeitmodell'), 'Arbeitszeitmodell „Vollzeit Büro“')
+    expect(screen.getByText(/Folgt automatisch den Änderungen des Modells/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(postBody(calls)).toMatchObject({ no_work_time_model: false, work_time_profile_id: 4 }))
+    expect(postBody(calls)).not.toHaveProperty('work_time_model')
+  })
+
   it('verlangt bei „Stunden je Wochentag“ mindestens einen Tag', async () => {
     loginAs({ kind: 'hr', role: 'HR' })
     const calls = mockApi(features(null))
@@ -94,7 +109,7 @@ describe('Neuer Mitarbeiter', () => {
       login_email: null, hr_role: null, hr_payroll_access: false, auto_break_enabled: true, has_pin: false, nfc_uid: null,
       hire_date: null, termination_date: null, birth_date: null, show_birthday_in_calendar: true, team_id: null, anonymized_at: null,
     } as never
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} employee={employee} locations={LOCATIONS} />)
+    renderWithProviders(<EmployeeForm employee={employee} locations={LOCATIONS} />)
     expect((await screen.findByText(/Weitere Angaben/)).closest('details')).toHaveAttribute('open')
     expect(screen.queryByLabelText('Arbeitszeitmodell')).not.toBeInTheDocument()
   })

@@ -1,9 +1,14 @@
 from datetime import date, time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.break_rule import check_window
 from app.schemas.core_time import CoreTimeDays, CoreTimeMode, check_core_time
+
+# Gleitzeit-Rahmen eines Arbeitszeitmodells: TENANT = wie in den Einstellungen, CUSTOM = eigener,
+# NONE = kein Rahmen.
+FlexFrameMode = Literal["TENANT", "CUSTOM", "NONE"]
 
 
 class WorkTimeModelInput(BaseModel):
@@ -208,6 +213,15 @@ class WorkTimeModelFields(BaseModel):
     core_time_start: time | None = None
     core_time_end: time | None = None
     core_time_days: CoreTimeDays = None
+    # Gleitzeit-Rahmen und Toleranz (eigene Werte nur aus einem Arbeitszeitmodell; leer = wie
+    # Einstellungen)
+    flex_frame_mode: FlexFrameMode = "TENANT"
+    flex_frame_start: time | None = None
+    flex_frame_end: time | None = None
+    late_tolerance_minutes: int | None = None
+    # Zugewiesenes Arbeitszeitmodell (leer = individuell eingetragen)
+    profile_id: int | None = None
+    profile_name: str | None = None
 
 
 class WorkTimeModelResponse(WorkTimeModelFields):
@@ -223,3 +237,88 @@ class WorkTimeModelVersion(WorkTimeModelFields):
     id: int
     valid_from: date
     valid_to: date | None
+
+
+class WorkTimeProfileInput(WorkTimeModelInput):
+    """Angaben eines Arbeitszeitmodells: wie ein Arbeitszeitmodell, dazu Gleitzeit-Rahmen und
+    Pünktlichkeits-Toleranz (leer = wie in den Einstellungen)."""
+
+    flex_frame_mode: FlexFrameMode = "TENANT"
+    flex_frame_start: time | None = None
+    flex_frame_end: time | None = None
+    late_tolerance_minutes: int | None = Field(default=None, ge=0, le=120)
+
+    @model_validator(mode="after")
+    def _flex_frame(self) -> "WorkTimeProfileInput":
+        if self.flex_frame_mode == "CUSTOM":
+            if self.flex_frame_start is None or self.flex_frame_end is None:
+                raise ValueError("Für einen eigenen Gleitzeit-Rahmen bitte Beginn und Ende angeben.")
+            if self.flex_frame_start >= self.flex_frame_end:
+                raise ValueError("Gleitzeit-Rahmen: der Beginn muss vor dem Ende liegen.")
+            if (
+                self.core_time_mode == "CUSTOM"
+                and self.core_time_start is not None
+                and self.core_time_end is not None
+                and not (self.flex_frame_start <= self.core_time_start and self.core_time_end <= self.flex_frame_end)
+            ):
+                raise ValueError("Die Kernzeit muss innerhalb des Gleitzeit-Rahmens liegen.")
+        else:
+            self.flex_frame_start = self.flex_frame_end = None
+        return self
+
+
+class WorkTimeProfileCreateRequest(WorkTimeProfileInput):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Bitte einen Namen angeben.")
+        return value
+
+
+class WorkTimeProfileSetRequest(WorkTimeProfileInput):
+    """Neue Fassung des Modells ab Stichtag – gilt für alle zugewiesenen Mitarbeiter."""
+
+    valid_from: date
+
+
+class WorkTimeProfileUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    archived: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            raise ValueError("Bitte einen Namen angeben.")
+        return value
+
+
+class WorkTimeProfileResponse(WorkTimeModelFields):
+    """Modell mit der heute gültigen Fassung und den aktuell zugewiesenen Mitarbeitern."""
+
+    id: int
+    name: str
+    archived: bool
+    valid_from: date
+    employee_count: int
+    employees: list[str] = []
+
+
+class WorkTimeProfileVersionResponse(WorkTimeModelFields):
+    id: int
+    valid_from: date
+    valid_to: date | None
+
+
+class WorkTimeProfileAssignRequest(BaseModel):
+    """Modell einem Mitarbeiter ab Stichtag zuweisen (ersetzt alles ab diesem Tag)."""
+
+    profile_id: int = Field(ge=1)
+    valid_from: date

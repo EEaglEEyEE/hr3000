@@ -43,7 +43,7 @@ export function SupervisorAssignmentsDialog({ open, onOpenChange, team }: Superv
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Teamleiter/innen – {team?.name}</DialogTitle>
+          <DialogTitle>Führungskräfte – {team?.name}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <ul className="flex flex-col gap-2">
@@ -69,7 +69,7 @@ export function SupervisorAssignmentsDialog({ open, onOpenChange, team }: Superv
               )
             })}
             {assignmentsQuery.data?.length === 0 && (
-              <li className="text-sm text-slate-500">Noch keine Teamleiter/in zugeordnet.</li>
+              <li className="text-sm text-slate-500">Noch keine Führungskraft zugeordnet.</li>
             )}
           </ul>
 
@@ -77,7 +77,7 @@ export function SupervisorAssignmentsDialog({ open, onOpenChange, team }: Superv
             <div className="flex-1">
               <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Mitarbeiter mit Rolle Teamleiter/in wählen" />
+                  <SelectValue placeholder="Mitarbeiter mit Rolle Führungskraft wählen" />
                 </SelectTrigger>
                 <SelectContent>
                   {assignableEmployees.map((employee) => (
@@ -89,7 +89,7 @@ export function SupervisorAssignmentsDialog({ open, onOpenChange, team }: Superv
               </Select>
               {assignableEmployees.length === 0 && (
                 <p className="mt-1 text-xs text-slate-500">
-                  Kein Mitarbeiter mit Rolle „Teamleiter/in“ verfügbar (siehe HR-Berechtigung im
+                  Kein Mitarbeiter mit Rolle „Führungskraft“ verfügbar (siehe HR-Berechtigung im
                   Mitarbeiterformular).
                 </p>
               )}

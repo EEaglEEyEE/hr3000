@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
-from app.models import HrRole, HrUser, Tenant, TenantPlan
+from app.models import Account, HrRole, Tenant, TenantPlan
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings, seed_default_break_rules
 
@@ -52,7 +52,7 @@ async def provision_tenant(
     await get_or_create_settings(db, tenant.id, commit=False)
     await seed_default_break_rules(db, tenant.id, commit=False)
     db.add(
-        HrUser(
+        Account(
             tenant_id=tenant.id,
             email=admin_email,
             password_hash=hash_password(admin_password),

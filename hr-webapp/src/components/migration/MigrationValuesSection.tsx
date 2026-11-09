@@ -1,4 +1,4 @@
-/** Migration aus einem Altsystem: Werte bestehender Mitarbeiter (Gleitzeit-Übertrag, Urlaubskonto,
+/** Migration aus einem Altsystem: Werte bestehender Mitarbeiter (Überstunden-Übertrag, Urlaubskonto,
  *  Arbeitszeitmodell) per CSV zu einem Stichtag übernehmen – erst Vorschau, dann übernehmen. */
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -55,7 +55,7 @@ export function MigrationValuesSection() {
       <div className="text-sm text-slate-700">
         <p className="font-medium text-slate-900">Werte aus dem Altsystem übernehmen</p>
         <p>
-          Für bestehende Mitarbeiter (Zuordnung über die Personalnummer), alles zum Stichtag: Gleitzeit-Übertrag in Stunden
+          Für bestehende Mitarbeiter (Zuordnung über die Personalnummer), alles zum Stichtag: Überstunden-Übertrag in Stunden
           (auch negativ), Urlaubsanspruch und Übertrag aus dem Vorjahr für das Jahr des Stichtags, Arbeitszeitmodell ab
           Stichtag (Spalten wie oben, dazu <code className="rounded bg-slate-100 px-1">monatsstunden</code> mit
           Arbeitstagen und <code className="rounded bg-slate-100 px-1">pause_minuten</code>). Pflichtspalte{' '}

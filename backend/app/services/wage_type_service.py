@@ -12,7 +12,7 @@ async def wage_type_map(db: AsyncSession, tenant_id: int) -> dict[WageTypeItem, 
 
 
 async def set_wage_types(db: AsyncSession, tenant_id: int, values: dict[WageTypeItem, str | None]) -> list[str]:
-    """Setzt bzw. entfernt Lohnarten je Zeitart; gibt die Änderungen fürs Audit-Log zurück."""
+    """Setzt bzw. entfernt Lohnarten je Zeitart; gibt die Änderungen fürs Audit-Protokoll zurück."""
     rows = {
         row.item: row
         for row in (await db.execute(select(WageTypeMapping).where(WageTypeMapping.tenant_id == tenant_id))).scalars().all()

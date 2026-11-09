@@ -1,20 +1,25 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String, UniqueConstraint
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
-from app.models.hr_user import HrRole
+from app.models.account import HrRole
+
+if TYPE_CHECKING:
+    from app.models.account import Account
+    from app.models.cost_center import EmployeeCostCenter
 
 
 class Employee(Base):
     __tablename__ = "employees"
-    # employee_number/nfc_uid/login_email sind nur innerhalb eines Tenants
+    # employee_number/nfc_uid sind nur innerhalb eines Tenants
     # eindeutig, nicht global – siehe app/middleware/tenant.py.
     __table_args__ = (
         UniqueConstraint("tenant_id", "employee_number", name="uq_employees_tenant_number"),
         UniqueConstraint("tenant_id", "nfc_uid", name="uq_employees_tenant_nfc_uid"),
-        UniqueConstraint("tenant_id", "login_email", name="uq_employees_tenant_login_email"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -27,6 +32,15 @@ class Employee(Base):
     # app/services/team_scope_service.py. Nullable, da nicht jeder
     # Mitarbeiter zwingend einem Team zugeordnet sein muss.
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    # Abteilung (hierarchisch, app/models/department.py), Position und Führungskraft (ein anderer
+    # Mitarbeiter) – Grundlage für Organigramm und Genehmigungen über die Führungskraft.
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id", ondelete="SET NULL"), nullable=True)
+    position: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    supervisor_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    # Vertretung bei Genehmigungen: entscheidet für diese Person (als Führungskraft), solange sie abwesend ist
+    approval_delegate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
     first_name: Mapped[str] = mapped_column(String(100))
     last_name: Mapped[str] = mapped_column(String(100))
     employee_number: Mapped[str] = mapped_column(String(50))
@@ -47,14 +61,6 @@ class Employee(Base):
     # Stempeln am Tablet, siehe app/api/punches.py create_punch. Kein Geheimnis
     # (jeder NFC-Leser kann sie von der Karte auslesen) – daher unverschlüsselt.
     nfc_uid: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Login (E-Mail/Passwort). hr_role=None -> reiner Self-Service (nur eigene
-    # Daten, read-only). hr_role gesetzt -> voller HR-Webapp-Zugriff mit
-    # denselben Zugangsdaten, siehe app/api/deps.py get_current_hr_principal.
-    login_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    hr_role: Mapped[HrRole | None] = mapped_column(Enum(HrRole), nullable=True)
-    # Berechtigung „Vergütung & Lohn-Export“ bei hr_role HR (Admins haben sie immer)
-    hr_payroll_access: Mapped[bool] = mapped_column(Boolean, default=False)
     # Wenn gesetzt, fügt das System beim Ausstempeln (GO) automatisch die gesetzlich
     # vorgeschriebene Pause als BREAK_START/BREAK_END-Punches ein, sofern der
     # Mitarbeiter selbst keine Pause gestempelt hat. Siehe app/services/
@@ -66,12 +72,89 @@ class Employee(Base):
     # bleiben für die Aufbewahrungsfrist erhalten – nur die Stammdaten werden
     # unkenntlich gemacht. None = nicht anonymisiert.
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Gleitzeitkonto: bis einschließlich dieses Tages sind die overtime_balances-Zeilen aktuell.
+    # Überstundenkonto: bis einschließlich dieses Tages sind die overtime_balances-Zeilen aktuell.
     # NULL bzw. ein früheres Datum = ab dort neu berechnen (siehe timesheet_service.rebuild_balance).
     balance_through: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     location: Mapped["Location"] = relationship(back_populates="employees")
+    # Zugang zur Webapp (Konto mit E-Mail/Passwort und ggf. Rolle), siehe app/models/account.py
+    account: Mapped["Account | None"] = relationship(back_populates="employee", lazy="selectin")
+    # Aufteilung auf Kostenstellen (app/models/cost_center.py)
+    cost_centers: Mapped[list["EmployeeCostCenter"]] = relationship(lazy="selectin", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs) -> None:
+        # Ohne Angabe gilt „kein Konto“ als geladen – sonst würde ein Zugriff auf employee.account bei
+        # neu angelegten Mitarbeitern nachladen (im async-Kontext nicht erlaubt). Zuerst setzen, damit
+        # login_email & Co. in kwargs das Konto danach anlegen können.
+        self.account = kwargs.pop("account", None)
+        self.cost_centers = kwargs.pop("cost_centers", [])
+        super().__init__(**kwargs)
 
     @property
     def has_pin(self) -> bool:
         return self.pin_hash is not None
+
+    # Status wie in der Personalakte üblich: ONBOARDING (Eintritt in der Zukunft), ACTIVE, LEAVE
+    # (Auszeit: heute in Elternzeit/Pflegezeit, gesetzt über personal_data_service.mark_leave),
+    # INACTIVE (deaktiviert oder Austritt vorbei).
+    @property
+    def employment_status(self) -> str:
+        today = date.today()
+        if not self.active or (self.termination_date is not None and self.termination_date < today):
+            return "INACTIVE"
+        if self.hire_date is not None and self.hire_date > today:
+            return "ONBOARDING"
+        if getattr(self, "_on_leave", False):
+            return "LEAVE"
+        return "ACTIVE"
+
+    # --- Zugang dieses Mitarbeiters (liegt im verknüpften Konto) -------------------------------
+    # Lesen liefert die Werte des Kontos (None ohne Konto); Schreiben legt das Konto bei Bedarf an.
+    # Zugang entfernen = E-Mail und Passwort auf None (das Konto bleibt für den Verlauf).
+
+    def _login_account(self) -> "Account":
+        if self.account is None:
+            from app.models.account import Account
+
+            self.account = Account(tenant_id=self.tenant_id)
+        return self.account
+
+    @property
+    def login_email(self) -> str | None:
+        return self.account.email if self.account is not None else None
+
+    @login_email.setter
+    def login_email(self, value: str | None) -> None:
+        if value is not None or self.account is not None:
+            self._login_account().email = value
+
+    @property
+    def password_hash(self) -> str | None:
+        return self.account.password_hash if self.account is not None else None
+
+    @password_hash.setter
+    def password_hash(self, value: str | None) -> None:
+        if value is not None or self.account is not None:
+            self._login_account().password_hash = value
+
+    @property
+    def hr_role(self) -> HrRole | None:
+        return self.account.role if self.account is not None else None
+
+    @hr_role.setter
+    def hr_role(self, value: HrRole | None) -> None:
+        if value is not None or self.account is not None:
+            self._login_account().role = value
+
+    @property
+    def two_factor_enabled(self) -> bool:
+        return self.account is not None and self.account.two_factor_enabled
+
+    @property
+    def hr_payroll_access(self) -> bool:
+        return bool(self.account.payroll_access) if self.account is not None else False
+
+    @hr_payroll_access.setter
+    def hr_payroll_access(self, value: bool) -> None:
+        if value or self.account is not None:
+            self._login_account().payroll_access = bool(value)

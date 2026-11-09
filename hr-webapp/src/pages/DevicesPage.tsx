@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { Copy, Plus, QrCode, Trash2 } from 'lucide-react'
+import { Plus, QrCode, Trash2 } from 'lucide-react'
 import { useDeleteDeviceMutation, useDevicesQuery, type Device } from '../api/queries/devices'
 import { useLocationsQuery } from '../api/queries/locations'
 import { DeviceFormDialog } from '../components/devices/DeviceFormDialog'
 import { DeviceQrDialog } from '../components/devices/DeviceQrDialog'
+import { MdmDistribution } from '../components/devices/MdmDistribution'
+import { PendingEnrollments } from '../components/devices/PendingEnrollments'
 import { Button } from '../components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 
 function formatLastSeen(iso: string | null): string {
   if (!iso) return 'Noch nie verbunden'
@@ -19,7 +22,6 @@ export function DevicesPage() {
   const deleteDevice = useDeleteDeviceMutation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingDevice, setEditingDevice] = useState<Device | undefined>(undefined)
-  const [copiedId, setCopiedId] = useState<number | null>(null)
   const [qrDevice, setQrDevice] = useState<Device | undefined>(undefined)
 
   const locations = locationsQuery.data ?? []
@@ -33,12 +35,6 @@ export function DevicesPage() {
   function openEditDialog(device: Device) {
     setEditingDevice(device)
     setDialogOpen(true)
-  }
-
-  async function copyToken(device: Device) {
-    await navigator.clipboard.writeText(device.device_token)
-    setCopiedId(device.id)
-    setTimeout(() => setCopiedId(null), 1500)
   }
 
   function handleDelete(device: Device) {
@@ -63,63 +59,80 @@ export function DevicesPage() {
         </p>
       )}
 
-      {devicesQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
-      {devicesQuery.isError && <p className="text-red-600">Tablets konnten nicht geladen werden.</p>}
+      <PendingEnrollments locations={locations} devices={devicesQuery.data ?? []} />
 
-      {devicesQuery.data && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Standort</TableHead>
-              <TableHead>Device-Token</TableHead>
-              <TableHead>Zuletzt verbunden</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {devicesQuery.data.map((device) => (
-              <TableRow key={device.id}>
-                <TableCell>{device.name}</TableCell>
-                <TableCell>{locationNameById.get(device.location_id) ?? '–'}</TableCell>
-                <TableCell>
-                  <button
-                    type="button"
-                    onClick={() => copyToken(device)}
-                    className="flex items-center gap-1.5 rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700 hover:bg-slate-200"
-                    title="Token kopieren"
-                  >
-                    <Copy className="h-3 w-3" />
-                    {copiedId === device.id ? 'Kopiert!' : device.device_token}
-                  </button>
-                </TableCell>
-                <TableCell className="text-slate-500">{formatLastSeen(device.last_seen)}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setQrDevice(device)}>
-                      <QrCode className="h-4 w-4" />
-                      QR-Code
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => openEditDialog(device)}>
-                      Bearbeiten
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(device)}>
-                      <Trash2 className="h-4 w-4 text-red-600" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {devicesQuery.data.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-slate-500">
-                  Keine Tablets registriert.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      )}
+      <Tabs defaultValue="devices">
+        <TabsList>
+          <TabsTrigger value="devices">Tablets</TabsTrigger>
+          <TabsTrigger value="mdm">Verteilung per MDM</TabsTrigger>
+        </TabsList>
+        <TabsContent value="devices">
+          {devicesQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
+          {devicesQuery.isError && <p className="text-red-600">Tablets konnten nicht geladen werden.</p>}
+
+          {devicesQuery.data && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Standort</TableHead>
+                  <TableHead>Gekoppelt</TableHead>
+                  <TableHead>Zuletzt verbunden</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {devicesQuery.data.map((device) => (
+                  <TableRow key={device.id}>
+                    <TableCell>
+                      {device.name}
+                      {device.mdm_name && <span className="block text-xs text-slate-500">MDM: {device.mdm_name}</span>}
+                    </TableCell>
+                    <TableCell>{locationNameById.get(device.location_id) ?? '–'}</TableCell>
+                    <TableCell className="text-sm">
+                      {device.bound_at ? (
+                        <span className="text-slate-600">an ein Tablet seit {formatLastSeen(device.bound_at)}</span>
+                      ) : (
+                        <span className="text-slate-400">noch kein Tablet</span>
+                      )}
+                      {device.rejected_at && (
+                        <span className="mt-0.5 block text-xs font-medium text-red-600" title="Ein anderes Gerät hat versucht, sich mit diesem Zugang anzumelden">
+                          Anderes Gerät abgewiesen: {formatLastSeen(device.rejected_at)}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-slate-500">{formatLastSeen(device.last_seen)}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setQrDevice(device)}>
+                          <QrCode className="h-4 w-4" />
+                          QR-Code
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(device)}>
+                          Bearbeiten
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(device)}>
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {devicesQuery.data.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-slate-500">
+                      Keine Tablets registriert.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </TabsContent>
+        <TabsContent value="mdm">
+          <MdmDistribution locations={locations} />
+        </TabsContent>
+      </Tabs>
 
       <DeviceFormDialog
         open={dialogOpen}

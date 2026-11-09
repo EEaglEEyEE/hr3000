@@ -170,7 +170,7 @@ def parse_bulk_import_csv(
                 seen_login_emails.add(login_email)
 
             hire_date_raw = row.get("eintrittsdatum", "")
-            hire_date = _parse_date(hire_date_raw, "Eintrittsdatum") if hire_date_raw else None
+            hire_date = _parse_date(hire_date_raw, "Anstelldatum") if hire_date_raw else None
 
             birth_date_raw = row.get("geburtsdatum", "")
             birth_date = _parse_date(birth_date_raw, "Geburtsdatum") if birth_date_raw else None

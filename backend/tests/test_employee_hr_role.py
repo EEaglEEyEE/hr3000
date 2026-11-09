@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -50,8 +50,8 @@ async def _create_plain_employee(db_session: AsyncSession, location: Location, n
     return employee
 
 
-async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -59,12 +59,12 @@ async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _employee_token(client: AsyncClient, email: str) -> str:
-    response = await client.post("/auth/employee/login", json={"email": email, "password": "pw123456"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw123456"})
     return response.json()["access_token"]
 
 
 async def _hr_token(client: AsyncClient, email: str, password: str = "pw") -> str:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": password})
+    response = await client.post("/auth/login", json={"email": email, "password": password})
     return response.json()["access_token"]
 
 
@@ -199,8 +199,7 @@ async def test_punch_correction_records_created_by_employee_id(
     )
     assert create_response.status_code == 201
     body = create_response.json()
-    assert body["created_by"] is None
-    assert body["created_by_employee_id"] == hr_employee.id
+    assert body["created_by_account_id"] == hr_employee.account.id
 
     correct_response = await client.patch(
         f"/punches/{body['id']}",
@@ -209,8 +208,7 @@ async def test_punch_correction_records_created_by_employee_id(
     )
     assert correct_response.status_code == 200
     corrected = correct_response.json()
-    assert corrected["created_by"] is None
-    assert corrected["created_by_employee_id"] == hr_employee.id
+    assert corrected["created_by_account_id"] == hr_employee.account.id
 
 
 async def test_absence_created_by_employee_id_for_hr_role_employee(
@@ -234,14 +232,13 @@ async def test_absence_created_by_employee_id_for_hr_role_employee(
 
     assert response.status_code == 201
     body = response.json()
-    assert body["created_by"] is None
-    assert body["created_by_employee_id"] == hr_employee.id
+    assert body["created_by_account_id"] == hr_employee.account.id
 
 
 async def test_legacy_hr_user_login_still_works_alongside_hr_role(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Bestehende HrUser-Accounts bleiben unverändert funktionsfähig, auch
+    """Reine Verwaltungskonten (ohne Mitarbeiter) bleiben unverändert funktionsfähig, auch
     nachdem Mitarbeiter jetzt ebenfalls hr_role haben können."""
     await _create_admin_hr_user(db_session)
     token = await _hr_token(client, "admin@example.com")

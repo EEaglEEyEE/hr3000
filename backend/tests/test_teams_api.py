@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, SupervisorTeamAssignment, Team
+from app.models import Employee, HrRole, Account, Location, SupervisorTeamAssignment, Team
 from app.services.auth_service import hash_password
 
 
@@ -13,16 +13,16 @@ async def _create_location(db_session: AsyncSession, name: str = "Standort A") -
     return location
 
 
-async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
     return user
 
 
-async def _create_supervisor_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
+async def _create_supervisor_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -30,7 +30,7 @@ async def _create_supervisor_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _token(client: AsyncClient, email: str) -> str:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -111,7 +111,7 @@ async def test_supervisor_only_sees_own_team_and_its_employees(
     await db_session.refresh(own_team)
     await db_session.refresh(other_team)
 
-    db_session.add(SupervisorTeamAssignment(team_id=own_team.id, hr_user_id=supervisor.id))
+    db_session.add(SupervisorTeamAssignment(team_id=own_team.id, account_id=supervisor.id))
     own_employee = Employee(
         location_id=location.id,
         first_name="Erika",

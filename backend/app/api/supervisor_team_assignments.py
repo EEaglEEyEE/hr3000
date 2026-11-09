@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_full_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import Employee, HrUser, SupervisorTeamAssignment, Team
+from app.models import Account, Employee, SupervisorTeamAssignment, Team
 from app.schemas.supervisor_team_assignment import (
     SupervisorTeamAssignmentCreateRequest,
     SupervisorTeamAssignmentResponse,
@@ -42,20 +42,19 @@ async def create_supervisor_team_assignment(
     if team is None or team.tenant_id != actor.tenant_id:
         raise AppError(404, "TEAM_NOT_FOUND", "Team nicht gefunden.")
 
-    if payload.hr_user_id is not None:
-        hr_user = await db.get(HrUser, payload.hr_user_id)
-        if hr_user is None or hr_user.tenant_id != actor.tenant_id:
-            raise AppError(404, "HR_USER_NOT_FOUND", "HR-User nicht gefunden.")
+    if payload.account_id is not None:
+        account = await db.get(Account, payload.account_id)
+        if account is None or account.tenant_id != actor.tenant_id:
+            raise AppError(404, "ACCOUNT_NOT_FOUND", "Konto nicht gefunden.")
     else:
         employee = await db.get(Employee, payload.employee_id)
         if employee is None or employee.tenant_id != actor.tenant_id:
             raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
+        if employee.account is None:
+            raise AppError(400, "EMPLOYEE_WITHOUT_ACCOUNT", "Der Mitarbeiter hat keinen Zugang zur Webapp.")
+        account = employee.account
 
-    assignment = SupervisorTeamAssignment(
-        team_id=payload.team_id,
-        hr_user_id=payload.hr_user_id,
-        employee_id=payload.employee_id,
-    )
+    assignment = SupervisorTeamAssignment(team_id=payload.team_id, account_id=account.id)
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)

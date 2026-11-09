@@ -247,5 +247,7 @@ async def get_dashboard(
         horizon_date=horizon,
         portal_punching_enabled=settings_row.portal_punching_enabled,
         absence_requests_enabled=settings_row.absence_requests_enabled,
+        team_calendar_for_employees=settings_row.team_calendar_for_employees,
+        org_chart_for_employees=settings_row.org_chart_for_employees,
         shift_planning_enabled=settings_row.shift_planning_enabled,
     )

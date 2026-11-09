@@ -19,9 +19,10 @@ PUBLIC_PATHS=(
   docs/README.md docs/handbuch-admin.md docs/handbuch-mitarbeiter.md docs/aenderungen.md docs/technik.md
   Caddyfile docker-compose.yml docker-compose.staging.yml .env.example .gitignore LICENSE README.md
 )
-# Sicherheitsnetz: diese Begriffe dürfen im öffentlichen Stand nicht vorkommen (interne Konten/Infra).
+# Sicherheitsnetz: diese Begriffe dürfen im öffentlichen Stand nicht vorkommen (interne Konten/Infra,
+# Namen anderer Anbieter).
 # Aus Teilstücken zusammengesetzt, damit dieses Skript (selbst öffentlich) nicht auf sich anschlägt.
-FORBIDDEN='u3132''59|Ca''to |OneDrive-''Schwabenhaus|/Users/''johannes|BEGIN [A-Z ]*PRIV''ATE KEY'
+FORBIDDEN='u3132''59|Ca''to |OneDrive-''Schwabenhaus|/Users/''johannes|BEGIN [A-Z ]*PRIV''ATE KEY|[Pp]erso''nio'
 
 if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -z "${DEPLOY_KEY:-}" ]; then
   # Grün bleiben (kein Fehler bei jedem Push), aber sichtbar: Warnung am Lauf und in der Zusammenfassung.

@@ -125,7 +125,7 @@ export function LocationFormDialog({ open, onOpenChange, location }: LocationFor
             </Select>
             <p className="text-xs text-slate-500">
               Bestimmt, welche Feiertage automatisch für Mitarbeiter dieses Standorts importiert
-              werden (siehe Einstellungen → „Feiertage“).
+              werden (siehe Einstellungen → „Feiertagskalender“).
             </p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}

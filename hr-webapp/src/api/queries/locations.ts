@@ -7,9 +7,10 @@ export type LocationCreateRequest = components['schemas']['LocationCreateRequest
 export type LocationUpdateRequest = components['schemas']['LocationUpdateRequest']
 export type Bundesland = components['schemas']['Bundesland']
 
-export function useLocationsQuery() {
+export function useLocationsQuery(enabled = true) {
   return useQuery({
     queryKey: ['locations'],
+    enabled,
     queryFn: async () => unwrap(await apiClient.GET('/locations')),
   })
 }

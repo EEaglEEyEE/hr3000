@@ -1,8 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiError } from '../../api/client'
 import { useAbsenceTypesQuery } from '../../api/queries/absenceTypes'
-import { useCreateAbsenceMutation, useUpdateAbsenceMutation, type Absence } from '../../api/queries/absences'
-import { todayIsoDate } from '../../lib/format'
+import {
+  useCreateAbsenceMutation,
+  useSubstituteCandidatesQuery,
+  useTeamOverlapsQuery,
+  useUpdateAbsenceMutation,
+  type Absence,
+} from '../../api/queries/absences'
+import { formatDate, todayIsoDate } from '../../lib/format'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Input } from '../ui/input'
@@ -34,6 +40,8 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
   // Umfang: ganzer Tag, halber Tag oder genaue Stunden (z.B. 3 Std. Homeoffice)
   const [scope, setScope] = useState<'FULL' | 'HALF' | 'HOURS'>('FULL')
   const [hours, setHours] = useState('')
+  // Vertretung ('' = keine), je Abwesenheitsart nicht / optional / Pflicht
+  const [substituteId, setSubstituteId] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -44,6 +52,7 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
     setNote(absence?.note ?? '')
     setScope(absence?.duration_minutes != null ? 'HOURS' : absence?.half_day ? 'HALF' : 'FULL')
     setHours(absence?.duration_minutes != null ? String(absence.duration_minutes / 60).replace('.', ',') : '')
+    setSubstituteId(absence?.substitute_employee_id ? String(absence.substitute_employee_id) : '')
     setError(null)
   }, [open, absence])
 
@@ -56,6 +65,12 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
   const singleDay = dateFrom === dateTo
   const hoursAllowed = selectedType?.category !== 'VACATION'
   const effectiveScope = !singleDay ? 'FULL' : scope === 'HOURS' && !hoursAllowed ? 'FULL' : scope
+  const substituteMode = selectedType?.substitute_mode ?? 'NONE'
+  const substituteRequired = substituteMode === 'REQUIRED' && selfService
+  const candidatesQuery = useSubstituteCandidatesQuery(employeeId, open && substituteMode !== 'NONE')
+  const effectiveSubstituteId = substituteMode === 'NONE' ? '' : substituteId
+  const overlapsQuery = useTeamOverlapsQuery(employeeId, dateFrom, dateTo, open && selectedType?.category !== 'WORK_TIME')
+  const overlaps = (overlapsQuery.data ?? []).filter((overlap) => overlap.employee_id !== employeeId)
   const durationMinutes = Math.round(Number(hours.replace(',', '.')) * 60)
   const hoursValid = durationMinutes >= 1 && durationMinutes <= 960
 
@@ -79,6 +94,8 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
             duration_minutes: effectiveScope === 'HOURS' ? durationMinutes : undefined,
             clear_duration: effectiveScope !== 'HOURS',
             note: note || null,
+            ...(effectiveSubstituteId ? { substitute_employee_id: Number(effectiveSubstituteId) } : {}),
+            clear_substitute: !effectiveSubstituteId && absence.substitute_employee_id != null,
             split_vacation: splitVacation,
           },
         })
@@ -91,6 +108,7 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
           half_day: effectiveScope === 'HALF',
           ...(effectiveScope === 'HOURS' ? { duration_minutes: durationMinutes } : {}),
           note: note || undefined,
+          ...(effectiveSubstituteId ? { substitute_employee_id: Number(effectiveSubstituteId) } : {}),
           split_vacation: splitVacation,
         })
       }
@@ -212,9 +230,48 @@ export function AbsenceFormDialog({ open, onOpenChange, employeeId, absence, sel
               )}
             </div>
           )}
+          {overlaps.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+              <p className="font-medium">Im Team gleichzeitig abwesend:</p>
+              <ul className="mt-1">
+                {overlaps.map((overlap, index) => (
+                  <li key={`${overlap.employee_id}-${index}`}>
+                    {overlap.name}: {formatDate(overlap.date_from)}–{formatDate(overlap.date_to)}
+                    {overlap.type_name && ` (${overlap.type_name})`}
+                    {overlap.pending && ' – beantragt'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {substituteMode !== 'NONE' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="absence_substitute">Vertretung{substituteRequired ? '' : ' (optional)'}</Label>
+              <select
+                id="absence_substitute"
+                className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                required={substituteRequired}
+                value={effectiveSubstituteId}
+                onChange={(event) => setSubstituteId(event.target.value)}
+              >
+                <option value="">{substituteRequired ? 'Bitte wählen…' : 'Keine'}</option>
+                {(candidatesQuery.data ?? []).map((candidate) => (
+                  <option key={candidate.id} value={String(candidate.id)}>
+                    {candidate.first_name} {candidate.last_name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500">Die Vertretung wird benachrichtigt, sobald die Abwesenheit gilt.</p>
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="note">Notiz (optional)</Label>
-            <Input id="note" value={note} onChange={(event) => setNote(event.target.value)} />
+            <Label htmlFor="note">{selectedType?.comment_required ? 'Notiz' : 'Notiz (optional)'}</Label>
+            <Input
+              id="note"
+              required={selectedType?.comment_required}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <DialogFooter>

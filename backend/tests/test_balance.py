@@ -1,4 +1,4 @@
-"""Gleitzeitkonto: zählt jeden Soll-Tag, reagiert auf Abwesenheiten, Plan- und Feiertagsänderungen,
+"""Überstundenkonto: zählt jeden Soll-Tag, reagiert auf Abwesenheiten, Plan- und Feiertagsänderungen,
 Korrekturbuchungen und den Saldo-Beginn."""
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditAction, AuditLogEntry, Employee, EmployeeDefaultShift, HrRole, HrUser, Location, ShiftTemplate
+from app.models import AuditAction, AuditLogEntry, Employee, EmployeeDefaultShift, HrRole, Account, Location, ShiftTemplate
 from app.services.auth_service import hash_password
 
 MONDAY = date(2026, 8, 10)
@@ -27,16 +27,16 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, *, termination: 
     template = ShiftTemplate(name="Normal", target_minutes=480)
     db_session.add_all([
         employee, template,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
     ])
     await db_session.commit()
     db_session.add(EmployeeDefaultShift(employee_id=employee.id, shift_template_id=template.id, valid_from=date(2026, 1, 1), weekdays_mask=mask))
     await db_session.commit()
     headers = {}
     for name in ("hr", "sup"):
-        headers[name] = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
-    headers["self"] = {"Authorization": "Bearer " + (await client.post("/auth/employee/login", json={"email": "e@example.com", "password": "pw"})).json()["access_token"]}
+        headers[name] = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
+    headers["self"] = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "e@example.com", "password": "pw"})).json()["access_token"]}
     return employee, headers
 
 
@@ -110,10 +110,10 @@ async def test_balance_start_setting_cuts_history(client: AsyncClient, db_sessio
     await _punch(client, headers["hr"], employee.id, "GO", "2026-08-10T12:00:00Z")  # Mo -4 Std.
     assert (await _balance(client, headers["hr"], employee.id))["running_balance_minutes"] == -240 - 960
 
-    admin = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+    admin = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(admin)
     await db_session.commit()
-    admin_headers = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
+    admin_headers = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
     r = await client.patch("/settings", headers=admin_headers, json={"balance_start_date": "2026-08-12"})
     assert r.status_code == 200 and r.json()["balance_start_date"] == "2026-08-12"
     assert (await _balance(client, headers["hr"], employee.id))["running_balance_minutes"] == -480  # nur noch Mittwoch

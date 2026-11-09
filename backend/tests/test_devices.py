@@ -1,8 +1,9 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, HrRole, HrUser, Location
+from app.models import Device, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _create_location(db_session: AsyncSession, name: str = "Standort A") -> Location:
@@ -13,8 +14,8 @@ async def _create_location(db_session: AsyncSession, name: str = "Standort A") -
     return location
 
 
-async def _create_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -22,7 +23,7 @@ async def _create_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -40,7 +41,8 @@ async def test_hr_can_create_and_list_devices(client: AsyncClient, db_session: A
     assert create_response.status_code == 201
     body = create_response.json()
     assert body["name"] == "Kiosk A1"
-    assert len(body["device_token"]) > 10
+    assert "device_token" not in body  # das Token sieht niemand – das Tablet bekommt es beim Koppeln
+    assert body["bound_at"] is None
 
     list_response = await client.get("/devices", headers={"Authorization": f"Bearer {token}"})
     assert len(list_response.json()) == 1
@@ -65,7 +67,7 @@ async def test_hr_can_rename_move_and_regenerate_token(
 ) -> None:
     location_a = await _create_location(db_session, "Standort A")
     location_b = await _create_location(db_session, "Standort B")
-    device = Device(location_id=location_a.id, device_token="old-token", name="Kiosk A1")
+    device = Device(location_id=location_a.id, token_hash=token_hash("old-token"), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
@@ -82,12 +84,13 @@ async def test_hr_can_rename_move_and_regenerate_token(
     body = response.json()
     assert body["location_id"] == location_b.id
     assert body["name"] == "Kiosk B1"
-    assert body["device_token"] != "old-token"
+    # „Kopplung aufheben“: das alte Token gilt nicht mehr
+    assert (await client.post("/auth/device/login", json={"device_token": "old-token"})).status_code == 401
 
 
 async def test_hr_can_delete_device(client: AsyncClient, db_session: AsyncSession) -> None:
     location = await _create_location(db_session)
-    device = Device(location_id=location.id, device_token="tok", name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash("tok"), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
@@ -104,8 +107,8 @@ async def test_hr_can_delete_device(client: AsyncClient, db_session: AsyncSessio
 async def test_devices_filtered_by_location(client: AsyncClient, db_session: AsyncSession) -> None:
     location_a = await _create_location(db_session, "Standort A")
     location_b = await _create_location(db_session, "Standort B")
-    db_session.add(Device(location_id=location_a.id, device_token="tok-a", name="Kiosk A1"))
-    db_session.add(Device(location_id=location_b.id, device_token="tok-b", name="Kiosk B1"))
+    db_session.add(Device(location_id=location_a.id, token_hash=token_hash("tok-a"), name="Kiosk A1"))
+    db_session.add(Device(location_id=location_b.id, token_hash=token_hash("tok-b"), name="Kiosk B1"))
     await db_session.commit()
     await _create_hr_user(db_session)
     token = await _hr_token(client)
@@ -159,7 +162,7 @@ async def test_device_screen_hours_foreign_tenant(client: AsyncClient, db_sessio
     other_location = Location(tenant_id=2, name="Fremd", timezone="UTC")
     db_session.add(other_location)
     await db_session.commit()
-    foreign = Device(tenant_id=2, location_id=other_location.id, name="Fremd", device_token="tok-foreign")
+    foreign = Device(tenant_id=2, location_id=other_location.id, name="Fremd", token_hash=token_hash("tok-foreign"))
     db_session.add(foreign)
     await db_session.commit()
     await _create_hr_user(db_session)

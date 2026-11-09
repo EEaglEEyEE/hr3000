@@ -1,11 +1,11 @@
-"""Aushilfen ohne feste Tage (Wochensoll), mehrere Kommen/Gehen pro Tag, Auswertungen nur bis heute."""
+"""Aushilfen ohne feste Tage (Wochensoll), mehrere Kommen/Gehen pro Tag, Analysen nur bis heute."""
 import uuid
 from datetime import date, timedelta
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BreakRule, Employee, HrRole, HrUser, Location
+from app.models import BreakRule, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -15,10 +15,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, **employee_kwarg
     await db_session.commit()
     await db_session.refresh(location)
     employee = Employee(location_id=location.id, first_name="Anna", last_name="Aushilfe", employee_number="A1", auto_break_enabled=False, **employee_kwargs)
-    db_session.add_all([employee, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([employee, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     await db_session.refresh(employee)
-    token = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
     return employee, {"Authorization": f"Bearer {token}"}
 
 

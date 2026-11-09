@@ -175,6 +175,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/device/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Device Enroll
+         * @description Selbstregistrierung per Registrierungsschlüssel aus der MDM-Start-URL (``#enroll=…``): bindet an
+         *     einen vorbereiteten, noch nie benutzten Eintrag mit gleichem Gerätenamen oder legt eine Anfrage an,
+         *     die Admin/HR freigeben. Ablauf und Regeln: app/services/device_enrollment.py.
+         */
+        post: operations["device_enroll_auth_device_enroll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/device/pair": {
         parameters: {
             query?: never;
@@ -196,7 +218,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/hr/login": {
+    "/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -205,15 +227,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Hr Login */
-        post: operations["hr_login_auth_hr_login_post"];
+        /**
+         * Login
+         * @description Ein Login für alle Konten (Verwaltung, Mitarbeiter, auf dem admin.-Host der Super-Admin).
+         */
+        post: operations["login_auth_login_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/auth/hr/refresh": {
+    "/auth/login/2fa": {
         parameters: {
             query?: never;
             header?: never;
@@ -222,15 +247,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Hr Refresh */
-        post: operations["hr_refresh_auth_hr_refresh_post"];
+        /**
+         * Login Two Factor
+         * @description Zweiter Schritt: Code aus der Authenticator-App oder ein Wiederherstellungscode.
+         */
+        post: operations["login_two_factor_auth_login_2fa_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/auth/employee/login": {
+    "/auth/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -239,25 +267,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Employee Login */
-        post: operations["employee_login_auth_employee_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/employee/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Employee Refresh */
-        post: operations["employee_refresh_auth_employee_refresh_post"];
+        /** Refresh */
+        post: operations["refresh_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -275,8 +286,8 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Eigenes Passwort ändern (HR-Nutzer, Mitarbeiter mit Login, Super-Admin). Alle anderen
-         *     Sitzungen enden (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar.
+         * @description Eigenes Passwort ändern (jedes Konto inkl. Super-Admin). Alle anderen Sitzungen enden
+         *     (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar.
          */
         post: operations["change_password_auth_change_password_post"];
         delete?: never;
@@ -322,6 +333,27 @@ export interface paths {
          */
         post: operations["confirm_password_reset_auth_password_reset_confirm_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/calendar-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Calendar Token
+         * @description Neuen Abo-Link erzeugen – ein früherer Link gilt danach nicht mehr.
+         */
+        post: operations["create_calendar_token_me_calendar_token_post"];
+        /** Delete Calendar Token */
+        delete: operations["delete_calendar_token_me_calendar_token_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -546,6 +578,112 @@ export interface paths {
         head?: never;
         /** Update Device */
         patch: operations["update_device_devices__device_id__patch"];
+        trace?: never;
+    };
+    "/devices/enrollment-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Enrollment Keys */
+        get: operations["list_enrollment_keys_devices_enrollment_keys_get"];
+        put?: never;
+        /**
+         * Create Enrollment Key
+         * @description Neuer Schlüssel für einen Standort – ersetzt einen vorhandenen sofort (der alte gilt nicht mehr).
+         *     Der Schlüssel wird nur in dieser Antwort gezeigt; gespeichert ist nur sein Hash.
+         */
+        post: operations["create_enrollment_key_devices_enrollment_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollment-keys/{location_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Enrollment Key
+         * @description Schlüssel sperren: Neue Geräte können sich damit nicht mehr registrieren. Eingerichtete Tablets
+         *     bleiben angemeldet.
+         */
+        delete: operations["delete_enrollment_key_devices_enrollment_keys__location_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Enrollments
+         * @description Geräte, die sich mit einem Registrierungsschlüssel gemeldet haben und auf Freigabe warten.
+         */
+        get: operations["list_enrollments_devices_enrollments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollments/{enrollment_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Enrollment
+         * @description Freigeben: als neues Tablet anlegen oder einen vorhandenen Eintrag desselben Standorts übernehmen
+         *     (Tablet-Tausch – das bisherige Gerät ist danach abgemeldet). Das Gerät meldet sich innerhalb einer
+         *     Minute von selbst an.
+         */
+        post: operations["approve_enrollment_devices_enrollments__enrollment_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollments/{enrollment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Reject Enrollment
+         * @description Ablehnen: Das Token des Geräts wird ungültig. Startet es neu, meldet es sich erneut (neue Anfrage) –
+         *     dauerhaft stoppt das nur der Entzug im MDM oder ein neuer Schlüssel.
+         */
+        delete: operations["reject_enrollment_devices_enrollments__enrollment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/devices/verify-admin-pin": {
@@ -777,6 +915,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/timesheet/balance-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Balance Limits
+         * @description Überstundenkonten an den Grenzen aus den Einstellungen („Zu klären“ → „Grenzen“): ab 90 % der
+         *     Obergrenze oder unter der Untergrenze. Ohne eingestellte Grenzen leer.
+         */
+        get: operations["list_balance_limits_timesheet_balance_limits_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees/{employee_id}/timesheet": {
         parameters: {
             query?: never;
@@ -896,6 +1055,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/employees/{employee_id}/team-overlaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Team Overlaps
+         * @description Wer aus dem Team im Zeitraum abwesend ist – für den Antrag. Genehmigende sehen die Art,
+         *     Mitarbeiter nur Namen und Zeitraum und nur mit der Einstellung
+         *     „absence_overlaps_for_employees“ (sonst leer).
+         */
+        get: operations["list_team_overlaps_employees__employee_id__team_overlaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/substitute-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Substitute Candidates
+         * @description Wer als Vertretung infrage kommt: aktive Kolleginnen und Kollegen des Mandanten (nur Namen) –
+         *     auch für den Antrag im Self-Service.
+         */
+        get: operations["list_substitute_candidates_employees__employee_id__substitute_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/absences": {
         parameters: {
             query?: never;
@@ -958,6 +1160,28 @@ export interface paths {
         patch: operations["update_absence_absences__absence_id__patch"];
         trace?: never;
     };
+    "/absences/{absence_id}/certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Absence Certificate
+         * @description Nachweis (z. B. AU-Bescheinigung als Foto oder PDF) zu einer Abwesenheit hochladen – vom
+         *     Mitarbeiter selbst oder von wem über ihn entscheiden darf. Liegt danach verschlüsselt in der
+         *     Personalakte (Krankheit: Kategorie „Krankmeldung“), für den Mitarbeiter sichtbar.
+         */
+        post: operations["upload_absence_certificate_absences__absence_id__certificate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/absence-types": {
         parameters: {
             query?: never;
@@ -995,7 +1219,7 @@ export interface paths {
         /**
          * Update Absence Type
          * @description Eine geänderte Kategorie gilt auch für bestehende Einträge dieser Art: sie werden neu
-         *     berechnet (Gleitzeitkonto, Urlaubskonto) – außer ein Eintrag liegt in einem abgeschlossenen
+         *     berechnet (Überstundenkonto, Urlaubskonto) – außer ein Eintrag liegt in einem abgeschlossenen
          *     bzw. vorgelegten Monat, dann wird die Änderung abgelehnt. Statt Löschen gibt es Deaktivieren.
          */
         patch: operations["update_absence_type_absence_types__type_id__patch"];
@@ -1098,6 +1322,804 @@ export interface paths {
         post?: never;
         /** Delete Hr User */
         delete: operations["delete_hr_user_hr_users__hr_user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Departments */
+        get: operations["list_departments_departments_get"];
+        put?: never;
+        /** Create Department */
+        post: operations["create_department_departments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departments/{department_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Department
+         * @description Nur leere Abteilungen (ohne Mitarbeiter, auch ehemalige, und ohne Unterabteilungen).
+         */
+        delete: operations["delete_department_departments__department_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Department */
+        patch: operations["update_department_departments__department_id__patch"];
+        trace?: never;
+    };
+    "/org-chart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Org Chart */
+        get: operations["org_chart_org_chart_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/personal-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Personal Data */
+        get: operations["get_personal_data_employees__employee_id__personal_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Personal Data
+         * @description Nur mitgeschickte Felder ändern sich (null bzw. "" löscht ein Feld).
+         */
+        patch: operations["update_personal_data_employees__employee_id__personal_data_patch"];
+        trace?: never;
+    };
+    "/me/personal-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Own Personal Data */
+        get: operations["get_own_personal_data_me_personal_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cost-centers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cost Centers */
+        get: operations["list_cost_centers_cost_centers_get"];
+        put?: never;
+        /** Create Cost Center */
+        post: operations["create_cost_center_cost_centers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cost-centers/{cost_center_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Cost Center
+         * @description Nur unbenutzte; benutzte bitte archivieren (bleiben bei den Mitarbeitern stehen).
+         */
+        delete: operations["delete_cost_center_cost_centers__cost_center_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Cost Center */
+        patch: operations["update_cost_center_cost_centers__cost_center_id__patch"];
+        trace?: never;
+    };
+    "/employees/{employee_id}/cost-centers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Employee Cost Centers
+         * @description Aufteilung in Prozent; zusammen 100 (leere Liste = keine Kostenstelle).
+         */
+        put: operations["set_employee_cost_centers_employees__employee_id__cost_centers_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attribute-sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sections */
+        get: operations["list_sections_attribute_sections_get"];
+        put?: never;
+        /** Create Section */
+        post: operations["create_section_attribute_sections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attribute-sections/{section_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Section */
+        patch: operations["update_section_attribute_sections__section_id__patch"];
+        trace?: never;
+    };
+    "/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Attribute */
+        post: operations["create_attribute_attributes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/attributes/{attribute_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Attribute
+         * @description Art und Verlauf lassen sich nachträglich nicht ändern (bestehende Werte würden ungültig).
+         */
+        patch: operations["update_attribute_attributes__attribute_id__patch"];
+        trace?: never;
+    };
+    "/employees/{employee_id}/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Employee Attributes */
+        get: operations["get_employee_attributes_employees__employee_id__attributes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/attributes/{attribute_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Employee Attribute */
+        put: operations["put_employee_attribute_employees__employee_id__attributes__attribute_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/attributes/values/{value_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Attribute Value
+         * @description Einen Eintrag im Verlauf entfernen (z. B. falsch erfasst).
+         */
+        delete: operations["delete_attribute_value_employees__employee_id__attributes_values__value_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Attribute Sections
+         * @description Abschnitte, die Mitarbeiter sehen dürfen (Werte über /me/attribute-values).
+         */
+        get: operations["my_attribute_sections_me_attributes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/attribute-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Attribute Values */
+        get: operations["my_attribute_values_me_attribute_values_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Employee History
+         * @description Mitarbeitendenhistorie: Änderungen am Mitarbeiter aus dem Audit-Protokoll (neueste zuerst, höchstens
+         *     300). Vergütung erscheint nur mit „Vergütung & Lohn-Export“.
+         */
+        get: operations["employee_history_employees__employee_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/change-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Change Requests */
+        get: operations["my_change_requests_me_change_requests_get"];
+        put?: never;
+        /** Propose Change */
+        post: operations["propose_change_me_change_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/change-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Change Requests */
+        get: operations["list_change_requests_change_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/change-requests/{request_id}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Change Request */
+        post: operations["decide_change_request_change_requests__request_id__decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document-templates/placeholders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Placeholders */
+        get: operations["list_placeholders_document_templates_placeholders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_document_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_document_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Template */
+        patch: operations["update_template_document_templates__template_id__patch"];
+        trace?: never;
+    };
+    "/employees/{employee_id}/document-templates/{template_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview
+         * @description Vorschau als PDF, ohne es abzulegen.
+         */
+        get: operations["preview_employees__employee_id__document_templates__template_id__preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/documents/from-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Document
+         * @description Vorlage für den Mitarbeiter füllen und als PDF in die Personalakte legen. Unbekannte Platzhalter
+         *     brechen ab, damit kein halbfertiges Dokument entsteht.
+         */
+        post: operations["generate_document_employees__employee_id__documents_from_template_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Api Clients */
+        get: operations["list_api_clients_api_clients_get"];
+        put?: never;
+        /** Create Api Client */
+        post: operations["create_api_client_api_clients_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api-clients/{client_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Api Client
+         * @description Zugang sperren – ausgegebene Tokens gelten sofort nicht mehr.
+         */
+        delete: operations["revoke_api_client_api_clients__client_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Webhooks */
+        get: operations["list_webhooks_webhooks_get"];
+        put?: never;
+        /** Create Webhook */
+        post: operations["create_webhook_webhooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Webhook */
+        delete: operations["delete_webhook_webhooks__webhook_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Webhook */
+        patch: operations["update_webhook_webhooks__webhook_id__patch"];
+        trace?: never;
+    };
+    "/webhooks/{webhook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Webhook
+         * @description Test-Ereignis in die Warteschlange (wird mit der nächsten Runde zugestellt).
+         */
+        post: operations["test_webhook_webhooks__webhook_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/{webhook_id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deliveries */
+        get: operations["list_deliveries_webhooks__webhook_id__deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue Api Token */
+        post: operations["issue_api_token_v1_auth_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/employees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Employees */
+        get: operations["api_employees_v1_employees_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/absence-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Absence Types */
+        get: operations["api_absence_types_v1_absence_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/absences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Absences */
+        get: operations["api_absences_v1_absences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/punches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Punches
+         * @description Stempelungen (Kommen, Gehen, Pause …) im Zeitraum, Zeitpunkte in UTC.
+         */
+        get: operations["api_punches_v1_punches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Two Factor Status */
+        get: operations["two_factor_status_auth_2fa_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Setup Two Factor
+         * @description Schritt 1: neues Geheimnis für die Authenticator-App (QR-Code); noch nicht aktiv.
+         */
+        post: operations["setup_two_factor_auth_2fa_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Two Factor
+         * @description Schritt 2: Code aus der App bestätigt. Andere Sitzungen enden; diese bekommt neue Tokens und
+         *     die Wiederherstellungscodes (werden nur jetzt angezeigt).
+         */
+        post: operations["enable_two_factor_auth_2fa_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/2fa/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Two Factor
+         * @description Selbst abschalten (mit Passwort) – nicht, wenn die Firma sie für die eigene Rolle vorschreibt.
+         *     Alle Sitzungen enden; danach neu anmelden.
+         */
+        post: operations["disable_two_factor_auth_2fa_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/2fa-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Employee Two Factor
+         * @description Admin setzt die Zwei-Faktor-Anmeldung eines Mitarbeiters zurück (z. B. Handy verloren). Die
+         *     Person meldet sich danach nur mit Passwort an bzw. richtet sie neu ein, wenn sie Pflicht ist.
+         */
+        post: operations["reset_employee_two_factor_employees__employee_id__2fa_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hr-users/{account_id}/2fa-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Account Two Factor */
+        post: operations["reset_account_two_factor_hr_users__account_id__2fa_reset_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1339,6 +2361,47 @@ export interface paths {
         head?: never;
         /** Update Leave Entitlement */
         patch: operations["update_leave_entitlement_employees__employee_id__leave_entitlement_patch"];
+        trace?: never;
+    };
+    "/employees/{employee_id}/leave-adjustments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Leave Adjustments
+         * @description Korrekturen am Urlaubskonto eines Jahres (auch für den Mitarbeiter selbst lesbar).
+         */
+        get: operations["list_leave_adjustments_employees__employee_id__leave_adjustments_get"];
+        put?: never;
+        /**
+         * Create Leave Adjustment
+         * @description „Kontostand anpassen“ fürs Urlaubskonto: ± Tage, optional mit Verfallsdatum.
+         */
+        post: operations["create_leave_adjustment_employees__employee_id__leave_adjustments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/leave-adjustments/{adjustment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Leave Adjustment */
+        delete: operations["delete_leave_adjustment_employees__employee_id__leave_adjustments__adjustment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/teams": {
@@ -1620,8 +2683,7 @@ export interface paths {
         };
         /**
          * List Notifications
-         * @description Eigene Benachrichtigungen (HrUser ODER Employee-Login, siehe
-         *     app/services/notification_service.py) – neueste zuerst.
+         * @description Eigene Benachrichtigungen (siehe app/services/notification_service.py) – neueste zuerst.
          */
         get: operations["list_notifications_notifications_get"];
         put?: never;
@@ -1664,6 +2726,24 @@ export interface paths {
         head?: never;
         /** Mark Notification Read */
         patch: operations["mark_notification_read_notifications__notification_id__read_patch"];
+        trace?: never;
+    };
+    "/notifications/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Notification Settings */
+        get: operations["get_notification_settings_notifications_settings_get"];
+        /** Update Notification Settings */
+        put: operations["update_notification_settings_notifications_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/payroll-export": {
@@ -1884,6 +2964,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/team-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Team Calendar
+         * @description Teamkalender für Mitarbeiter („Mein Bereich“): das eigene Team (ohne Team nur man selbst).
+         *     Bei Kollegen erscheint die Art nur bei Abwesenheitsarten mit „im Teamkalender farbig“, sonst
+         *     „ausgegraut“; Arbeitszeit-Angaben (Homeoffice) gar nicht. Nur mit Einstellung
+         *     team_calendar_for_employees.
+         */
+        get: operations["get_my_team_calendar_me_team_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/employees/{employee_id}/work-time-model": {
         parameters: {
             query?: never;
@@ -1900,6 +3003,27 @@ export interface paths {
          *     läuft zum Vortag aus, spätere entfallen.
          */
         put: operations["set_work_time_model_employees__employee_id__work_time_model_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/work-time-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Assign Work Time Profile
+         * @description Weist ein Arbeitszeitmodell ab Stichtag zu. Wie ein neues Arbeitszeitmodell ersetzt das alles
+         *     ab diesem Tag; die Angaben kommen aus dem Modell und folgen dessen Änderungen.
+         */
+        put: operations["assign_work_time_profile_employees__employee_id__work_time_profile_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1939,7 +3063,9 @@ export interface paths {
          * Update Work Time Model Version
          * @description Ändert eine bestehende Fassung nachträglich (Stunden, Tage, Pause, Schicht, Kernzeit, Beginn).
          *     Ein verschobener Beginn passt das Ende der vorherigen Fassung an; das Ende bleibt (Beginn der
-         *     nächsten). Eine ältere Standard-Schicht bekommt dabei ihr Soll fest übernommen.
+         *     nächsten). Eine ältere Standard-Schicht bekommt dabei ihr Soll fest übernommen. Gehörte die
+         *     Fassung zu einem Arbeitszeitmodell, ist sie danach individuell (entweder Modell oder eigene
+         *     Angaben).
          */
         put: operations["update_work_time_model_version_employees__employee_id__work_time_model_versions__version_id__put"];
         post?: never;
@@ -1948,6 +3074,94 @@ export interface paths {
          * @description Entfernt eine Fassung; die vorherige gilt dann bis zum Ende der gelöschten weiter.
          */
         delete: operations["delete_work_time_model_version_employees__employee_id__work_time_model_versions__version_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/work-time-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Work Time Profiles */
+        get: operations["list_work_time_profiles_work_time_profiles_get"];
+        put?: never;
+        /**
+         * Create Work Time Profile
+         * @description Neues Modell; seine erste Fassung gilt von Anfang an (auch rückwirkend zuweisbar).
+         */
+        post: operations["create_work_time_profile_work_time_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/work-time-profiles/{profile_id}/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Work Time Profile Model
+         * @description Neue Fassung ab Stichtag – ersetzt alles ab diesem Tag und gilt für alle zugewiesenen
+         *     Mitarbeiter. Liegt bei einem davon ein vorgelegter oder abgeschlossener Monat ab dem Stichtag,
+         *     wird nichts geändert (Fehler nennt die Betroffenen).
+         */
+        put: operations["set_work_time_profile_model_work_time_profiles__profile_id__model_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/work-time-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Work Time Profile
+         * @description Löschen nur, solange das Modell nie zugewiesen war – sonst archivieren.
+         */
+        delete: operations["delete_work_time_profile_work_time_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Work Time Profile
+         * @description Umbenennen oder archivieren (archiviert = nicht mehr neu zuweisbar, bestehende Zuweisungen
+         *     gelten weiter). Ändert keine Berechnung.
+         */
+        patch: operations["update_work_time_profile_work_time_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/work-time-profiles/{profile_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Work Time Profile History
+         * @description Alle Fassungen des Modells, neueste zuerst.
+         */
+        get: operations["get_work_time_profile_history_work_time_profiles__profile_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2111,6 +3325,65 @@ export interface paths {
         head?: never;
         /** Update Document */
         patch: operations["update_document_employees__employee_id__documents__document_id__patch"];
+        trace?: never;
+    };
+    "/document-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Document Categories
+         * @description Admin/HR: alle; Mitarbeiter: die, in die sie selbst hochladen dürfen.
+         */
+        get: operations["list_document_categories_document_categories_get"];
+        put?: never;
+        /** Create Document Category */
+        post: operations["create_document_category_document_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/document-categories/{category_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Document Category */
+        patch: operations["update_document_category_document_categories__category_id__patch"];
+        trace?: never;
+    };
+    "/me/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Own Document
+         * @description Mitarbeiter lädt selbst ein Dokument in eine freigegebene Kategorie hoch (z. B. Bescheinigungen).
+         *     Es ist für ihn sichtbar; Admin und HR werden benachrichtigt.
+         */
+        post: operations["upload_own_document_me_documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/employees/{employee_id}/period-closures": {
@@ -2344,7 +3617,7 @@ export interface paths {
         };
         /**
          * Overtime Overview
-         * @description Aktueller Gleitzeitsaldo je aktivem Mitarbeiter, höchste Überstunden zuerst.
+         * @description Aktueller Kontostand je aktivem Mitarbeiter, höchste Überstunden zuerst.
          */
         get: operations["overtime_overview_reports_overtime_get"];
         put?: never;
@@ -2523,6 +3796,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/checklist-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Checklist Items
+         * @description Offene Aufgaben, für die die Person selbst zuständig ist (On-/Offboarding).
+         */
+        get: operations["my_checklist_items_me_checklist_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/checklist-items/{item_id}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete My Item
+         * @description Aufgabe abhaken bzw. nach dem Datenvorschlag erledigen. Hochladen erledigt POST /me/documents.
+         */
+        post: operations["complete_my_item_me_checklist_items__item_id__done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/branding": {
         parameters: {
             query?: never;
@@ -2574,6 +3887,27 @@ export interface paths {
         put?: never;
         /** Create Adjustment */
         post: operations["create_adjustment_employees__employee_id__balance_adjustments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/employees/{employee_id}/balance-adjustments/set-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Balance
+         * @description „Neuen Kontostand festlegen“ – bucht die Differenz zum Stand am Ende dieses Tages als
+         *     Anpassung (die Begründung nennt alten und neuen Stand).
+         */
+        post: operations["set_balance_employees__employee_id__balance_adjustments_set_balance_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2883,6 +4217,8 @@ export interface components {
             duration_minutes?: number | null;
             /** Note */
             note?: string | null;
+            /** Substitute Employee Id */
+            substitute_employee_id?: number | null;
             /**
              * Split Vacation
              * @default false
@@ -2922,19 +4258,28 @@ export interface components {
             half_day: boolean;
             /** Duration Minutes */
             duration_minutes?: number | null;
-            /** Created By */
-            created_by: number | null;
-            /** Created By Employee Id */
-            created_by_employee_id: number | null;
+            /** Created By Account Id */
+            created_by_account_id: number | null;
             /** Note */
             note: string | null;
+            /** Substitute Employee Id */
+            substitute_employee_id?: number | null;
+            /** Certificate Document Id */
+            certificate_document_id?: number | null;
+            /** Substitute Name */
+            substitute_name?: string | null;
             approval_status: components["schemas"]["AbsenceApprovalStatus"];
-            /** Decided By */
-            decided_by: number | null;
-            /** Decided By Employee Id */
-            decided_by_employee_id: number | null;
+            /** Decided By Account Id */
+            decided_by_account_id: number | null;
             /** Decided At */
             decided_at: string | null;
+            /**
+             * Approval Step
+             * @default 1
+             */
+            approval_step: number;
+            /** Waiting For */
+            waiting_for?: string | null;
         };
         /** AbsenceStatsEmployee */
         AbsenceStatsEmployee: {
@@ -3011,7 +4356,7 @@ export interface components {
          * AbsenceType
          * @enum {string}
          */
-        AbsenceType: "VACATION" | "SICK" | "SPECIAL_LEAVE" | "UNPAID" | "TIME_OFF_IN_LIEU" | "WORK_TIME" | "PUBLIC_HOLIDAY" | "CHILD_SICK";
+        AbsenceType: "VACATION" | "SICK" | "SPECIAL_LEAVE" | "UNPAID" | "TIME_OFF_IN_LIEU" | "WORK_TIME" | "PUBLIC_HOLIDAY" | "CHILD_SICK" | "PARENTAL_LEAVE" | "SHORT_TIME_WORK" | "UNEXCUSED" | "CARE_LEAVE";
         /** AbsenceTypeCreateRequest */
         AbsenceTypeCreateRequest: {
             /** Name */
@@ -3035,6 +4380,29 @@ export interface components {
             /** Certificate From Day */
             certificate_from_day?: number | null;
             /**
+             * Substitute Mode
+             * @default NONE
+             * @enum {string}
+             */
+            substitute_mode: "NONE" | "OPTIONAL" | "REQUIRED";
+            /**
+             * Comment Required
+             * @default false
+             */
+            comment_required: boolean;
+            /**
+             * Calendar Visibility
+             * @default GREY
+             * @enum {string}
+             */
+            calendar_visibility: "GREY" | "COLOR";
+            /**
+             * Approval Chain
+             * @default DEFAULT
+             * @enum {string}
+             */
+            approval_chain: "DEFAULT" | "SUPERVISOR" | "SUPERVISOR_HR" | "HR";
+            /**
              * Sort Order
              * @default 0
              */
@@ -3055,6 +4423,29 @@ export interface components {
             employee_can_request: boolean;
             /** Certificate From Day */
             certificate_from_day: number | null;
+            /**
+             * Substitute Mode
+             * @default NONE
+             * @enum {string}
+             */
+            substitute_mode: "NONE" | "OPTIONAL" | "REQUIRED";
+            /**
+             * Comment Required
+             * @default false
+             */
+            comment_required: boolean;
+            /**
+             * Calendar Visibility
+             * @default GREY
+             * @enum {string}
+             */
+            calendar_visibility: "GREY" | "COLOR";
+            /**
+             * Approval Chain
+             * @default DEFAULT
+             * @enum {string}
+             */
+            approval_chain: "DEFAULT" | "SUPERVISOR" | "SUPERVISOR_HR" | "HR";
             /** Active */
             active: boolean;
             /** Sort Order */
@@ -3078,6 +4469,14 @@ export interface components {
              * @default false
              */
             clear_certificate_from_day: boolean;
+            /** Substitute Mode */
+            substitute_mode?: ("NONE" | "OPTIONAL" | "REQUIRED") | null;
+            /** Comment Required */
+            comment_required?: boolean | null;
+            /** Calendar Visibility */
+            calendar_visibility?: ("GREY" | "COLOR") | null;
+            /** Approval Chain */
+            approval_chain?: ("DEFAULT" | "SUPERVISOR" | "SUPERVISOR_HR" | "HR") | null;
             /** Active */
             active?: boolean | null;
             /** Sort Order */
@@ -3103,11 +4502,24 @@ export interface components {
             clear_duration: boolean;
             /** Note */
             note?: string | null;
+            /** Substitute Employee Id */
+            substitute_employee_id?: number | null;
+            /**
+             * Clear Substitute
+             * @default false
+             */
+            clear_substitute: boolean;
             /**
              * Split Vacation
              * @default false
              */
             split_vacation: boolean;
+        };
+        /** AbsencesPage */
+        AbsencesPage: {
+            /** Data */
+            data: components["schemas"]["ApiAbsence"][];
+            page: components["schemas"]["Page"];
         };
         /**
          * AdjustmentKind
@@ -3119,6 +4531,150 @@ export interface components {
          * @enum {string}
          */
         AllowanceUnit: "PER_MONTH" | "PER_HOUR";
+        /** ApiAbsence */
+        ApiAbsence: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            /** Absence Type Id */
+            absence_type_id: number | null;
+            /** Category */
+            category: string;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Half Day */
+            half_day: boolean;
+            /** Duration Minutes */
+            duration_minutes: number | null;
+            /** Status */
+            status: string;
+        };
+        /** ApiAbsenceType */
+        ApiAbsenceType: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Category */
+            category: string;
+        };
+        /** ApiClientCreated */
+        ApiClientCreated: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Client Id */
+            client_id: string;
+            /** Scopes */
+            scopes: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Client Secret */
+            client_secret: string;
+        };
+        /** ApiClientRequest */
+        ApiClientRequest: {
+            /** Name */
+            name: string;
+            /** Scopes */
+            scopes: string[];
+        };
+        /** ApiClientResponse */
+        ApiClientResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Client Id */
+            client_id: string;
+            /** Scopes */
+            scopes: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+        };
+        /** ApiEmployee */
+        ApiEmployee: {
+            /** Id */
+            id: number;
+            /** Personnel Number */
+            personnel_number: string;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+            /** Email */
+            email: string | null;
+            /** Status */
+            status: string;
+            /** Active */
+            active: boolean;
+            /** Hire Date */
+            hire_date: string | null;
+            /** Termination Date */
+            termination_date: string | null;
+            /** Location Id */
+            location_id: number;
+            /** Team Id */
+            team_id: number | null;
+            /** Department */
+            department: string | null;
+            /** Position */
+            position: string | null;
+            /** Supervisor Id */
+            supervisor_id: number | null;
+        };
+        /** ApiPunch */
+        ApiPunch: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            /** Type */
+            type: string;
+            /**
+             * Timestamp Utc
+             * Format: date-time
+             */
+            timestamp_utc: string;
+            /** Source */
+            source: string;
+        };
+        /** ApiToken */
+        ApiToken: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            /** Expires In */
+            expires_in: number;
+        };
         /** AttentionItem */
         AttentionItem: {
             /** Employee Id */
@@ -3139,12 +4695,141 @@ export interface components {
          * AttentionKind
          * @enum {string}
          */
-        AttentionKind: "BEM" | "PROBATION_ENDING" | "FIXED_TERM_ENDING" | "TERMINATION";
+        AttentionKind: "BEM" | "PROBATION_ENDING" | "FIXED_TERM_ENDING" | "TERMINATION" | "RETENTION_DUE";
+        /** AttributeDefinitionRequest */
+        AttributeDefinitionRequest: {
+            /** Section Id */
+            section_id: number;
+            /** Label */
+            label: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "TEXT" | "NUMBER" | "DATE" | "SELECT" | "BOOLEAN" | "EMPLOYEE";
+            /**
+             * Options
+             * @default []
+             */
+            options: string[];
+            /**
+             * Dated
+             * @default false
+             */
+            dated: boolean;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** AttributeDefinitionResponse */
+        AttributeDefinitionResponse: {
+            /** Id */
+            id: number;
+            /** Section Id */
+            section_id: number;
+            /** Label */
+            label: string;
+            /**
+             * Field Type
+             * @enum {string}
+             */
+            field_type: "TEXT" | "NUMBER" | "DATE" | "SELECT" | "BOOLEAN" | "EMPLOYEE";
+            /** Options */
+            options: string[];
+            /** Dated */
+            dated: boolean;
+            /** Sort Order */
+            sort_order: number;
+            /** Archived */
+            archived: boolean;
+        };
+        /** AttributeDefinitionUpdateRequest */
+        AttributeDefinitionUpdateRequest: {
+            /** Label */
+            label?: string | null;
+            /** Options */
+            options?: string[] | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
+        /** AttributeHistoryEntry */
+        AttributeHistoryEntry: {
+            /** Id */
+            id: number;
+            /** Value */
+            value: string | null;
+            /** Valid From */
+            valid_from: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AttributeSectionRequest */
+        AttributeSectionRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Employee Access
+             * @default NONE
+             * @enum {string}
+             */
+            employee_access: "NONE" | "VIEW" | "EDIT";
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** AttributeSectionResponse */
+        AttributeSectionResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /**
+             * Employee Access
+             * @enum {string}
+             */
+            employee_access: "NONE" | "VIEW" | "EDIT";
+            /** Sort Order */
+            sort_order: number;
+            /** Archived */
+            archived: boolean;
+            /**
+             * Attributes
+             * @default []
+             */
+            attributes: components["schemas"]["AttributeDefinitionResponse"][];
+        };
+        /** AttributeSectionUpdateRequest */
+        AttributeSectionUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Employee Access */
+            employee_access?: ("NONE" | "VIEW" | "EDIT") | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
+        /** AttributeValueRequest */
+        AttributeValueRequest: {
+            /** Value */
+            value?: string | null;
+            /** Valid From */
+            valid_from?: string | null;
+        };
         /**
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "PUNCH_CORRECTED" | "PUNCH_DELETED" | "EMPLOYEE_HR_ROLE_CHANGED" | "ABSENCE_DECIDED" | "EMPLOYEE_CREATED" | "SETTINGS_CHANGED" | "HR_USER_CREATED" | "HR_USER_DELETED" | "TEAM_CREATED" | "TEAM_UPDATED" | "TEAM_DELETED" | "TENANT_ADMIN_EMAIL_CHANGED" | "EMPLOYEES_BULK_IMPORTED" | "EMPLOYEE_DATA_EXPORTED" | "EMPLOYEE_ANONYMIZED" | "EMPLOYEE_WORK_TIME_MODEL_SET" | "EMPLOYEE_PASSWORD_RESET" | "CONTRACT_CHANGED" | "COMPENSATION_CHANGED" | "COMPENSATION_VIEWED" | "DOCUMENT_UPLOADED" | "DOCUMENT_UPDATED" | "DOCUMENT_DELETED" | "DOCUMENT_ACCESSED" | "PERIOD_SUBMITTED" | "PERIOD_CONFIRMED" | "PERIOD_DISPUTED" | "PERIOD_CLOSED" | "PERIOD_REOPENED" | "CHECKLIST_STARTED" | "SURCHARGE_RULES_CHANGED" | "BALANCE_ADJUSTED" | "PUNCH_CORRECTION_DECIDED" | "EMPLOYEE_CARD_REGISTERED" | "EMPLOYEE_PIN_SET_AT_KIOSK";
+        AuditAction: "PUNCH_CORRECTED" | "PUNCH_DELETED" | "EMPLOYEE_HR_ROLE_CHANGED" | "ABSENCE_DECIDED" | "EMPLOYEE_CREATED" | "SETTINGS_CHANGED" | "HR_USER_CREATED" | "HR_USER_DELETED" | "TEAM_CREATED" | "TEAM_UPDATED" | "TEAM_DELETED" | "TENANT_ADMIN_EMAIL_CHANGED" | "EMPLOYEES_BULK_IMPORTED" | "EMPLOYEE_DATA_EXPORTED" | "EMPLOYEE_ANONYMIZED" | "EMPLOYEE_WORK_TIME_MODEL_SET" | "EMPLOYEE_PASSWORD_RESET" | "CONTRACT_CHANGED" | "COMPENSATION_CHANGED" | "COMPENSATION_VIEWED" | "DOCUMENT_UPLOADED" | "DOCUMENT_UPDATED" | "DOCUMENT_DELETED" | "DOCUMENT_ACCESSED" | "PERIOD_SUBMITTED" | "PERIOD_CONFIRMED" | "PERIOD_DISPUTED" | "PERIOD_CLOSED" | "PERIOD_REOPENED" | "CHECKLIST_STARTED" | "SURCHARGE_RULES_CHANGED" | "BALANCE_ADJUSTED" | "PUNCH_CORRECTION_DECIDED" | "EMPLOYEE_CARD_REGISTERED" | "EMPLOYEE_PIN_SET_AT_KIOSK" | "LOGIN" | "LEAVE_ADJUSTED" | "DEVICE_LOGIN_REJECTED" | "TWO_FACTOR_CHANGED" | "DEPARTMENT_CHANGED" | "PERSONAL_DATA_CHANGED" | "COST_CENTERS_CHANGED" | "ATTRIBUTE_CHANGED" | "DEVICE_ENROLLMENT";
         /** AuditLogEntryResponse */
         AuditLogEntryResponse: {
             /** Id */
@@ -3176,6 +4861,8 @@ export interface components {
             kind: components["schemas"]["AdjustmentKind"];
             /** Note */
             note: string;
+            /** Payout Factor */
+            payout_factor?: number | string | null;
         };
         /** BalanceAdjustmentResponse */
         BalanceAdjustmentResponse: {
@@ -3193,11 +4880,33 @@ export interface components {
             kind: components["schemas"]["AdjustmentKind"];
             /** Note */
             note: string;
+            /** Payout Factor */
+            payout_factor?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * BalanceLimitRow
+         * @description Überstundenkonto nahe an der Obergrenze (ab 90 %) oder unter der Untergrenze.
+         */
+        BalanceLimitRow: {
+            /** Employee Id */
+            employee_id: number;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+            /** Balance Minutes */
+            balance_minutes: number;
+            /** Limit Minutes */
+            limit_minutes: number;
+            /** Kind */
+            kind: string;
+            /** Exceeded */
+            exceeded: boolean;
         };
         /** Body_bulk_import_employees_employees_bulk_import_post */
         Body_bulk_import_employees_employees_bulk_import_post: {
@@ -3221,6 +4930,11 @@ export interface components {
              */
             apply: boolean;
         };
+        /** Body_upload_absence_certificate_absences__absence_id__certificate_post */
+        Body_upload_absence_certificate_absences__absence_id__certificate_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_document_employees__employee_id__documents_post */
         Body_upload_document_employees__employee_id__documents_post: {
             /** File */
@@ -3240,11 +4954,24 @@ export interface components {
             confidential: boolean;
             /** Retention Until */
             retention_until?: string | null;
+            /** Category Id */
+            category_id?: number | null;
         };
         /** Body_upload_logo_settings_logo_put */
         Body_upload_logo_settings_logo_put: {
             /** File */
             file: string;
+        };
+        /** Body_upload_own_document_me_documents_post */
+        Body_upload_own_document_me_documents_post: {
+            /** File */
+            file: string;
+            /** Category Id */
+            category_id: number;
+            /** Title */
+            title: string;
+            /** Checklist Item Id */
+            checklist_item_id?: number | null;
         };
         /** BrandingResponse */
         BrandingResponse: {
@@ -3336,6 +5063,11 @@ export interface components {
          * @enum {string}
          */
         Bundesland: "BW" | "BY" | "BE" | "BB" | "HB" | "HH" | "HE" | "MV" | "NI" | "NW" | "RP" | "SL" | "SN" | "ST" | "SH" | "TH";
+        /** CalendarTokenResponse */
+        CalendarTokenResponse: {
+            /** Path */
+            path: string;
+        };
         /**
          * CancellationRequest
          * @description Kündigen nur mit Bestätigung: die Adresse der Firma (Subdomain) muss eingetippt werden.
@@ -3353,12 +5085,76 @@ export interface components {
             /** Nfc Uid */
             nfc_uid: string;
         };
+        /** ChangeDecision */
+        ChangeDecision: {
+            /** Approve */
+            approve: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** ChangeItem */
+        ChangeItem: {
+            /** Field */
+            field: string;
+            /** Label */
+            label: string;
+            /** Old */
+            old: string | null;
+            /** New */
+            new: string | null;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /**
+         * ChangeProposal
+         * @description Vorschlag: nur die geänderten Felder (persönliche Daten bzw. eigene Felder mit Freigabe „EDIT“).
+         */
+        ChangeProposal: {
+            /** @default {} */
+            personal: components["schemas"]["PersonalData"];
+            /**
+             * Attributes
+             * @default {}
+             */
+            attributes: {
+                [key: string]: string | null;
+            };
+            /** Note */
+            note?: string | null;
+        };
+        /** ChangeRequestResponse */
+        ChangeRequestResponse: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            /** Employee Name */
+            employee_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decision Note */
+            decision_note: string | null;
+            /** Note */
+            note?: string | null;
+            /** Contains Payroll */
+            contains_payroll: boolean;
+            /** Items */
+            items: components["schemas"]["ChangeItem"][];
         };
         /** ChecklistItemResponse */
         ChecklistItemResponse: {
@@ -3382,6 +5178,13 @@ export interface components {
             done_at: string | null;
             /** Note */
             note: string | null;
+            /**
+             * Action
+             * @default TASK
+             */
+            action: string;
+            /** Action Category Id */
+            action_category_id?: number | null;
         };
         /** ChecklistItemUpdateRequest */
         ChecklistItemUpdateRequest: {
@@ -3631,6 +5434,40 @@ export interface components {
          * @enum {string}
          */
         CorrectionRequestStatus: "PENDING" | "APPROVED" | "REJECTED";
+        /** CostCenterCreateRequest */
+        CostCenterCreateRequest: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /** CostCenterResponse */
+        CostCenterResponse: {
+            /** Id */
+            id: number;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Archived */
+            archived: boolean;
+        };
+        /** CostCenterShare */
+        CostCenterShare: {
+            /** Cost Center Id */
+            cost_center_id: number;
+            /** Percent */
+            percent: number;
+        };
+        /** CostCenterUpdateRequest */
+        CostCenterUpdateRequest: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
         /** DashboardEvent */
         DashboardEvent: {
             /**
@@ -3758,6 +5595,16 @@ export interface components {
              */
             absence_requests_enabled: boolean;
             /**
+             * Team Calendar For Employees
+             * @default false
+             */
+            team_calendar_for_employees: boolean;
+            /**
+             * Org Chart For Employees
+             * @default false
+             */
+            org_chart_for_employees: boolean;
+            /**
              * Shift Planning Enabled
              * @default false
              */
@@ -3819,17 +5666,98 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** DepartmentCreateRequest */
+        DepartmentCreateRequest: {
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: number | null;
+        };
+        /** DepartmentResponse */
+        DepartmentResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id: number | null;
+            /**
+             * Employee Count
+             * @default 0
+             */
+            employee_count: number;
+        };
+        /** DepartmentUpdateRequest */
+        DepartmentUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Parent Id */
+            parent_id?: number | null;
+            /**
+             * Clear Parent Id
+             * @default false
+             */
+            clear_parent_id: boolean;
+        };
         /** DeviceCreateRequest */
         DeviceCreateRequest: {
             /** Location Id */
             location_id: number;
             /** Name */
             name: string;
+            /** Mdm Name */
+            mdm_name?: string | null;
+        };
+        /**
+         * DeviceEnrollRequest
+         * @description Selbstregistrierung eines Tablets mit dem Registrierungsschlüssel aus der MDM-Start-URL.
+         */
+        DeviceEnrollRequest: {
+            /** Key */
+            key: string;
+            /** Installation Id */
+            installation_id: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** DeviceEnrollResponse */
+        DeviceEnrollResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "BOUND" | "PENDING";
+            /** Device Token */
+            device_token: string;
+            /** Verify Code */
+            verify_code?: string | null;
+        };
+        /** DeviceEnrollmentResponse */
+        DeviceEnrollmentResponse: {
+            /** Id */
+            id: number;
+            /** Location Id */
+            location_id: number;
+            /** Reported Name */
+            reported_name: string | null;
+            /** Verify Code */
+            verify_code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Conflict Device Name */
+            conflict_device_name?: string | null;
         };
         /** DeviceLoginRequest */
         DeviceLoginRequest: {
             /** Device Token */
             device_token: string;
+            /** Installation Id */
+            installation_id?: string | null;
         };
         /** DeviceLoginResponse */
         DeviceLoginResponse: {
@@ -3907,11 +5835,18 @@ export interface components {
             location_id: number;
             /** Device Name */
             device_name: string;
+            /**
+             * Card Salt
+             * @default
+             */
+            card_salt: string;
         };
         /** DevicePairRequest */
         DevicePairRequest: {
             /** Code */
             code: string;
+            /** Installation Id */
+            installation_id: string;
         };
         /** DevicePairResponse */
         DevicePairResponse: {
@@ -3926,10 +5861,12 @@ export interface components {
             location_id: number;
             /** Name */
             name: string;
-            /** Device Token */
-            device_token: string;
             /** Last Seen */
             last_seen: string | null;
+            /** Bound At */
+            bound_at?: string | null;
+            /** Rejected At */
+            rejected_at?: string | null;
             /** Theme */
             theme?: string | null;
             /** Screen Hours Mode */
@@ -3938,6 +5875,8 @@ export interface components {
             screen_on_from?: string | null;
             /** Screen On Until */
             screen_on_until?: string | null;
+            /** Mdm Name */
+            mdm_name?: string | null;
         };
         /** DeviceUpdateRequest */
         DeviceUpdateRequest: {
@@ -3958,12 +5897,62 @@ export interface components {
             screen_on_from?: string | null;
             /** Screen On Until */
             screen_on_until?: string | null;
+            /** Mdm Name */
+            mdm_name?: string | null;
         };
         /**
          * DocumentCategory
          * @enum {string}
          */
         DocumentCategory: "CONTRACT" | "CERTIFICATE" | "SICK_NOTE" | "QUALIFICATION" | "WARNING" | "PAYROLL" | "TIME_REPORT" | "OTHER";
+        /** DocumentCategoryRequest */
+        DocumentCategoryRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Employee Upload
+             * @default false
+             */
+            employee_upload: boolean;
+            /**
+             * Employee Visible
+             * @default false
+             */
+            employee_visible: boolean;
+            /**
+             * Confidential
+             * @default false
+             */
+            confidential: boolean;
+        };
+        /** DocumentCategoryResponse */
+        DocumentCategoryResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Employee Upload */
+            employee_upload: boolean;
+            /** Employee Visible */
+            employee_visible: boolean;
+            /** Confidential */
+            confidential: boolean;
+            /** Archived */
+            archived: boolean;
+        };
+        /** DocumentCategoryUpdateRequest */
+        DocumentCategoryUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Employee Upload */
+            employee_upload?: boolean | null;
+            /** Employee Visible */
+            employee_visible?: boolean | null;
+            /** Confidential */
+            confidential?: boolean | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
         /** DocumentResponse */
         DocumentResponse: {
             /** Id */
@@ -3990,12 +5979,72 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Category Id */
+            category_id?: number | null;
+        };
+        /** DocumentTemplateRequest */
+        DocumentTemplateRequest: {
+            /** Name */
+            name: string;
+            /** Body */
+            body: string;
+            /** @default OTHER */
+            category: components["schemas"]["DocumentCategory"];
+            /** Category Id */
+            category_id?: number | null;
+            /**
+             * Employee Visible
+             * @default false
+             */
+            employee_visible: boolean;
+        };
+        /** DocumentTemplateResponse */
+        DocumentTemplateResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Body */
+            body: string;
+            category: components["schemas"]["DocumentCategory"];
+            /** Category Id */
+            category_id: number | null;
+            /** Employee Visible */
+            employee_visible: boolean;
+            /** Archived */
+            archived: boolean;
+        };
+        /** DocumentTemplateUpdateRequest */
+        DocumentTemplateUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Body */
+            body?: string | null;
+            category?: components["schemas"]["DocumentCategory"] | null;
+            /** Category Id */
+            category_id?: number | null;
+            /**
+             * Clear Category Id
+             * @default false
+             */
+            clear_category_id: boolean;
+            /** Employee Visible */
+            employee_visible?: boolean | null;
+            /** Archived */
+            archived?: boolean | null;
         };
         /** DocumentUpdateRequest */
         DocumentUpdateRequest: {
             /** Title */
             title?: string | null;
             category?: components["schemas"]["DocumentCategory"] | null;
+            /** Category Id */
+            category_id?: number | null;
+            /**
+             * Clear Category Id
+             * @default false
+             */
+            clear_category_id: boolean;
             /** Employee Visible */
             employee_visible?: boolean | null;
             /** Confidential */
@@ -4042,6 +6091,20 @@ export interface components {
              */
             on_demand: boolean;
         };
+        /** EmployeeAttributeValue */
+        EmployeeAttributeValue: {
+            /** Attribute Id */
+            attribute_id: number;
+            /** Value */
+            value: string | null;
+            /** Display */
+            display: string | null;
+            /**
+             * History
+             * @default []
+             */
+            history: components["schemas"]["AttributeHistoryEntry"][];
+        };
         /** EmployeeCreateRequest */
         EmployeeCreateRequest: {
             /** Location Id */
@@ -4077,12 +6140,22 @@ export interface components {
             show_birthday_in_calendar?: boolean | null;
             /** Team Id */
             team_id?: number | null;
+            /** Department Id */
+            department_id?: number | null;
+            /** Position */
+            position?: string | null;
+            /** Supervisor Id */
+            supervisor_id?: number | null;
+            /** Approval Delegate Id */
+            approval_delegate_id?: number | null;
             work_time_model?: components["schemas"]["WorkTimeModelInput"] | null;
             /**
              * No Work Time Model
              * @default false
              */
             no_work_time_model: boolean;
+            /** Work Time Profile Id */
+            work_time_profile_id?: number | null;
         };
         /**
          * EmployeeDefaultShiftCreateRequest
@@ -4185,21 +6258,28 @@ export interface components {
              */
             clear_valid_to: boolean;
         };
+        /**
+         * EmployeeHistoryEntry
+         * @description Mitarbeitendenhistorie: was sich wann geändert hat (Audit-Protokoll und Felder mit Gültig ab).
+         */
+        EmployeeHistoryEntry: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Valid From */
+            valid_from?: string | null;
+            /** What */
+            what: string;
+            /** By */
+            by?: string | null;
+        };
         /** EmployeeHrRoleUpdateRequest */
         EmployeeHrRoleUpdateRequest: {
             hr_role: components["schemas"]["HrRole"] | null;
             /** Payroll Access */
             payroll_access?: boolean | null;
-        };
-        /** EmployeeLoginRequest */
-        EmployeeLoginRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
         };
         /** EmployeePasswordResetRequest */
         EmployeePasswordResetRequest: {
@@ -4232,6 +6312,11 @@ export interface components {
             active: boolean;
             /** Login Email */
             login_email: string | null;
+            /**
+             * Two Factor Enabled
+             * @default false
+             */
+            two_factor_enabled: boolean;
             hr_role: components["schemas"]["HrRole"] | null;
             /**
              * Hr Payroll Access
@@ -4254,6 +6339,24 @@ export interface components {
             show_birthday_in_calendar: boolean;
             /** Team Id */
             team_id: number | null;
+            /** Department Id */
+            department_id?: number | null;
+            /** Position */
+            position?: string | null;
+            /** Supervisor Id */
+            supervisor_id?: number | null;
+            /** Approval Delegate Id */
+            approval_delegate_id?: number | null;
+            /**
+             * Employment Status
+             * @default ACTIVE
+             */
+            employment_status: string;
+            /**
+             * Cost Centers
+             * @default []
+             */
+            cost_centers: components["schemas"]["CostCenterShare"][];
             /** Anonymized At */
             anonymized_at: string | null;
         };
@@ -4311,6 +6414,84 @@ export interface components {
              * @default false
              */
             clear_team_id: boolean;
+            /** Department Id */
+            department_id?: number | null;
+            /**
+             * Clear Department Id
+             * @default false
+             */
+            clear_department_id: boolean;
+            /** Position */
+            position?: string | null;
+            /** Supervisor Id */
+            supervisor_id?: number | null;
+            /**
+             * Clear Supervisor Id
+             * @default false
+             */
+            clear_supervisor_id: boolean;
+            /** Approval Delegate Id */
+            approval_delegate_id?: number | null;
+            /**
+             * Clear Approval Delegate Id
+             * @default false
+             */
+            clear_approval_delegate_id: boolean;
+        };
+        /** EmployeesPage */
+        EmployeesPage: {
+            /** Data */
+            data: components["schemas"]["ApiEmployee"][];
+            page: components["schemas"]["Page"];
+        };
+        /** EnrollmentApproveRequest */
+        EnrollmentApproveRequest: {
+            /** Device Id */
+            device_id?: number | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** EnrollmentKeyCreateRequest */
+        EnrollmentKeyCreateRequest: {
+            /** Location Id */
+            location_id: number;
+            /**
+             * Valid Days
+             * @default 30
+             */
+            valid_days: number | null;
+        };
+        /** EnrollmentKeyCreatedResponse */
+        EnrollmentKeyCreatedResponse: {
+            /** Location Id */
+            location_id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Key */
+            key: string;
+            /** Enroll Url */
+            enroll_url?: string | null;
+        };
+        /** EnrollmentKeyResponse */
+        EnrollmentKeyResponse: {
+            /** Location Id */
+            location_id: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
         };
         /** ExportLogEntry */
         ExportLogEntry: {
@@ -4341,6 +6522,16 @@ export interface components {
             /** Shift Planning Enabled */
             shift_planning_enabled: boolean;
             /**
+             * Team Calendar For Employees
+             * @default false
+             */
+            team_calendar_for_employees: boolean;
+            /**
+             * Org Chart For Employees
+             * @default false
+             */
+            org_chart_for_employees: boolean;
+            /**
              * Absence Requests Enabled
              * @default true
              */
@@ -4358,6 +6549,13 @@ export interface components {
             /** Default Day Minutes */
             default_day_minutes?: number[] | null;
         };
+        /** GenerateRequest */
+        GenerateRequest: {
+            /** Template Id */
+            template_id: number;
+            /** Title */
+            title?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4374,6 +6572,11 @@ export interface components {
             name: string;
             /** Location Ids */
             location_ids?: number[];
+            /**
+             * Half Day
+             * @default false
+             */
+            half_day: boolean;
         };
         /** HolidayImportRequest */
         HolidayImportRequest: {
@@ -4403,6 +6606,11 @@ export interface components {
             name: string;
             /** Location Ids */
             location_ids: number[];
+            /**
+             * Half Day
+             * @default false
+             */
+            half_day: boolean;
         };
         /** HolidayUpdateRequest */
         HolidayUpdateRequest: {
@@ -4412,16 +6620,8 @@ export interface components {
             name?: string | null;
             /** Location Ids */
             location_ids?: number[] | null;
-        };
-        /** HrLoginRequest */
-        HrLoginRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
+            /** Half Day */
+            half_day?: boolean | null;
         };
         /**
          * HrRole
@@ -4444,6 +6644,11 @@ export interface components {
              * @default false
              */
             payroll_access: boolean;
+            /**
+             * Two Factor Enabled
+             * @default false
+             */
+            two_factor_enabled: boolean;
         };
         /** HrUserResponse */
         HrUserResponse: {
@@ -4578,6 +6783,40 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /**
+         * LeaveAdjustmentCreateRequest
+         * @description Korrektur am Urlaubskonto: ± Tage (halbe Tage erlaubt), optional mit Verfallsdatum.
+         */
+        LeaveAdjustmentCreateRequest: {
+            /** Year */
+            year: number;
+            /** Days */
+            days: number;
+            /** Expires On */
+            expires_on?: string | null;
+            /** Note */
+            note: string;
+        };
+        /** LeaveAdjustmentResponse */
+        LeaveAdjustmentResponse: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            /** Year */
+            year: number;
+            /** Days */
+            days: number;
+            /** Expires On */
+            expires_on: string | null;
+            /** Note */
+            note: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** LeaveEntitlementResponse */
         LeaveEntitlementResponse: {
             /** Employee Id */
@@ -4623,6 +6862,11 @@ export interface components {
             annual_vacation_days: number;
             /** Workdays Per Week */
             workdays_per_week?: number | null;
+            /**
+             * Adjustment Days
+             * @default 0
+             */
+            adjustment_days: number;
         };
         /** LeaveEntitlementUpdateRequest */
         LeaveEntitlementUpdateRequest: {
@@ -4668,6 +6912,8 @@ export interface components {
             has_pin: boolean;
             /** Nfc Uid */
             nfc_uid: string | null;
+            /** Card Hash */
+            card_hash?: string | null;
             today_status: components["schemas"]["SummaryStatus"];
             /**
              * Today Flags
@@ -4697,6 +6943,36 @@ export interface components {
              * @default false
              */
             clear_bundesland: boolean;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * LoginResponse
+         * @description Ohne Zwei-Faktor-Anmeldung die Tokens; sonst two_factor = "required" (Code eingeben) bzw.
+         *     "setup" (Pflicht, noch einzurichten) mit einem kurzen challenge_token für den nächsten Schritt.
+         */
+        LoginResponse: {
+            /** Access Token */
+            access_token?: string | null;
+            /** Refresh Token */
+            refresh_token?: string | null;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            /** Two Factor */
+            two_factor?: ("required" | "setup") | null;
+            /** Challenge Token */
+            challenge_token?: string | null;
         };
         /** MigrationImportResult */
         MigrationImportResult: {
@@ -4753,10 +7029,18 @@ export interface components {
             created_at: string;
         };
         /**
+         * NotificationSettings
+         * @description Persönliche Einstellung: Benachrichtigungen zusätzlich per E-Mail (Glocke immer).
+         */
+        NotificationSettings: {
+            /** Email */
+            email: boolean;
+        };
+        /**
          * NotificationType
          * @enum {string}
          */
-        NotificationType: "ABSENCE_REQUESTED" | "ABSENCE_DECIDED" | "OPEN_DAYS_DIGEST" | "PERIOD_SUBMITTED" | "PERIOD_DISPUTED" | "CORRECTION_REQUESTED" | "CORRECTION_DECIDED";
+        NotificationType: "ABSENCE_REQUESTED" | "ABSENCE_DECIDED" | "OPEN_DAYS_DIGEST" | "PERIOD_SUBMITTED" | "PERIOD_DISPUTED" | "CORRECTION_REQUESTED" | "CORRECTION_DECIDED" | "SUBSTITUTE_ASSIGNED" | "REMINDER" | "DEVICE_ALERT" | "DATA_CHANGE_REQUESTED" | "DATA_CHANGE_DECIDED" | "DOCUMENT_UPLOADED";
         /** OpenChecklistItem */
         OpenChecklistItem: {
             /** Employee Id */
@@ -4812,6 +7096,23 @@ export interface components {
             /** Actual Minutes */
             actual_minutes?: number | null;
         };
+        /** OrgChartPerson */
+        OrgChartPerson: {
+            /** Employee Id */
+            employee_id: number;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+            /** Position */
+            position: string | null;
+            /** Department Id */
+            department_id: number | null;
+            /** Department */
+            department: string | null;
+            /** Supervisor Id */
+            supervisor_id: number | null;
+        };
         /** OvertimeBalanceResponse */
         OvertimeBalanceResponse: {
             /** Employee Id */
@@ -4856,6 +7157,15 @@ export interface components {
         OwnPunchRequest: {
             punch_type: components["schemas"]["PunchType"];
         };
+        /** Page */
+        Page: {
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /** PairingCodeResponse */
         PairingCodeResponse: {
             /** Code */
@@ -4895,7 +7205,14 @@ export interface components {
             /** Type Name */
             type_name?: string | null;
             /** Amount */
-            amount: number;
+            amount?: number | null;
+            /** Percent Of Salary */
+            percent_of_salary?: number | null;
+            /**
+             * Recurs Yearly
+             * @default false
+             */
+            recurs_yearly: boolean;
             unit?: components["schemas"]["AllowanceUnit"] | null;
             /** Valid From */
             valid_from?: string | null;
@@ -4933,6 +7250,13 @@ export interface components {
             valid_to: string | null;
             /** Pay Date */
             pay_date: string | null;
+            /** Percent Of Salary */
+            percent_of_salary?: number | null;
+            /**
+             * Recurs Yearly
+             * @default false
+             */
+            recurs_yearly: boolean;
             /** Wage Type */
             wage_type: string | null;
             /** Note */
@@ -5008,6 +7332,62 @@ export interface components {
             open: number;
             /** Exports */
             exports: components["schemas"]["ExportLogEntry"][];
+        };
+        /**
+         * PendingAbsenceResponse
+         * @description Offener Antrag mit dem, was zur Entscheidung gebraucht wird.
+         */
+        PendingAbsenceResponse: {
+            /** Id */
+            id: number;
+            /** Employee Id */
+            employee_id: number;
+            type: components["schemas"]["AbsenceType"];
+            /** Absence Type Id */
+            absence_type_id?: number | null;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /**
+             * Half Day
+             * @default false
+             */
+            half_day: boolean;
+            /** Duration Minutes */
+            duration_minutes?: number | null;
+            /** Created By Account Id */
+            created_by_account_id: number | null;
+            /** Note */
+            note: string | null;
+            /** Substitute Employee Id */
+            substitute_employee_id?: number | null;
+            /** Certificate Document Id */
+            certificate_document_id?: number | null;
+            /** Substitute Name */
+            substitute_name?: string | null;
+            approval_status: components["schemas"]["AbsenceApprovalStatus"];
+            /** Decided By Account Id */
+            decided_by_account_id: number | null;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Approval Step
+             * @default 1
+             */
+            approval_step: number;
+            /** Waiting For */
+            waiting_for?: string | null;
+            /** Team Overlaps */
+            team_overlaps?: components["schemas"]["TeamOverlap"][];
+            /** Remaining Vacation Days */
+            remaining_vacation_days?: number | null;
         };
         /** PeriodBulkResultRow */
         PeriodBulkResultRow: {
@@ -5127,12 +7507,106 @@ export interface components {
              */
             ignore_open_requests: boolean;
         };
+        /** PersonalData */
+        PersonalData: {
+            /** Private Email */
+            private_email?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Street */
+            street?: string | null;
+            /** Zip Code */
+            zip_code?: string | null;
+            /** City */
+            city?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Nationality */
+            nationality?: string | null;
+            /** Birth Place */
+            birth_place?: string | null;
+            /** Birth Name */
+            birth_name?: string | null;
+            /** Children Count */
+            children_count?: number | null;
+            /** Child Allowance */
+            child_allowance?: number | null;
+            /** Iban */
+            iban?: string | null;
+            /** Bic */
+            bic?: string | null;
+            /** Account Holder */
+            account_holder?: string | null;
+            /** Tax Id */
+            tax_id?: string | null;
+            /** Tax Class */
+            tax_class?: number | null;
+            /** Church Tax */
+            church_tax?: string | null;
+            /** Social Security Number */
+            social_security_number?: string | null;
+            /** Health Insurance */
+            health_insurance?: string | null;
+        };
+        /** PersonalDataResponse */
+        PersonalDataResponse: {
+            /** Private Email */
+            private_email?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Street */
+            street?: string | null;
+            /** Zip Code */
+            zip_code?: string | null;
+            /** City */
+            city?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Nationality */
+            nationality?: string | null;
+            /** Birth Place */
+            birth_place?: string | null;
+            /** Birth Name */
+            birth_name?: string | null;
+            /** Children Count */
+            children_count?: number | null;
+            /** Child Allowance */
+            child_allowance?: number | null;
+            /** Iban */
+            iban?: string | null;
+            /** Bic */
+            bic?: string | null;
+            /** Account Holder */
+            account_holder?: string | null;
+            /** Tax Id */
+            tax_id?: string | null;
+            /** Tax Class */
+            tax_class?: number | null;
+            /** Church Tax */
+            church_tax?: string | null;
+            /** Social Security Number */
+            social_security_number?: string | null;
+            /** Health Insurance */
+            health_insurance?: string | null;
+            /**
+             * Payroll Visible
+             * @default true
+             */
+            payroll_visible: boolean;
+        };
         /** PinSetupRequest */
         PinSetupRequest: {
             /** Employee Id */
             employee_id: number;
             /** Pin */
             pin: string;
+        };
+        /** Placeholder */
+        Placeholder: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
         };
         /** PlanResponse */
         PlanResponse: {
@@ -5217,10 +7691,8 @@ export interface components {
             source: components["schemas"]["PunchSource"];
             /** Device Id */
             device_id: number | null;
-            /** Created By */
-            created_by: number | null;
-            /** Created By Employee Id */
-            created_by_employee_id: number | null;
+            /** Created By Account Id */
+            created_by_account_id: number | null;
             /** Corrected */
             corrected: boolean;
             /** Correction Reason */
@@ -5236,10 +7708,26 @@ export interface components {
          * @enum {string}
          */
         PunchType: "COME" | "GO" | "BREAK_START" | "BREAK_END" | "ERRAND_START" | "ERRAND_END";
+        /** PunchesPage */
+        PunchesPage: {
+            /** Data */
+            data: components["schemas"]["ApiPunch"][];
+            page: components["schemas"]["Page"];
+        };
         /** RefreshRequest */
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /**
+         * SeniorityLeaveRule
+         * @description Zusatzurlaub ab vollendeten Jahren Betriebszugehörigkeit (bezogen auf die 5-Tage-Woche).
+         */
+        SeniorityLeaveRule: {
+            /** Years */
+            years: number;
+            /** Days */
+            days: number;
         };
         /**
          * ServerMetricPointResponse
@@ -5305,6 +7793,22 @@ export interface components {
             /** Uptime Seconds */
             uptime_seconds: number | null;
         };
+        /**
+         * SetBalanceRequest
+         * @description „Neuen Kontostand festlegen“: Stand am Ende des Tages auf diesen Wert setzen – gebucht wird
+         *     die Differenz als Anpassung (spätere rückwirkende Änderungen davor verschieben den Stand weiter).
+         */
+        SetBalanceRequest: {
+            /**
+             * Effective Date
+             * Format: date
+             */
+            effective_date: string;
+            /** Balance Minutes */
+            balance_minutes: number;
+            /** Note */
+            note: string;
+        };
         /** SettingsImportResult */
         SettingsImportResult: {
             /** Applied */
@@ -5367,6 +7871,31 @@ export interface components {
              */
             prorate_partial_year_vacation: boolean;
             /**
+             * Reduce Vacation Parental Leave
+             * @default false
+             */
+            reduce_vacation_parental_leave: boolean;
+            /**
+             * Seniority Leave Rules
+             * @default []
+             */
+            seniority_leave_rules: components["schemas"]["SeniorityLeaveRule"][];
+            /**
+             * Team Calendar For Employees
+             * @default false
+             */
+            team_calendar_for_employees: boolean;
+            /**
+             * Org Chart For Employees
+             * @default false
+             */
+            org_chart_for_employees: boolean;
+            /**
+             * Two Factor Roles
+             * @default []
+             */
+            two_factor_roles: ("ADMIN" | "HR" | "SUPERVISOR" | "EMPLOYEE")[];
+            /**
              * Vacation Carry Over Auto
              * @default false
              */
@@ -5420,6 +7949,15 @@ export interface components {
              * @default 16
              */
             max_shift_span_hours: number;
+            /** Overtime Limit Max Hours */
+            overtime_limit_max_hours?: number | null;
+            /** Overtime Limit Min Hours */
+            overtime_limit_min_hours?: number | null;
+            /**
+             * Reminders Enabled
+             * @default false
+             */
+            reminders_enabled: boolean;
             /**
              * Kiosk Admin Pin Set
              * @default false
@@ -5480,6 +8018,11 @@ export interface components {
              * @default false
              */
             absence_four_eyes: boolean;
+            /**
+             * Absence Overlaps For Employees
+             * @default false
+             */
+            absence_overlaps_for_employees: boolean;
             /** Kiosk Greeting */
             kiosk_greeting?: string | null;
             /**
@@ -5520,6 +8063,16 @@ export interface components {
             prorate_part_time_vacation?: boolean | null;
             /** Prorate Partial Year Vacation */
             prorate_partial_year_vacation?: boolean | null;
+            /** Reduce Vacation Parental Leave */
+            reduce_vacation_parental_leave?: boolean | null;
+            /** Seniority Leave Rules */
+            seniority_leave_rules?: components["schemas"]["SeniorityLeaveRule"][] | null;
+            /** Team Calendar For Employees */
+            team_calendar_for_employees?: boolean | null;
+            /** Org Chart For Employees */
+            org_chart_for_employees?: boolean | null;
+            /** Two Factor Roles */
+            two_factor_roles?: ("ADMIN" | "HR" | "SUPERVISOR" | "EMPLOYEE")[] | null;
             /** Vacation Carry Over Auto */
             vacation_carry_over_auto?: boolean | null;
             /** Vacation Carry Over Max Days */
@@ -5541,6 +8094,22 @@ export interface components {
             datev_client_number?: string | null;
             /** Max Shift Span Hours */
             max_shift_span_hours?: number | null;
+            /** Overtime Limit Max Hours */
+            overtime_limit_max_hours?: number | null;
+            /** Overtime Limit Min Hours */
+            overtime_limit_min_hours?: number | null;
+            /**
+             * Clear Overtime Limit Max
+             * @default false
+             */
+            clear_overtime_limit_max: boolean;
+            /**
+             * Clear Overtime Limit Min
+             * @default false
+             */
+            clear_overtime_limit_min: boolean;
+            /** Reminders Enabled */
+            reminders_enabled?: boolean | null;
             /** Core Time Start */
             core_time_start?: string | null;
             /** Core Time End */
@@ -5603,6 +8172,8 @@ export interface components {
             absence_requests_enabled?: boolean | null;
             /** Absence Four Eyes */
             absence_four_eyes?: boolean | null;
+            /** Absence Overlaps For Employees */
+            absence_overlaps_for_employees?: boolean | null;
             /** Kiosk Greeting */
             kiosk_greeting?: string | null;
             /** Kiosk Sort */
@@ -5657,10 +8228,8 @@ export interface components {
             is_workday: boolean;
             /** Target Minutes */
             target_minutes: number | null;
-            /** Planned By Hr User Id */
-            planned_by_hr_user_id: number | null;
-            /** Planned By Employee Id */
-            planned_by_employee_id: number | null;
+            /** Planned By Account Id */
+            planned_by_account_id: number | null;
         };
         /** ShiftPlanEntryUpsertRequest */
         ShiftPlanEntryUpsertRequest: {
@@ -5831,19 +8400,31 @@ export interface components {
             /** Reason */
             reason?: ("TAKEN" | "RESERVED") | null;
         };
+        /** SubstituteCandidate */
+        SubstituteCandidate: {
+            /** Id */
+            id: number;
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+        };
         /**
          * SummaryStatus
          * @enum {string}
          */
         SummaryStatus: "COMPLETE" | "OPEN_MISSING_PUNCH" | "ABSENCE" | "PRESENT" | "ON_BREAK" | "ON_ERRAND" | "ERROR" | "HOLIDAY" | "PLANNED_OFF";
-        /** SupervisorTeamAssignmentCreateRequest */
+        /**
+         * SupervisorTeamAssignmentCreateRequest
+         * @description Teamleitung zuordnen: über den Mitarbeiter (mit Zugang) oder direkt über das Konto.
+         */
         SupervisorTeamAssignmentCreateRequest: {
             /** Team Id */
             team_id: number;
-            /** Hr User Id */
-            hr_user_id?: number | null;
             /** Employee Id */
             employee_id?: number | null;
+            /** Account Id */
+            account_id?: number | null;
         };
         /** SupervisorTeamAssignmentResponse */
         SupervisorTeamAssignmentResponse: {
@@ -5851,8 +8432,8 @@ export interface components {
             id: number;
             /** Team Id */
             team_id: number;
-            /** Hr User Id */
-            hr_user_id: number | null;
+            /** Account Id */
+            account_id: number;
             /** Employee Id */
             employee_id: number | null;
         };
@@ -6028,6 +8609,35 @@ export interface components {
             /** Location Id */
             location_id?: number | null;
         };
+        /**
+         * TeamOverlap
+         * @description Abwesenheit einer anderen Person aus demselben Team im gefragten Zeitraum.
+         */
+        TeamOverlap: {
+            /** Employee Id */
+            employee_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /**
+             * Half Day
+             * @default false
+             */
+            half_day: boolean;
+            /** Pending */
+            pending: boolean;
+            /** Type Name */
+            type_name?: string | null;
+        };
         /** TeamResponse */
         TeamResponse: {
             /** Id */
@@ -6070,6 +8680,14 @@ export interface components {
              * @default 0
              */
             due_offset_days: number;
+            /**
+             * Action
+             * @default TASK
+             * @enum {string}
+             */
+            action: "TASK" | "UPLOAD_DOCUMENT" | "FILL_DATA" | "SEND_EMAIL";
+            /** Action Category Id */
+            action_category_id?: number | null;
         };
         /** TemplateItemResponse */
         TemplateItemResponse: {
@@ -6084,6 +8702,14 @@ export interface components {
              * @default 0
              */
             due_offset_days: number;
+            /**
+             * Action
+             * @default TASK
+             * @enum {string}
+             */
+            action: "TASK" | "UPLOAD_DOCUMENT" | "FILL_DATA" | "SEND_EMAIL";
+            /** Action Category Id */
+            action_category_id?: number | null;
             /** Id */
             id: number;
             /** Position */
@@ -6358,6 +8984,13 @@ export interface components {
              */
             reviewed: boolean;
         };
+        /** TokenRequest */
+        TokenRequest: {
+            /** Client Id */
+            client_id: string;
+            /** Client Secret */
+            client_secret: string;
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -6369,6 +9002,58 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * TwoFactorChallenge
+         * @description Für das Einrichten direkt beim Login (Pflicht): statt eines Zugriffs-Tokens das Challenge-Token.
+         */
+        TwoFactorChallenge: {
+            /** Challenge Token */
+            challenge_token?: string | null;
+        };
+        /** TwoFactorDisableRequest */
+        TwoFactorDisableRequest: {
+            /** Password */
+            password: string;
+        };
+        /** TwoFactorEnableRequest */
+        TwoFactorEnableRequest: {
+            /** Challenge Token */
+            challenge_token?: string | null;
+            /** Code */
+            code: string;
+        };
+        /** TwoFactorEnableResponse */
+        TwoFactorEnableResponse: {
+            /** Recovery Codes */
+            recovery_codes: string[];
+            /** Access Token */
+            access_token: string;
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /** TwoFactorLoginRequest */
+        TwoFactorLoginRequest: {
+            /** Challenge Token */
+            challenge_token: string;
+            /** Code */
+            code: string;
+        };
+        /** TwoFactorSetupResponse */
+        TwoFactorSetupResponse: {
+            /** Secret */
+            secret: string;
+            /** Otpauth Uri */
+            otpauth_uri: string;
+        };
+        /** TwoFactorStatus */
+        TwoFactorStatus: {
+            /** Enabled */
+            enabled: boolean;
+            /** Required */
+            required: boolean;
+            /** Recovery Codes Left */
+            recovery_codes_left: number;
         };
         /** VacationRow */
         VacationRow: {
@@ -6445,6 +9130,82 @@ export interface components {
             items: {
                 [key: string]: string | null;
             };
+        };
+        /** WebhookCreated */
+        WebhookCreated: {
+            /** Id */
+            id: number;
+            /** Url */
+            url: string;
+            /** Events */
+            events: string[];
+            /** Active */
+            active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Delivery At */
+            last_delivery_at: string | null;
+            /** Last Status */
+            last_status: string | null;
+            /** Secret */
+            secret: string;
+        };
+        /** WebhookDeliveryResponse */
+        WebhookDeliveryResponse: {
+            /** Id */
+            id: number;
+            /** Event */
+            event: string;
+            /** Status */
+            status: string;
+            /** Attempts */
+            attempts: number;
+            /** Response Status */
+            response_status: number | null;
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** WebhookRequest */
+        WebhookRequest: {
+            /** Url */
+            url: string;
+            /** Events */
+            events: string[];
+        };
+        /** WebhookResponse */
+        WebhookResponse: {
+            /** Id */
+            id: number;
+            /** Url */
+            url: string;
+            /** Events */
+            events: string[];
+            /** Active */
+            active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Delivery At */
+            last_delivery_at: string | null;
+            /** Last Status */
+            last_status: string | null;
+        };
+        /** WebhookUpdateRequest */
+        WebhookUpdateRequest: {
+            /** Active */
+            active?: boolean | null;
+            /** Events */
+            events?: string[] | null;
         };
         /** WeeklyBalanceWeek */
         WeeklyBalanceWeek: {
@@ -6591,6 +9352,22 @@ export interface components {
             core_time_end: string | null;
             /** Core Time Days */
             core_time_days: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start: string | null;
+            /** Flex Frame End */
+            flex_frame_end: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes: number | null;
+            /** Profile Id */
+            profile_id: number | null;
+            /** Profile Name */
+            profile_name: string | null;
             /** Employee Id */
             employee_id: number;
             /** Configured */
@@ -6720,6 +9497,368 @@ export interface components {
             core_time_end: string | null;
             /** Core Time Days */
             core_time_days: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start: string | null;
+            /** Flex Frame End */
+            flex_frame_end: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes: number | null;
+            /** Profile Id */
+            profile_id: number | null;
+            /** Profile Name */
+            profile_name: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to: string | null;
+        };
+        /**
+         * WorkTimeProfileAssignRequest
+         * @description Modell einem Mitarbeiter ab Stichtag zuweisen (ersetzt alles ab diesem Tag).
+         */
+        WorkTimeProfileAssignRequest: {
+            /** Profile Id */
+            profile_id: number;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+        };
+        /** WorkTimeProfileCreateRequest */
+        WorkTimeProfileCreateRequest: {
+            /** Weekly Hours */
+            weekly_hours?: number | null;
+            /** Monthly Hours */
+            monthly_hours?: number | null;
+            /** Weekdays */
+            weekdays?: number[] | null;
+            /** Daily Hours */
+            daily_hours?: number[] | null;
+            /**
+             * Flexible
+             * @default false
+             */
+            flexible: boolean;
+            /**
+             * On Demand
+             * @default false
+             */
+            on_demand: boolean;
+            /** Monthly Cap Hours */
+            monthly_cap_hours?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break After Hours */
+            break_after_hours?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
+            /** Shift Template Id */
+            shift_template_id?: number | null;
+            /** Core Time Mode */
+            core_time_mode?: ("TENANT" | "CUSTOM" | "NONE") | null;
+            /** Core Time Start */
+            core_time_start?: string | null;
+            /** Core Time End */
+            core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start?: string | null;
+            /** Flex Frame End */
+            flex_frame_end?: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes?: number | null;
+            /** Name */
+            name: string;
+        };
+        /**
+         * WorkTimeProfileResponse
+         * @description Modell mit der heute gültigen Fassung und den aktuell zugewiesenen Mitarbeitern.
+         */
+        WorkTimeProfileResponse: {
+            /** Weekly Minutes */
+            weekly_minutes: number | null;
+            /** Daily Minutes */
+            daily_minutes: number | null;
+            /**
+             * Weekdays
+             * @default []
+             */
+            weekdays: number[];
+            /** Day Minutes */
+            day_minutes: number[] | null;
+            /**
+             * Uneven
+             * @default false
+             */
+            uneven: boolean;
+            /**
+             * Flexible
+             * @default false
+             */
+            flexible: boolean;
+            /**
+             * On Demand
+             * @default false
+             */
+            on_demand: boolean;
+            /** Monthly Cap Minutes */
+            monthly_cap_minutes: number | null;
+            /** Monthly Minutes */
+            monthly_minutes: number | null;
+            /**
+             * Target From Template
+             * @default false
+             */
+            target_from_template: boolean;
+            /** Break Minutes */
+            break_minutes: number | null;
+            /**
+             * Break After Minutes
+             * @default 0
+             */
+            break_after_minutes: number;
+            /** Break Start */
+            break_start: string | null;
+            /** Break End */
+            break_end: string | null;
+            /**
+             * Break From Template
+             * @default false
+             */
+            break_from_template: boolean;
+            /** Shift Template Id */
+            shift_template_id: number | null;
+            /** Shift Template Name */
+            shift_template_name: string | null;
+            /** Shift Start */
+            shift_start: string | null;
+            /** Shift End */
+            shift_end: string | null;
+            /**
+             * Core Time Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            core_time_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Core Time Start */
+            core_time_start: string | null;
+            /** Core Time End */
+            core_time_end: string | null;
+            /** Core Time Days */
+            core_time_days: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start: string | null;
+            /** Flex Frame End */
+            flex_frame_end: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes: number | null;
+            /** Profile Id */
+            profile_id: number | null;
+            /** Profile Name */
+            profile_name: string | null;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Archived */
+            archived: boolean;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+            /** Employee Count */
+            employee_count: number;
+            /**
+             * Employees
+             * @default []
+             */
+            employees: string[];
+        };
+        /**
+         * WorkTimeProfileSetRequest
+         * @description Neue Fassung des Modells ab Stichtag – gilt für alle zugewiesenen Mitarbeiter.
+         */
+        WorkTimeProfileSetRequest: {
+            /** Weekly Hours */
+            weekly_hours?: number | null;
+            /** Monthly Hours */
+            monthly_hours?: number | null;
+            /** Weekdays */
+            weekdays?: number[] | null;
+            /** Daily Hours */
+            daily_hours?: number[] | null;
+            /**
+             * Flexible
+             * @default false
+             */
+            flexible: boolean;
+            /**
+             * On Demand
+             * @default false
+             */
+            on_demand: boolean;
+            /** Monthly Cap Hours */
+            monthly_cap_hours?: number | null;
+            /** Break Minutes */
+            break_minutes?: number | null;
+            /** Break After Hours */
+            break_after_hours?: number | null;
+            /** Break Start */
+            break_start?: string | null;
+            /** Break End */
+            break_end?: string | null;
+            /** Shift Template Id */
+            shift_template_id?: number | null;
+            /** Core Time Mode */
+            core_time_mode?: ("TENANT" | "CUSTOM" | "NONE") | null;
+            /** Core Time Start */
+            core_time_start?: string | null;
+            /** Core Time End */
+            core_time_end?: string | null;
+            /** Core Time Days */
+            core_time_days?: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start?: string | null;
+            /** Flex Frame End */
+            flex_frame_end?: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes?: number | null;
+            /**
+             * Valid From
+             * Format: date
+             */
+            valid_from: string;
+        };
+        /** WorkTimeProfileUpdateRequest */
+        WorkTimeProfileUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Archived */
+            archived?: boolean | null;
+        };
+        /** WorkTimeProfileVersionResponse */
+        WorkTimeProfileVersionResponse: {
+            /** Weekly Minutes */
+            weekly_minutes: number | null;
+            /** Daily Minutes */
+            daily_minutes: number | null;
+            /**
+             * Weekdays
+             * @default []
+             */
+            weekdays: number[];
+            /** Day Minutes */
+            day_minutes: number[] | null;
+            /**
+             * Uneven
+             * @default false
+             */
+            uneven: boolean;
+            /**
+             * Flexible
+             * @default false
+             */
+            flexible: boolean;
+            /**
+             * On Demand
+             * @default false
+             */
+            on_demand: boolean;
+            /** Monthly Cap Minutes */
+            monthly_cap_minutes: number | null;
+            /** Monthly Minutes */
+            monthly_minutes: number | null;
+            /**
+             * Target From Template
+             * @default false
+             */
+            target_from_template: boolean;
+            /** Break Minutes */
+            break_minutes: number | null;
+            /**
+             * Break After Minutes
+             * @default 0
+             */
+            break_after_minutes: number;
+            /** Break Start */
+            break_start: string | null;
+            /** Break End */
+            break_end: string | null;
+            /**
+             * Break From Template
+             * @default false
+             */
+            break_from_template: boolean;
+            /** Shift Template Id */
+            shift_template_id: number | null;
+            /** Shift Template Name */
+            shift_template_name: string | null;
+            /** Shift Start */
+            shift_start: string | null;
+            /** Shift End */
+            shift_end: string | null;
+            /**
+             * Core Time Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            core_time_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Core Time Start */
+            core_time_start: string | null;
+            /** Core Time End */
+            core_time_end: string | null;
+            /** Core Time Days */
+            core_time_days: (components["schemas"]["CoreTimeDay"] | null)[] | null;
+            /**
+             * Flex Frame Mode
+             * @default TENANT
+             * @enum {string}
+             */
+            flex_frame_mode: "TENANT" | "CUSTOM" | "NONE";
+            /** Flex Frame Start */
+            flex_frame_start: string | null;
+            /** Flex Frame End */
+            flex_frame_end: string | null;
+            /** Late Tolerance Minutes */
+            late_tolerance_minutes: number | null;
+            /** Profile Id */
+            profile_id: number | null;
+            /** Profile Name */
+            profile_name: string | null;
             /** Id */
             id: number;
             /**
@@ -7058,6 +10197,39 @@ export interface operations {
             };
         };
     };
+    device_enroll_auth_device_enroll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceEnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceEnrollResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     device_pair_auth_device_pair_post: {
         parameters: {
             query?: never;
@@ -7091,7 +10263,7 @@ export interface operations {
             };
         };
     };
-    hr_login_auth_hr_login_post: {
+    login_auth_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -7100,7 +10272,40 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["HrLoginRequest"];
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_two_factor_auth_login_2fa_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorLoginRequest"];
             };
         };
         responses: {
@@ -7124,73 +10329,7 @@ export interface operations {
             };
         };
     };
-    hr_refresh_auth_hr_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RefreshRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    employee_login_auth_employee_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EmployeeLoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    employee_refresh_auth_employee_refresh_post: {
+    refresh_auth_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -7319,6 +10458,44 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    create_calendar_token_me_calendar_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarTokenResponse"];
+                };
+            };
+        };
+    };
+    delete_calendar_token_me_calendar_token_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7835,6 +11012,172 @@ export interface operations {
             };
         };
     };
+    list_enrollment_keys_devices_enrollment_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentKeyResponse"][];
+                };
+            };
+        };
+    };
+    create_enrollment_key_devices_enrollment_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollmentKeyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentKeyCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_enrollment_key_devices_enrollment_keys__location_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_enrollments_devices_enrollments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceEnrollmentResponse"][];
+                };
+            };
+        };
+    };
+    approve_enrollment_devices_enrollments__enrollment_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollmentApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_enrollment_devices_enrollments__enrollment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                enrollment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     verify_kiosk_admin_pin_devices_verify_admin_pin_post: {
         parameters: {
             query?: never;
@@ -8196,6 +11539,26 @@ export interface operations {
             };
         };
     };
+    list_balance_limits_timesheet_balance_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceLimitRow"][];
+                };
+            };
+        };
+    };
     get_timesheet_employees__employee_id__timesheet_get: {
         parameters: {
             query: {
@@ -8408,7 +11771,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AbsenceResponse"][];
+                    "application/json": components["schemas"]["PendingAbsenceResponse"][];
+                };
+            };
+        };
+    };
+    list_team_overlaps_employees__employee_id__team_overlaps_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamOverlap"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_substitute_candidates_employees__employee_id__substitute_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubstituteCandidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8522,6 +11950,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AbsenceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AbsenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_absence_certificate_absences__absence_id__certificate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                absence_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_absence_certificate_absences__absence_id__certificate_post"];
             };
         };
         responses: {
@@ -8822,6 +12285,1617 @@ export interface operations {
             header?: never;
             path: {
                 hr_user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_departments_departments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"][];
+                };
+            };
+        };
+    };
+    create_department_departments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_department_departments__department_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_department_departments__department_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    org_chart_org_chart_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgChartPerson"][];
+                };
+            };
+        };
+    };
+    get_personal_data_employees__employee_id__personal_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalDataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_personal_data_employees__employee_id__personal_data_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonalData"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalDataResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_own_personal_data_me_personal_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalDataResponse"];
+                };
+            };
+        };
+    };
+    list_cost_centers_cost_centers_get: {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCenterResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cost_center_cost_centers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCenterCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCenterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cost_center_cost_centers__cost_center_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_center_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_cost_center_cost_centers__cost_center_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cost_center_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCenterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCenterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_employee_cost_centers_employees__employee_id__cost_centers_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCenterShare"][];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCenterShare"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sections_attribute_sections_get: {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeSectionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_section_attribute_sections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeSectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeSectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_section_attribute_sections__section_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                section_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeSectionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeSectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_attribute_attributes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeDefinitionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_attribute_attributes__attribute_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attribute_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeDefinitionUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_employee_attributes_employees__employee_id__attributes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeAttributeValue"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_employee_attribute_employees__employee_id__attributes__attribute_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                attribute_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttributeValueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeAttributeValue"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_attribute_value_employees__employee_id__attributes_values__value_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                value_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeAttributeValue"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_attribute_sections_me_attributes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributeSectionResponse"][];
+                };
+            };
+        };
+    };
+    my_attribute_values_me_attribute_values_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeAttributeValue"][];
+                };
+            };
+        };
+    };
+    employee_history_employees__employee_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeHistoryEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_change_requests_me_change_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeRequestResponse"][];
+                };
+            };
+        };
+    };
+    propose_change_me_change_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeProposal"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_change_requests_change_requests_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeRequestResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_change_request_change_requests__request_id__decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangeDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_placeholders_document_templates_placeholders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Placeholder"][];
+                };
+            };
+        };
+    };
+    list_templates_document_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplateResponse"][];
+                };
+            };
+        };
+    };
+    create_template_document_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_template_document_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentTemplateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTemplateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_employees__employee_id__document_templates__template_id__preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_document_employees__employee_id__documents_from_template_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_api_clients_api_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiClientResponse"][];
+                };
+            };
+        };
+    };
+    create_api_client_api_clients_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiClientRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiClientCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_api_client_api_clients__client_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_webhooks_webhooks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"][];
+                };
+            };
+        };
+    };
+    create_webhook_webhooks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_webhook_webhooks__webhook_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_webhook_webhooks__webhook_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_webhooks__webhook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_deliveries_webhooks__webhook_id__deliveries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                webhook_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDeliveryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_api_token_v1_auth_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiToken"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_employees_v1_employees_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                active?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_absence_types_v1_absence_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAbsenceType"][];
+                };
+            };
+        };
+    };
+    api_absences_v1_absences_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                employee_id?: number | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AbsencesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_punches_v1_punches_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                employee_id?: number | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PunchesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    two_factor_status_auth_2fa_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorStatus"];
+                };
+            };
+        };
+    };
+    setup_two_factor_auth_2fa_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorChallenge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorSetupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_two_factor_auth_2fa_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorEnableResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_two_factor_auth_2fa_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorDisableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_employee_two_factor_employees__employee_id__2fa_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_account_two_factor_hr_users__account_id__2fa_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: number;
             };
             cookie?: never;
         };
@@ -9375,6 +14449,104 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LeaveEntitlementResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_leave_adjustments_employees__employee_id__leave_adjustments_get: {
+        parameters: {
+            query: {
+                year: number;
+            };
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaveAdjustmentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_leave_adjustment_employees__employee_id__leave_adjustments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveAdjustmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaveAdjustmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_leave_adjustment_employees__employee_id__leave_adjustments__adjustment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+                adjustment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10127,6 +15299,59 @@ export interface operations {
             };
         };
     };
+    get_notification_settings_notifications_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettings"];
+                };
+            };
+        };
+    };
+    update_notification_settings_notifications_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_payroll_payroll_export_get: {
         parameters: {
             query: {
@@ -10463,6 +15688,38 @@ export interface operations {
             };
         };
     };
+    get_my_team_calendar_me_team_calendar_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamCalendarEmployee"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_work_time_model_employees__employee_id__work_time_model_get: {
         parameters: {
             query?: never;
@@ -10506,6 +15763,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["WorkTimeModelSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assign_work_time_profile_employees__employee_id__work_time_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkTimeProfileAssignRequest"];
             };
         };
         responses: {
@@ -10614,6 +15906,200 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_work_time_profiles_work_time_profiles_get: {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeProfileResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_work_time_profile_work_time_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkTimeProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_work_time_profile_model_work_time_profiles__profile_id__model_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkTimeProfileSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_work_time_profile_work_time_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_work_time_profile_work_time_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkTimeProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_work_time_profile_history_work_time_profiles__profile_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkTimeProfileVersionResponse"][];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -11132,6 +16618,127 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_document_categories_document_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentCategoryResponse"][];
+                };
+            };
+        };
+    };
+    create_document_category_document_categories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_document_category_document_categories__category_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                category_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentCategoryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentCategoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_own_document_me_documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_own_document_me_documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11909,6 +17516,57 @@ export interface operations {
             };
         };
     };
+    my_checklist_items_me_checklist_items_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistItemResponse"][];
+                };
+            };
+        };
+    };
+    complete_my_item_me_checklist_items__item_id__done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_branding_branding_get: {
         parameters: {
             query?: never;
@@ -12023,6 +17681,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BalanceAdjustmentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceAdjustmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_balance_employees__employee_id__balance_adjustments_set_balance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                employee_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetBalanceRequest"];
             };
         };
         responses: {

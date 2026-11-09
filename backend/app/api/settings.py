@@ -15,6 +15,7 @@ from app.schemas.settings import (
     SettingsUpdateRequest,
     SmtpTestRequest,
     SmtpTestResponse,
+    TWO_FACTOR_ROLES,
 )
 from app.services.email_service import describe_smtp_error, ensure_public_smtp_host, resolve_smtp_config, send_email
 from app.services.auth_service import hash_password
@@ -54,6 +55,8 @@ async def get_features(
     settings_row = await get_or_create_settings(db, actor.tenant_id)
     return FeaturesResponse(
         shift_planning_enabled=settings_row.shift_planning_enabled,
+        team_calendar_for_employees=settings_row.team_calendar_for_employees,
+        org_chart_for_employees=settings_row.org_chart_for_employees,
         absence_requests_enabled=settings_row.absence_requests_enabled,
         default_auto_break=settings_row.default_auto_break,
         default_show_birthday=settings_row.default_show_birthday,
@@ -139,6 +142,17 @@ async def update_settings(
     if payload.prorate_partial_year_vacation is not None:
         settings_row.prorate_partial_year_vacation = payload.prorate_partial_year_vacation
         changed.append(f"prorate_partial_year_vacation={payload.prorate_partial_year_vacation}")
+    if payload.seniority_leave_rules is not None:
+        years = [rule.years for rule in payload.seniority_leave_rules]
+        if years != sorted(set(years)):
+            raise AppError(400, "INVALID_SENIORITY_RULES", "Bitte jede Jahreszahl nur einmal und aufsteigend angeben.")
+        value = ",".join(f"{r.years}:{r.days:g}" for r in payload.seniority_leave_rules) or None
+        if value != settings_row.seniority_leave_rules:
+            settings_row.seniority_leave_rules = value
+            changed.append(f"seniority_leave_rules={value or 'keine'}")
+    if payload.reduce_vacation_parental_leave is not None:
+        settings_row.reduce_vacation_parental_leave = payload.reduce_vacation_parental_leave
+        changed.append(f"reduce_vacation_parental_leave={payload.reduce_vacation_parental_leave}")
     if payload.vacation_carry_over_auto is not None:
         settings_row.vacation_carry_over_auto = payload.vacation_carry_over_auto
         changed.append(f"vacation_carry_over_auto={payload.vacation_carry_over_auto}")
@@ -264,6 +278,11 @@ async def update_settings(
         settings_row.max_shift_span_hours = payload.max_shift_span_hours
         changed.append(f"max_shift_span_hours={payload.max_shift_span_hours}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)
+    for field, clear in (("overtime_limit_max_hours", payload.clear_overtime_limit_max), ("overtime_limit_min_hours", payload.clear_overtime_limit_min)):
+        value = None if clear else getattr(payload, field)
+        if (clear or value is not None) and value != getattr(settings_row, field):
+            setattr(settings_row, field, value)
+            changed.append(f"{field}={value}")
     if payload.kiosk_rfid_enabled is not None:
         settings_row.kiosk_rfid_enabled = payload.kiosk_rfid_enabled
         changed.append(f"kiosk_rfid_enabled={payload.kiosk_rfid_enabled}")
@@ -284,6 +303,10 @@ async def update_settings(
         "portal_punching_enabled",
         "absence_requests_enabled",
         "absence_four_eyes",
+        "absence_overlaps_for_employees",
+        "reminders_enabled",
+        "team_calendar_for_employees",
+        "org_chart_for_employees",
         "kiosk_sort",
         "kiosk_theme",
         "kiosk_card_self_registration",
@@ -293,6 +316,11 @@ async def update_settings(
         if value is not None:
             setattr(settings_row, field, value)
             changed.append(f"{field}={value}")
+    if payload.two_factor_roles is not None:
+        value = ",".join(role for role in TWO_FACTOR_ROLES if role in payload.two_factor_roles) or None
+        if value != settings_row.two_factor_roles:
+            settings_row.two_factor_roles = value
+            changed.append(f"two_factor_roles={value or 'keine'}")
     if payload.kiosk_greeting is not None:
         settings_row.kiosk_greeting = payload.kiosk_greeting.strip() or None
         changed.append("kiosk_greeting geändert")
@@ -317,8 +345,7 @@ async def update_settings(
         log_action(
             db,
             tenant_id=actor.tenant_id,
-            actor_hr_user_id=actor.audit_hr_user_id,
-            actor_employee_id=actor.audit_employee_id,
+            actor_account_id=actor.account_id,
             action=AuditAction.SETTINGS_CHANGED,
             entity_type="app_settings",
             entity_id=settings_row.id,
@@ -338,9 +365,7 @@ async def send_smtp_test(
 ) -> SmtpTestResponse:
     """Schickt eine Testmail über den für den Mandanten gültigen SMTP (eigener
     Server, sonst Plattform-SMTP) und meldet Fehler im Klartext zurück."""
-    recipient = payload.to or (
-        actor.hr_user.email if actor.hr_user is not None else actor.employee.login_email if actor.employee else None
-    )
+    recipient = payload.to or actor.account.email
     if not recipient:
         raise AppError(400, "NO_RECIPIENT", "Bitte eine Empfängeradresse angeben.")
 

@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Employee, HrRole, HrUser, Location
+from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -26,8 +26,8 @@ async def _create_employee(db_session: AsyncSession, location: Location) -> Empl
     return employee
 
 
-async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=role)
+async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -35,7 +35,7 @@ async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN)
 
 
 async def _token(client: AsyncClient, email: str = "admin@example.com") -> str:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -225,8 +225,8 @@ async def test_hr_user_creation_and_deletion_are_audited(
     log_response = await client.get("/audit-log", headers={"Authorization": f"Bearer {token}"})
     entries = log_response.json()
     actions = [(e["action"], e["entity_type"], e["entity_id"]) for e in entries]
-    assert ("HR_USER_CREATED", "hr_user", new_hr_user_id) in actions
-    assert ("HR_USER_DELETED", "hr_user", new_hr_user_id) in actions
+    assert ("HR_USER_CREATED", "account", new_hr_user_id) in actions
+    assert ("HR_USER_DELETED", "account", new_hr_user_id) in actions
 
 
 async def test_team_crud_is_audited(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -257,13 +257,13 @@ async def test_tenant_admin_email_change_is_audited_for_target_tenant(
     await _create_hr_user(db_session)  # tenant_id=1 via Autofill, siehe conftest.py
     admin_token = await _token(client)
 
-    super_admin = HrUser(
+    super_admin = Account(
         tenant_id=None, email="super@example.com", password_hash=hash_password("super-pw"), role=HrRole.SUPER_ADMIN
     )
     db_session.add(super_admin)
     await db_session.commit()
     super_login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"Host": settings.super_admin_hostname},
         json={"email": "super@example.com", "password": "super-pw"},
     )

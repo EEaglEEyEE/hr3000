@@ -76,7 +76,7 @@ function AbsenceTypeRow({
         <select
           aria-label={`Kategorie von ${type.name}`}
           title={ABSENCE_CATEGORY_HINTS[type.category]}
-          className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          className="h-8 max-w-full rounded-md border border-slate-300 bg-white px-2 text-sm"
           value={type.category}
           onChange={(e) => {
             const next = e.target.value as Category
@@ -117,7 +117,62 @@ function AbsenceTypeRow({
           />
           Genehmigung nötig
         </label>
-        <label className="flex items-center gap-1.5">
+        {type.requires_approval && (
+          <label className="flex max-w-full flex-wrap items-center gap-1.5">
+            Genehmigt von
+            <select
+              aria-label={`Genehmigung bei ${type.name}`}
+              className="h-7 max-w-full rounded-md border border-slate-300 bg-white px-1 text-sm"
+              value={type.approval_chain ?? 'DEFAULT'}
+              onChange={(e) =>
+                onPatch({ approval_chain: e.target.value as 'DEFAULT' | 'SUPERVISOR' | 'SUPERVISOR_HR' | 'HR' })
+              }
+            >
+              <option value="DEFAULT">Teamleitung oder Admin/HR</option>
+              <option value="SUPERVISOR">Führungskraft</option>
+              <option value="SUPERVISOR_HR">erst Führungskraft, dann Admin/HR</option>
+              <option value="HR">nur Admin/HR</option>
+            </select>
+          </label>
+        )}
+        <label
+          className="flex items-center gap-1.5"
+          title={type.category === 'SICK' || type.category === 'CHILD_SICK' ? 'Bei Krankheit nicht erlaubt (Gesundheitsdaten)' : undefined}
+        >
+          <input
+            type="checkbox"
+            checked={type.comment_required}
+            disabled={type.category === 'SICK' || type.category === 'CHILD_SICK'}
+            onChange={(e) => onPatch({ comment_required: e.target.checked })}
+          />
+          Kommentar erforderlich
+        </label>
+        <label className="flex max-w-full flex-wrap items-center gap-1.5">
+          Im Teamkalender
+          <select
+            aria-label={`Teamkalender bei ${type.name}`}
+            className="h-7 max-w-full rounded-md border border-slate-300 bg-white px-1 text-sm"
+            value={type.calendar_visibility}
+            onChange={(e) => onPatch({ calendar_visibility: e.target.value as 'GREY' | 'COLOR' })}
+          >
+            <option value="GREY">ausgegraut</option>
+            <option value="COLOR">farbig (mit Art)</option>
+          </select>
+        </label>
+        <label className="flex max-w-full flex-wrap items-center gap-1.5">
+          Vertretung
+          <select
+            aria-label={`Vertretung bei ${type.name}`}
+            className="h-7 max-w-full rounded-md border border-slate-300 bg-white px-1 text-sm"
+            value={type.substitute_mode}
+            onChange={(e) => onPatch({ substitute_mode: e.target.value as 'NONE' | 'OPTIONAL' | 'REQUIRED' })}
+          >
+            <option value="NONE">nicht abfragen</option>
+            <option value="OPTIONAL">optional</option>
+            <option value="REQUIRED">Pflicht beim Antrag</option>
+          </select>
+        </label>
+        <label className="flex max-w-full flex-wrap items-center gap-1.5">
           Nachweis ab Tag
           <Input
             className="h-7 w-16 px-1 text-center"
@@ -158,6 +213,10 @@ export function NewAbsenceTypeCard() {
         category,
         requires_approval: requiresApproval,
         employee_can_request: true,
+        substitute_mode: 'NONE',
+        comment_required: false,
+        calendar_visibility: 'GREY',
+        approval_chain: 'DEFAULT',
         sort_order: 100,
       })
       setMessage(`„${name.trim()}“ angelegt.`)

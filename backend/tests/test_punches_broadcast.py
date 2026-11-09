@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BreakRule, Device, Employee, EmployeeDefaultShift, Location, ShiftTemplate
 from app.services import ws_manager
+from app.services.pairing_service import token_hash
 
 _WEEKDAYS_MO_FR = 0b0011111
 
@@ -33,7 +34,7 @@ async def _create_employee(db_session: AsyncSession, location: Location) -> Empl
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
@@ -76,7 +77,7 @@ async def test_creating_punch_broadcasts_balance_to_location(
     await db_session.commit()
     # 2026-08-10 ist ein Montag -> mit target_minutes=480 (8 Std.) pro Tag.
     await _assign_default_shift(db_session, employee, target_minutes=480)
-    # Das Gleitzeitkonto zählt jeden Soll-Tag bis heute – damit der Test nicht vom Datum
+    # Das Überstundenkonto zählt jeden Soll-Tag bis heute – damit der Test nicht vom Datum
     # abhängt, endet das Beschäftigungsverhältnis am Testtag.
     employee.termination_date = date(2026, 8, 10)
     await db_session.commit()

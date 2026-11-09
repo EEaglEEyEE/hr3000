@@ -15,8 +15,9 @@ from app.api.deps import (
 )
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, Employee, EmployeeLocationPeriod, HrRole, Location, Team
-from app.schemas.work_time_model import WorkTimeModelInput, WorkTimeModelSetRequest
+from app.models import Account, AuditAction, Department, Employee, EmployeeLocationPeriod, HrRole, Location, Team
+from app.schemas.work_time_model import WorkTimeModelInput, WorkTimeModelSetRequest, WorkTimeProfileAssignRequest
+from app.services.work_time_profile_service import get_profile_in_tenant
 from app.schemas.employee import (
     BulkImportResult,
     BulkImportRowError,
@@ -29,6 +30,7 @@ from app.schemas.employee import (
     LocationEmployeeResponse,
 )
 from app.services.admin_service import ensure_not_last_admin
+from app.services import personal_data_service, webhook_service
 from app.services.audit_service import log_action
 from app.services.auth_service import generate_one_time_password, hash_password
 from app.services.document_service import delete_employee_documents
@@ -56,6 +58,8 @@ async def _record_location_change(db: AsyncSession, employee: Employee, new_loca
     db.add(EmployeeLocationPeriod(employee_id=employee.id, location_id=new_location_id, valid_from=effective))
 
 
+from app.services.pairing_service import card_hash
+from app.schemas.common import normalize_card_uid
 router = APIRouter(tags=["employees"])
 
 
@@ -86,8 +90,9 @@ async def list_employees(
         )
     stmt = stmt.order_by(Employee.last_name.asc(), Employee.first_name.asc())
 
-    result = await db.execute(stmt)
-    return [EmployeeResponse.model_validate(e) for e in result.scalars().all()]
+    employees = list((await db.execute(stmt)).scalars().all())
+    await personal_data_service.mark_leave(db, employees)
+    return [EmployeeResponse.model_validate(e) for e in employees]
 
 
 @router.get("/locations/{location_id}/employees", response_model=list[LocationEmployeeResponse])
@@ -127,7 +132,13 @@ async def list_location_employees(
                 last_name=employee.last_name,
                 employee_number=employee.employee_number,
                 has_pin=employee.has_pin,
-                nfc_uid=None if limited else employee.nfc_uid,
+                # Tablets bekommen Chips nur als Hash (card_hash), HR die UID selbst
+                nfc_uid=None if limited or actor.device is not None else employee.nfc_uid,
+                card_hash=(
+                    card_hash(employee.tenant_id, normalize_card_uid(employee.nfc_uid))
+                    if actor.device is not None and employee.nfc_uid
+                    else None
+                ),
                 today_status=calculation.status,
                 today_flags=calculation.flags,
             )
@@ -146,6 +157,7 @@ async def get_employee(
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
     if actor.is_hr_level:
         await ensure_employee_visible(db, actor, employee)
+    await personal_data_service.mark_leave(db, [employee])
     return EmployeeResponse.model_validate(employee)
 
 
@@ -168,9 +180,20 @@ async def create_employee(
         team = await db.get(Team, payload.team_id)
         if team is None or team.tenant_id != actor.tenant_id:
             raise AppError(404, "TEAM_NOT_FOUND", "Team nicht gefunden.")
+    if payload.work_time_profile_id is not None:
+        # Vor dem Anlegen prüfen – sonst entstünde ein Mitarbeiter ohne das gewünschte Modell.
+        profile = await get_profile_in_tenant(db, payload.work_time_profile_id, actor.tenant_id)
+        if profile.archived:
+            raise AppError(409, "WORK_TIME_PROFILE_ARCHIVED", "Das Arbeitszeitmodell ist archiviert und kann nicht neu zugewiesen werden.")
 
     if payload.active:
         await ensure_can_activate(db, actor.tenant_id)
+    if payload.department_id is not None:
+        await _check_department(db, payload.department_id, actor.tenant_id)
+    if payload.supervisor_id is not None:
+        await _check_supervisor(db, None, payload.supervisor_id, actor.tenant_id)
+    if payload.approval_delegate_id is not None:
+        await _check_colleague(db, None, payload.approval_delegate_id, actor.tenant_id)
 
     defaults = await get_or_create_settings(db, actor.tenant_id)
     employee = Employee(
@@ -192,6 +215,10 @@ async def create_employee(
             defaults.default_show_birthday if payload.show_birthday_in_calendar is None else payload.show_birthday_in_calendar
         ),
         team_id=payload.team_id,
+        department_id=payload.department_id,
+        position=(payload.position or "").strip() or None,
+        supervisor_id=payload.supervisor_id,
+        approval_delegate_id=payload.approval_delegate_id,
     )
     db.add(employee)
     try:
@@ -205,14 +232,26 @@ async def create_employee(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_CREATED,
         entity_type="employee",
         entity_id=employee.id,
         detail=f"{employee.first_name} {employee.last_name} ({employee.employee_number})",
     )
+    await webhook_service.emit_event(db, actor.tenant_id, "employee.created", {"employee_id": employee.id})
     await db.commit()
+
+    if payload.work_time_profile_id is not None:
+        from app.api.work_time_model import assign_work_time_profile
+
+        await assign_work_time_profile(
+            employee.id,
+            WorkTimeProfileAssignRequest(profile_id=payload.work_time_profile_id, valid_from=employee.hire_date or date.today()),
+            actor,
+            db,
+        )
+        await db.refresh(employee)
+        return EmployeeResponse.model_validate(employee)
 
     model = payload.work_time_model
     if model is None and defaults.default_day_minutes and not payload.no_work_time_model:
@@ -254,8 +293,8 @@ async def bulk_import_employees(
         select(Employee.employee_number).where(Employee.tenant_id == actor.tenant_id)
     )
     existing_emails_result = await db.execute(
-        select(Employee.login_email).where(
-            Employee.tenant_id == actor.tenant_id, Employee.login_email.is_not(None)
+        select(Account.email).where(
+            Account.tenant_id == actor.tenant_id, Account.email.is_not(None)
         )
     )
 
@@ -306,8 +345,7 @@ async def bulk_import_employees(
         log_action(
             db,
             tenant_id=actor.tenant_id,
-            actor_hr_user_id=actor.audit_hr_user_id,
-            actor_employee_id=actor.audit_employee_id,
+            actor_account_id=actor.account_id,
             action=AuditAction.EMPLOYEES_BULK_IMPORTED,
             entity_type="employee",
             entity_id=0,
@@ -384,8 +422,7 @@ async def update_employee_hr_role(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_HR_ROLE_CHANGED,
         entity_type="employee",
         entity_id=employee.id,
@@ -444,8 +481,7 @@ async def reset_employee_password(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_PASSWORD_RESET,
         entity_type="employee",
         entity_id=employee.id,
@@ -489,6 +525,9 @@ async def anonymize_employee(
 
     # Personalakte: Dokumente entfernen, außer solchen unter Aufbewahrungsfrist.
     removed_documents = await delete_employee_documents(db, employee.id)
+    # Persönliche Daten (Adresse, Bank, Steuer, SV) und Kostenstellen entfallen ganz.
+    await personal_data_service.delete(db, employee.id)
+    employee.cost_centers = []
 
     employee.first_name = "Anonymisiert"
     employee.last_name = f"Mitarbeiter {employee.id}"
@@ -498,14 +537,16 @@ async def anonymize_employee(
     employee.nfc_uid = None
     employee.birth_date = None
     employee.hr_role = None
+    employee.hr_payroll_access = False
+    if employee.account is not None:
+        employee.account.calendar_token_hash = None
     employee.active = False
     employee.anonymized_at = datetime.now(UTC)
 
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_ANONYMIZED,
         entity_type="employee",
         entity_id=employee.id,
@@ -517,9 +558,35 @@ async def anonymize_employee(
     return EmployeeResponse.model_validate(employee)
 
 
+async def _check_department(db: AsyncSession, department_id: int, tenant_id: int) -> None:
+    department = await db.get(Department, department_id)
+    if department is None or department.tenant_id != tenant_id:
+        raise AppError(404, "DEPARTMENT_NOT_FOUND", "Abteilung nicht gefunden.")
+
+
+async def _check_supervisor(db: AsyncSession, employee: Employee | None, supervisor_id: int, tenant_id: int) -> None:
+    """Führungskraft: ein anderer Mitarbeiter derselben Firma, ohne Kreis (A führt B, B führt A)."""
+    supervisor = await db.get(Employee, supervisor_id)
+    if supervisor is None or supervisor.tenant_id != tenant_id:
+        raise AppError(404, "SUPERVISOR_NOT_FOUND", "Führungskraft nicht gefunden.")
+    seen: set[int] = set()
+    current: Employee | None = supervisor
+    while current is not None and current.id not in seen:
+        if employee is not None and current.id == employee.id:
+            raise AppError(400, "SUPERVISOR_CYCLE", "Die Führungskraft darf nicht (indirekt) an dieser Person hängen.")
+        seen.add(current.id)
+        current = await db.get(Employee, current.supervisor_id) if current.supervisor_id else None
+
+
+async def _check_colleague(db: AsyncSession, employee: Employee | None, colleague_id: int, tenant_id: int) -> None:
+    colleague = await db.get(Employee, colleague_id)
+    if colleague is None or colleague.tenant_id != tenant_id or (employee is not None and colleague.id == employee.id):
+        raise AppError(404, "EMPLOYEE_NOT_FOUND", "Vertretung nicht gefunden (eine andere Person der Firma wählen).")
+
+
 def _conflict_error(exc: IntegrityError) -> AppError:
     message = str(exc.orig).lower()
-    if "login_email" in message:
+    if "login_email" in message or ("accounts" in message and "email" in message):
         return AppError(409, "LOGIN_EMAIL_TAKEN", "Diese Login-E-Mail wird bereits verwendet.")
     if "nfc_uid" in message:
         return AppError(409, "NFC_UID_TAKEN", "Diese Karte ist bereits einem anderen Mitarbeiter zugeordnet.")
@@ -558,7 +625,7 @@ async def update_employee(
     if employee.hr_role == HrRole.ADMIN and payload.active is False and employee.active:
         await ensure_not_last_admin(db, actor.tenant_id, exclude_employee_id=employee.id)
 
-    # Ein- und Austritt bestimmen den Kontozeitraum des Gleitzeitkontos.
+    # Ein- und Austritt bestimmen den Kontozeitraum des Überstundenkontos.
     balance_relevant = (employee.hire_date, employee.termination_date)
     if payload.location_id is not None and payload.location_id != employee.location_id:
         location = await db.get(Location, payload.location_id)
@@ -610,8 +677,26 @@ async def update_employee(
         employee.team_id = payload.team_id
     elif payload.clear_team_id:
         employee.team_id = None
+    if payload.department_id is not None:
+        await _check_department(db, payload.department_id, actor.tenant_id)
+        employee.department_id = payload.department_id
+    elif payload.clear_department_id:
+        employee.department_id = None
+    if payload.position is not None:
+        employee.position = payload.position.strip() or None
+    if payload.supervisor_id is not None:
+        await _check_supervisor(db, employee, payload.supervisor_id, actor.tenant_id)
+        employee.supervisor_id = payload.supervisor_id
+    elif payload.clear_supervisor_id:
+        employee.supervisor_id = None
+    if payload.approval_delegate_id is not None:
+        await _check_colleague(db, employee, payload.approval_delegate_id, actor.tenant_id)
+        employee.approval_delegate_id = payload.approval_delegate_id
+    elif payload.clear_approval_delegate_id:
+        employee.approval_delegate_id = None
     if (employee.hire_date, employee.termination_date) != balance_relevant:
         await invalidate_balance(db, employee.id, None)
+    await webhook_service.emit_event(db, actor.tenant_id, "employee.updated", {"employee_id": employee.id})
 
     try:
         await db.commit()

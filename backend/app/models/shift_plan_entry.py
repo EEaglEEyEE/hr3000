@@ -26,8 +26,6 @@ class ShiftPlanEntry(Base):
     shift_template_id: Mapped[int | None] = mapped_column(ForeignKey("shift_templates.id"), nullable=True)
     is_workday: Mapped[bool] = mapped_column(Boolean)
     target_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Dual-Actor-Muster wie überall sonst (HrUser ODER Employee mit hr_role).
-    planned_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    planned_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    planned_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

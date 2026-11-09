@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser, Location, Team
+from app.models import HrRole, Account, Location, Team
 from app.services.auth_service import hash_password
 
 
@@ -21,8 +21,8 @@ async def _create_team(db_session: AsyncSession, name: str = "Team Nord") -> Tea
     return team
 
 
-async def _create_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -30,7 +30,7 @@ async def _create_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 

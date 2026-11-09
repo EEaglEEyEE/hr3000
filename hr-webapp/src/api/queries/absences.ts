@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { apiClient, unwrap } from '../client'
 import type { components } from '../schema'
+import { authFetch, failure } from '../documents'
 
 export type Absence = components['schemas']['AbsenceResponse']
 export type AbsenceCreateRequest = components['schemas']['AbsenceCreateRequest']
@@ -43,6 +44,51 @@ export function useEmployeeAbsencesQuery(employeeId: number) {
     queryFn: async () =>
       unwrap(
         await apiClient.GET('/employees/{employee_id}/absences', {
+          params: { path: { employee_id: employeeId } },
+        }),
+      ),
+  })
+}
+
+/** Nachweis (z. B. AU-Bescheinigung) zu einer Abwesenheit hochladen – landet in der Personalakte. */
+export function useUploadAbsenceCertificateMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ absenceId, file }: { absenceId: number; file: File }) => {
+      const form = new FormData()
+      form.append('file', file)
+      const response = await authFetch(`/api/absences/${absenceId}/certificate`, { method: 'POST', body: form })
+      if (!response.ok) throw await failure(response, 'Upload fehlgeschlagen.')
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'absences'] })
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'documents'] })
+    },
+  })
+}
+
+/** Wer aus dem Team im Zeitraum abwesend ist (Mitarbeiter: nur mit Einstellung, ohne Art). */
+export function useTeamOverlapsQuery(employeeId: number, from: string, to: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['employees', employeeId, 'team-overlaps', from, to],
+    enabled: enabled && Boolean(from) && Boolean(to) && from <= to,
+    queryFn: async () =>
+      unwrap(
+        await apiClient.GET('/employees/{employee_id}/team-overlaps', {
+          params: { path: { employee_id: employeeId }, query: { from, to } },
+        }),
+      ),
+  })
+}
+
+/** Wer als Vertretung infrage kommt (aktive Kolleginnen und Kollegen, nur Namen). */
+export function useSubstituteCandidatesQuery(employeeId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['employees', employeeId, 'substitute-candidates'],
+    enabled,
+    queryFn: async () =>
+      unwrap(
+        await apiClient.GET('/employees/{employee_id}/substitute-candidates', {
           params: { path: { employee_id: employeeId } },
         }),
       ),

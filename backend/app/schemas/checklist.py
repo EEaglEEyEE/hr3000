@@ -1,15 +1,32 @@
 from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.checklist import ChecklistKind, ChecklistRole
 
 
+ChecklistAction = Literal["TASK", "UPLOAD_DOCUMENT", "FILL_DATA", "SEND_EMAIL"]
+
+
 class TemplateItemInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+    # Bei SEND_EMAIL der Text der E-Mail (Platzhalter wie in Dokumentvorlagen)
     description: str | None = Field(default=None, max_length=500)
     responsible: ChecklistRole = ChecklistRole.HR
     due_offset_days: int = Field(default=0, ge=-365, le=365)
+    action: ChecklistAction = "TASK"
+    action_category_id: int | None = None
+
+    @model_validator(mode="after")
+    def _action(self) -> "TemplateItemInput":
+        if self.action in ("UPLOAD_DOCUMENT", "FILL_DATA") and self.responsible != ChecklistRole.EMPLOYEE:
+            raise ValueError("Hochladen und Daten ausfüllen erledigt die Person selbst (zuständig: Mitarbeiter).")
+        if self.action == "UPLOAD_DOCUMENT" and self.action_category_id is None:
+            raise ValueError("Für „Dokument hochladen“ bitte eine Kategorie wählen.")
+        if self.action == "SEND_EMAIL" and not (self.description or "").strip():
+            raise ValueError("Für „E-Mail senden“ bitte den Text angeben.")
+        return self
 
 
 class TemplateItemResponse(TemplateItemInput):
@@ -40,7 +57,7 @@ class TemplateResponse(BaseModel):
 
 class ChecklistStartRequest(BaseModel):
     template_id: int
-    # Standard: Eintrittsdatum (Onboarding) bzw. Austrittsdatum (Offboarding), sonst heute.
+    # Standard: Anstelldatum (Onboarding) bzw. Austrittsdatum (Offboarding), sonst heute.
     anchor_date: date | None = None
 
 
@@ -56,6 +73,8 @@ class ChecklistItemResponse(BaseModel):
     done: bool
     done_at: datetime | None
     note: str | None
+    action: str = "TASK"
+    action_category_id: int | None = None
 
 
 class ChecklistResponse(BaseModel):

@@ -9,7 +9,7 @@ import {
   useUpdateChecklistItemMutation,
 } from '../../api/queries/checklists'
 import { formatDate } from '../../lib/format'
-import { CHECKLIST_KIND_LABELS, CHECKLIST_ROLE_LABELS } from '../../lib/labels'
+import { CHECKLIST_KIND_LABELS, CHECKLIST_ACTION_LABELS, CHECKLIST_ROLE_LABELS } from '../../lib/labels'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -43,7 +43,7 @@ export function EmployeeChecklistsTab({ employeeId }: { employeeId: number }) {
         <div className="w-72">
           <Select value={templateId} onValueChange={setTemplateId}>
             <SelectTrigger>
-              <SelectValue placeholder={templates.length ? 'Vorlage wählen…' : 'Keine Vorlagen (siehe „Checklisten“)'} />
+              <SelectValue placeholder={templates.length ? 'Vorlage wählen…' : 'Keine Vorlagen (siehe „On- & Offboarding“)'} />
             </SelectTrigger>
             <SelectContent>
               {templates.map((t) => (
@@ -62,11 +62,11 @@ export function EmployeeChecklistsTab({ employeeId }: { employeeId: number }) {
           disabled={!templateId || start.isPending}
           onClick={() => void run(() => start.mutateAsync({ templateId: Number(templateId), anchorDate }))}
         >
-          Checkliste starten
+          Vorlage zuweisen
         </Button>
       </div>
       {message && <p className="text-sm text-red-600">{message}</p>}
-      {checklistsQuery.data?.length === 0 && <p className="text-slate-500">Noch keine Checklisten für diesen Mitarbeiter.</p>}
+      {checklistsQuery.data?.length === 0 && <p className="text-slate-500">Noch kein On- oder Offboarding für diesen Mitarbeiter.</p>}
       {checklistsQuery.data?.map((checklist) => {
         const doneCount = checklist.items.filter((i) => i.done).length
         return (
@@ -83,9 +83,9 @@ export function EmployeeChecklistsTab({ employeeId }: { employeeId: number }) {
               <Button
                 variant="ghost"
                 size="icon"
-                title="Checkliste löschen"
+                title="On-/Offboarding löschen"
                 onClick={() => {
-                  if (window.confirm('Checkliste wirklich löschen?')) void run(() => remove.mutateAsync(checklist.id))
+                  if (window.confirm('On-/Offboarding wirklich löschen?')) void run(() => remove.mutateAsync(checklist.id))
                 }}
               >
                 <Trash2 className="h-4 w-4 text-red-600" />
@@ -103,7 +103,9 @@ export function EmployeeChecklistsTab({ employeeId }: { employeeId: number }) {
                   <div className="flex-1">
                     <p className={item.done ? 'text-slate-400 line-through' : 'text-slate-900'}>{item.title}</p>
                     <p className="text-xs text-slate-500">
-                      {CHECKLIST_ROLE_LABELS[item.responsible]} · fällig {formatDate(item.due_date)}
+                      {CHECKLIST_ROLE_LABELS[item.responsible]}
+                      {item.action && item.action !== 'TASK' && ` · ${CHECKLIST_ACTION_LABELS[item.action]}`} · fällig{' '}
+                      {formatDate(item.due_date)}
                       {!item.done && item.due_date < today && <span className="ml-1 font-medium text-red-600">überfällig</span>}
                       {item.note && ` · ${item.note}`}
                     </p>

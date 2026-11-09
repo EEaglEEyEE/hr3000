@@ -82,7 +82,7 @@ export function EmployeeBulkImportPage() {
             Spalten: <code className="rounded bg-slate-100 px-1">{OPTIONAL_COLUMNS.join(', ')}</code> (Aktiv:
             ja/nein, Standardwert ja; Datumsfelder im Format JJJJ-MM-TT; Arbeitszeitmodell: Wochenstunden z. B. „38,5“
             und Arbeitstage z. B. „Mo-Fr“ oder „Mo,Mi,Fr“, oder für Teilzeit Tagesstunden z. B. „Mo:8,Di:8,Mi:4.5“; nur Wochenstunden ohne Arbeitstage = flexibel ohne feste Tage; Arbeitstage „nach Aufwand“ = Aushilfe ohne Soll, optional mit Monatsgrenze in Stunden – gilt ab
-            Eintrittsdatum).
+            Anstelldatum).
           </p>
         </div>
 

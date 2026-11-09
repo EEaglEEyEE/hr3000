@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_super_admin_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, Employee, HrRole, HrUser, Tenant
+from app.models import Account, AuditAction, Employee, HrRole, Tenant
 from app.schemas.tenant import (
     TenantAdminEmailUpdateRequest,
     TenantAdminEmailUpdateResponse,
@@ -28,14 +28,14 @@ from app.services.tenant_provisioning import provision_tenant
 router = APIRouter(tags=["tenants"])
 
 
-async def _get_oldest_tenant_admin(db: AsyncSession, tenant_id: int) -> HrUser:
+async def _get_oldest_tenant_admin(db: AsyncSession, tenant_id: int) -> Account:
     """Es gibt aktuell keine Nutzerverwaltung pro Mandant, daher wirken
     admin-email-Änderung und Passwort-Reset auf den ältesten ADMIN-Account
     des Mandanten (in aller Regel der Erst-Admin aus create_tenant)."""
     result = await db.execute(
-        select(HrUser)
-        .where(HrUser.tenant_id == tenant_id, HrUser.role == HrRole.ADMIN)
-        .order_by(HrUser.id.asc())
+        select(Account)
+        .where(Account.tenant_id == tenant_id, Account.role == HrRole.ADMIN, Account.email.is_not(None))
+        .order_by(Account.id.asc())
         .limit(1)
     )
     admin = result.scalar_one_or_none()
@@ -190,14 +190,13 @@ async def update_tenant_admin_email(
 
     # tenant_id ist bewusst das Ziel-Mandant (nicht actor.tenant_id, das beim
     # Super-Admin None ist) – der Eintrag gehört fachlich zum betroffenen
-    # Mandanten, damit dessen Admin ihn im eigenen Audit-Log sieht.
+    # Mandanten, damit dessen Admin ihn im eigenen Audit-Protokoll sieht.
     log_action(
         db,
         tenant_id=tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.TENANT_ADMIN_EMAIL_CHANGED,
-        entity_type="hr_user",
+        entity_type="account",
         entity_id=admin.id,
         detail=f"{old_email} -> {payload.new_email}",
     )
@@ -226,8 +225,7 @@ async def cancel_tenant(
         log_action(
             db,
             tenant_id=tenant_id,
-            actor_hr_user_id=actor.audit_hr_user_id,
-            actor_employee_id=actor.audit_employee_id,
+            actor_account_id=actor.account_id,
             action=AuditAction.SETTINGS_CHANGED,
             entity_type="tenant",
             entity_id=tenant_id,
@@ -251,8 +249,7 @@ async def revoke_tenant_cancellation(
         log_action(
             db,
             tenant_id=tenant_id,
-            actor_hr_user_id=actor.audit_hr_user_id,
-            actor_employee_id=actor.audit_employee_id,
+            actor_account_id=actor.account_id,
             action=AuditAction.SETTINGS_CHANGED,
             entity_type="tenant",
             entity_id=tenant_id,

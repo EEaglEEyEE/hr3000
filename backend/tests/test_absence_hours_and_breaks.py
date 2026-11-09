@@ -8,7 +8,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BreakRule, Employee, HrRole, HrUser, Location
+from app.models import BreakRule, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 from app.services.period_service import build_month_report
 
@@ -22,9 +22,9 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, model: dict | No
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Hanna", last_name="Home", employee_number="H1")
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     if model is not False:
         r = await client.put(

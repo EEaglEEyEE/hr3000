@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from app.config import settings
-from app.models import Base, EmployeeDocument, HrRole, HrUser, Tenant
+from app.models import Base, EmployeeDocument, HrRole, Account, Tenant
 from app.services.auth_service import hash_password
 from app.services.tenant_lifecycle import (
     PLATFORM_TABLES,
@@ -32,13 +32,13 @@ def _platform(monkeypatch, tmp_path):
 
 
 async def _admin_token(client, host: dict, email: str, password: str = "sehr-geheim-123") -> dict:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": password}, headers=host)
+    response = await client.post("/auth/login", json={"email": email, "password": password}, headers=host)
     assert response.status_code == 200, response.text
     return {**host, "Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 async def _setup_two_tenants(client, db_session) -> tuple[dict, dict, int]:
-    db_session.add(HrUser(email="a@musterfirma.example", password_hash=hash_password("sehr-geheim-123"), role=HrRole.ADMIN))
+    db_session.add(Account(email="a@musterfirma.example", password_hash=hash_password("sehr-geheim-123"), role=HrRole.ADMIN))
     await db_session.commit()
     b = await provision_tenant(
         db_session, subdomain="zweite", name="Zweite GmbH", admin_email="b@zweite.example", admin_password="sehr-geheim-123"
@@ -163,7 +163,7 @@ async def test_admin_cancels_and_revokes(client, db_session):
     assert again["deletion_due_on"] == body["deletion_due_on"]
     # Bis zur Löschung normal nutzbar (Export!).
     assert (await client.get("/employees", headers=a_headers)).status_code == 200
-    # Audit-Log vermerkt es.
+    # Audit-Protokoll vermerkt es.
     audit = (await client.get("/audit-log", headers=a_headers)).json()
     entries = audit["items"] if isinstance(audit, dict) else audit
     assert any("Gekündigt zum" in (e.get("detail") or "") for e in entries)
@@ -174,7 +174,7 @@ async def test_admin_cancels_and_revokes(client, db_session):
 
 async def test_only_admins_may_cancel(client, db_session):
     await _setup_two_tenants(client, db_session)
-    db_session.add(HrUser(email="hr@musterfirma.example", password_hash=hash_password("sehr-geheim-123"), role=HrRole.HR))
+    db_session.add(Account(email="hr@musterfirma.example", password_hash=hash_password("sehr-geheim-123"), role=HrRole.HR))
     await db_session.commit()
     hr = await _admin_token(client, A_HOST, "hr@musterfirma.example")
     response = await client.post("/account/cancel", json={"confirm_subdomain": "musterfirma"}, headers=hr)
@@ -248,7 +248,7 @@ async def test_purge_tool_dry_run_and_run(client, db_session, monkeypatch, capsy
 
 
 async def _super_admin(client, db_session) -> dict:
-    db_session.add(HrUser(tenant_id=None, email="chef@example.com", password_hash=hash_password("sehr-geheim-123"), role=HrRole.SUPER_ADMIN))
+    db_session.add(Account(tenant_id=None, email="chef@example.com", password_hash=hash_password("sehr-geheim-123"), role=HrRole.SUPER_ADMIN))
     await db_session.commit()
     return await _admin_token(client, {"Host": settings.super_admin_hostname}, "chef@example.com")
 

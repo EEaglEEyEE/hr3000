@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Compensation, ContractType, Employee, EmploymentContract, HrRole, HrUser, Location, PayType, PeriodClosure, PeriodStatus
+from app.models import Compensation, ContractType, Employee, EmploymentContract, HrRole, Account, Location, PayType, PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 
 PDF = b"%PDF-1.4\n%test\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
@@ -28,14 +28,14 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     )
     db_session.add_all([
         employee, supervisor_employee,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
     ])
     await db_session.commit()
     return employee, supervisor_employee, {
-        "hr": await _login(client, "/auth/hr/login", "hr@example.com"),
-        "admin": await _login(client, "/auth/hr/login", "admin@example.com"),
-        "sven": await _login(client, "/auth/employee/login", "sven@example.com"),
+        "hr": await _login(client, "/auth/login", "hr@example.com"),
+        "admin": await _login(client, "/auth/login", "admin@example.com"),
+        "sven": await _login(client, "/auth/login", "sven@example.com"),
     }
 
 

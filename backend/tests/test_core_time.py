@@ -9,7 +9,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, ShiftPlanEntry, ShiftTemplate
+from app.models import Employee, HrRole, Account, Location, ShiftPlanEntry, ShiftTemplate
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 
@@ -37,9 +37,9 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Paula", last_name="Pünktlich", employee_number="P1")
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     r = await client.put(
         f"/employees/{employee.id}/work-time-model",

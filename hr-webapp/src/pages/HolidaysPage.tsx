@@ -44,6 +44,7 @@ export function HolidaysPage() {
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
   const [createLocationIds, setCreateLocationIds] = useState<number[]>([])
+  const [halfDay, setHalfDay] = useState(false)
   const [editingHoliday, setEditingHoliday] = useState<Holiday | undefined>(undefined)
   const [error, setError] = useState<string | null>(null)
   const [importBundesland, setImportBundesland] = useState(USE_DEFAULT)
@@ -59,10 +60,12 @@ export function HolidaysPage() {
         date,
         name,
         location_ids: createLocationIds,
+        half_day: halfDay,
       })
       setDate('')
       setName('')
       setCreateLocationIds([])
+      setHalfDay(false)
     } catch (err) {
       setError(
         err instanceof ApiError && err.code === 'HOLIDAY_DATE_TAKEN'
@@ -99,7 +102,7 @@ export function HolidaysPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Feiertage</h1>
+          <h1 className="text-lg font-semibold text-slate-900">Feiertagskalender</h1>
           <p className="text-sm text-slate-500">
             Werkskalender: An diesen Tagen entfällt für alle Mitarbeiter das Soll, genau wie an einem
             Abwesenheitstag.
@@ -134,10 +137,10 @@ export function HolidaysPage() {
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-4">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex max-w-full flex-col gap-1.5">
           <Label>Standort</Label>
           <Select value={importLocation} onValueChange={setImportLocation}>
-            <SelectTrigger className="w-56">
+            <SelectTrigger className="w-56 max-w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -150,10 +153,10 @@ export function HolidaysPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex max-w-full flex-col gap-1.5">
           <Label>Bundesland</Label>
           <Select value={importBundesland} onValueChange={setImportBundesland}>
-            <SelectTrigger className="w-64">
+            <SelectTrigger className="w-64 max-w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -173,8 +176,9 @@ export function HolidaysPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button type="button" variant="outline" disabled={importHolidays.isPending} onClick={handleImport}>
-          <Wand2 className="h-4 w-4" />
+        {/* Darf umbrechen: neben Menü und Einstellungs-Navigation ist der Platz am Tablet knapp */}
+        <Button type="button" variant="outline" className="h-auto min-h-9 whitespace-normal py-1.5" disabled={importHolidays.isPending} onClick={handleImport}>
+          <Wand2 className="h-4 w-4 shrink-0" />
           {importHolidays.isPending ? 'Importiere…' : `Feiertage ${year} automatisch importieren`}
         </Button>
         {importResult && <p className="text-sm text-emerald-600">{importResult}</p>}
@@ -198,7 +202,10 @@ export function HolidaysPage() {
             {holidaysQuery.data.map((holiday) => (
               <TableRow key={holiday.id}>
                 <TableCell>{formatDate(holiday.date)}</TableCell>
-                <TableCell>{holiday.name}</TableCell>
+                <TableCell>
+                  {holiday.name}
+                  {holiday.half_day && <span className="ml-1.5 text-xs text-slate-500">(halber Tag)</span>}
+                </TableCell>
                 <TableCell>
                   {holiday.location_ids.length === 0 ? (
                     <Badge variant="info">Alle Standorte</Badge>
@@ -260,6 +267,10 @@ export function HolidaysPage() {
           <Label>Gilt für</Label>
           <LocationMultiSelect locations={locations} value={createLocationIds} onChange={setCreateLocationIds} />
         </div>
+        <label className="flex items-center gap-1.5 pb-2 text-sm" title="Halbes Soll an diesem Tag; Urlaub zählt dort als halber Tag (z. B. Heiligabend, Silvester).">
+          <input type="checkbox" checked={halfDay} onChange={(event) => setHalfDay(event.target.checked)} />
+          Halber Tag
+        </label>
         <Button type="submit" disabled={createHoliday.isPending}>
           <Plus className="h-4 w-4" />
           Feiertag hinzufügen

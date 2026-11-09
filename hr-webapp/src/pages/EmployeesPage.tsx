@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Upload } from 'lucide-react'
-import { useEmployeesQuery, type Employee, type HrRole } from '../api/queries/employees'
+import { useEmployeesQuery, type HrRole } from '../api/queries/employees'
+import { EMPLOYMENT_STATUS_LABELS } from '../lib/labels'
 import { PlanNotice } from '../components/plan/PlanNotice'
 import { useLocationsQuery } from '../api/queries/locations'
 import { useAuth } from '../auth/AuthContext'
@@ -16,7 +17,7 @@ const ALL_LOCATIONS = '__all__'
 
 const HR_ROLE_LABELS: Record<HrRole, string> = {
   HR: 'HR',
-  SUPERVISOR: 'Teamleiter/in',
+  SUPERVISOR: 'Führungskraft',
   ADMIN: 'Admin',
   SUPER_ADMIN: 'Super-Admin',
 }
@@ -42,18 +43,11 @@ export function EmployeesPage() {
     locationId: locationFilter === ALL_LOCATIONS ? undefined : Number(locationFilter),
   })
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingEmployee, setEditingEmployee] = useState<Employee | undefined>(undefined)
 
   const locations = locationsQuery.data ?? []
   const locationNameById = new Map(locations.map((location) => [location.id, location.name]))
 
   function openCreateDialog() {
-    setEditingEmployee(undefined)
-    setDialogOpen(true)
-  }
-
-  function openEditDialog(employee: Employee) {
-    setEditingEmployee(employee)
     setDialogOpen(true)
   }
 
@@ -138,6 +132,11 @@ export function EmployeesPage() {
               <TableRow key={employee.id} className="cursor-pointer" onClick={() => navigate(`/employees/${employee.id}`)}>
                 <TableCell>
                   {employee.last_name}, {employee.first_name}
+                  {employee.employment_status && employee.employment_status !== 'ACTIVE' && (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                      {EMPLOYMENT_STATUS_LABELS[employee.employment_status]}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>{employee.employee_number}</TableCell>
                 <TableCell>{locationNameById.get(employee.location_id) ?? '–'}</TableCell>
@@ -162,7 +161,7 @@ export function EmployeesPage() {
                       size="sm"
                       onClick={(event) => {
                         event.stopPropagation()
-                        openEditDialog(employee)
+                        navigate(`/employees/${employee.id}?reiter=einstellungen`)
                       }}
                     >
                       Bearbeiten
@@ -182,12 +181,7 @@ export function EmployeesPage() {
         </Table>
       )}
 
-      <EmployeeFormDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        employee={editingEmployee}
-        locations={locations}
-      />
+      <EmployeeFormDialog open={dialogOpen} onOpenChange={setDialogOpen} locations={locations} />
     </div>
   )
 }

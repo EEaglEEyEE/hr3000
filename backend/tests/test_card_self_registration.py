@@ -3,8 +3,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditAction, AuditLogEntry, Device, Employee, HrRole, HrUser, Location
+from app.models import AuditAction, AuditLogEntry, Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
@@ -16,11 +17,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     no_pin = Employee(location_id=location.id, first_name="Nils", last_name="Ohne", employee_number="P2")
     owner = Employee(location_id=location.id, first_name="Olga", last_name="Owner", employee_number="P3", nfc_uid="aabbccdd")
     elsewhere = Employee(location_id=other_location.id, first_name="Fritz", last_name="Fern", employee_number="P4", pin_hash=hash_password("1234"))
-    device = Device(name="Tablet Eingang", location_id=location.id, device_token="tok-card-reg")
-    db_session.add_all([with_pin, no_pin, owner, elsewhere, device, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    device = Device(name="Tablet Eingang", location_id=location.id, token_hash=token_hash("tok-card-reg"))
+    db_session.add_all([with_pin, no_pin, owner, elsewhere, device, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     token = (await client.post("/auth/device/login", json={"device_token": "tok-card-reg"})).json()["access_token"]
-    admin = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    admin = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return with_pin, no_pin, elsewhere, {"Authorization": f"Bearer {token}"}, {"Authorization": f"Bearer {admin}"}
 
 

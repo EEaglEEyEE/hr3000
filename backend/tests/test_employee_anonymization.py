@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser, Location
+from app.models import HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -13,8 +13,8 @@ async def _create_location(db_session: AsyncSession) -> Location:
     return location
 
 
-async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=role)
+async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -22,7 +22,7 @@ async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN)
 
 
 async def _token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -117,14 +117,14 @@ async def test_hr_role_cannot_anonymize(client: AsyncClient, db_session: AsyncSe
     location = await _create_location(db_session)
     await _create_hr_user(db_session)
 
-    hr_user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+    hr_user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(hr_user)
     await db_session.commit()
 
     admin_token = await _token(client)
     employee_id = await _create_departed_employee(client, admin_token, location)
 
-    hr_login = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    hr_login = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     hr_token = hr_login.json()["access_token"]
 
     response = await client.post(

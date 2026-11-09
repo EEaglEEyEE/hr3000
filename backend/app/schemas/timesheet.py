@@ -44,6 +44,19 @@ class MonthlyCapRow(BaseModel):
     exceeded: bool
 
 
+class BalanceLimitRow(BaseModel):
+    """Überstundenkonto nahe an der Obergrenze (ab 90 %) oder unter der Untergrenze."""
+
+    employee_id: int
+    first_name: str
+    last_name: str
+    balance_minutes: int
+    limit_minutes: int
+    # MAX = Obergrenze, MIN = Untergrenze
+    kind: str
+    exceeded: bool
+
+
 class DayReviewRequest(BaseModel):
     note: str | None = Field(default=None, max_length=300)
 

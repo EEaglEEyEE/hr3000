@@ -163,8 +163,8 @@ export function BreakRulesPage() {
             <Label htmlFor="deduct_minutes">Pausenabzug (Minuten)</Label>
             <Input id="deduct_minutes" type="number" min={0} className="w-32" value={deductMinutes} onChange={(e) => setDeductMinutes(Number(e.target.value) || 0)} />
           </div>
-          <Button type="submit" disabled={createRule.isPending}>
-            <Plus className="h-4 w-4" />
+          <Button type="submit" className="h-auto min-h-9 whitespace-normal py-1.5" disabled={createRule.isPending}>
+            <Plus className="h-4 w-4 shrink-0" />
             Regel hinzufügen (ab {formatDate(validFrom)})
           </Button>
         </form>
@@ -215,8 +215,12 @@ export function BreakRulesPage() {
             <Label htmlFor="window_end">Pause bis</Label>
             <Input id="window_end" type="time" className="w-32" value={windowEnd} onChange={(e) => setWindowEnd(e.target.value)} />
           </div>
-          <Button type="submit" disabled={createRule.isPending || !(windowStart && windowEnd && windowStart < windowEnd)}>
-            <Plus className="h-4 w-4" />
+          <Button
+            type="submit"
+            className="h-auto min-h-9 whitespace-normal py-1.5"
+            disabled={createRule.isPending || !(windowStart && windowEnd && windowStart < windowEnd)}
+          >
+            <Plus className="h-4 w-4 shrink-0" />
             Pausenzeit hinzufügen (ab {formatDate(validFrom)})
           </Button>
         </form>

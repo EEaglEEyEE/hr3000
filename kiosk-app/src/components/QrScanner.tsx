@@ -20,7 +20,16 @@ export function isQrScanSupported(): boolean {
   return typeof window !== 'undefined' && !!detectorCtor() && !!navigator.mediaDevices?.getUserMedia
 }
 
-export function QrScanner({ onResult, onCancel }: { onResult: (value: string) => void; onCancel: () => void }) {
+export function QrScanner({
+  onResult,
+  onCancel,
+  facingMode = 'environment',
+}: {
+  onResult: (value: string) => void
+  onCancel: () => void
+  /** 'user' = Frontkamera (Mitarbeiter halten ihren QR-Code vors Tablet), sonst Rückkamera */
+  facingMode?: 'user' | 'environment'
+}) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,7 +43,7 @@ export function QrScanner({ onResult, onCancel }: { onResult: (value: string) =>
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
         if (!videoRef.current) return
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -78,8 +87,16 @@ export function QrScanner({ onResult, onCancel }: { onResult: (value: string) =>
   )
 }
 
-/** Token aus dem QR-Inhalt: entweder ein Kiosk-Link ".../#token=…" oder das reine Token. */
+/** Kopplungscode bzw. Token aus dem QR-Inhalt: Kiosk-Link oder der reine Wert. */
 export function tokenFromQr(value: string): string {
-  const match = /[#&]token=([^&]+)/.exec(value)
+  // ".../#pair=ABCD-EFGH" (einmaliger Kopplungscode, aktuell) oder ".../#token=…" (ältere QR-Codes)
+  const match = /[#&](?:token|pair)=([^&]+)/.exec(value)
   return (match ? decodeURIComponent(match[1]) : value).trim()
+}
+
+/** QR-Code eines Mitarbeiters („HR3000-CARD:<Chip-UID>“, in der HR-Webapp erzeugt) – gilt am Tablet
+ * wie ein vorgehaltener Chip. Liefert die UID oder null. */
+export function cardUidFromQr(value: string): string | null {
+  const match = /^HR3000-CARD:([0-9A-Fa-f:]{4,40})$/.exec(value.trim())
+  return match ? match[1] : null
 }

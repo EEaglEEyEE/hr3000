@@ -1,20 +1,20 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser
+from app.models import HrRole, Account
 from app.services.auth_service import hash_password
 
 
-async def _create_admin(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
     return user
 
 
-async def _create_hr_staff(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="staff@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_staff(db_session: AsyncSession) -> Account:
+    user = Account(email="staff@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -22,7 +22,7 @@ async def _create_hr_staff(db_session: AsyncSession) -> HrUser:
 
 
 async def _token(client: AsyncClient, email: str) -> str:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -48,7 +48,7 @@ async def test_admin_can_create_and_list_hr_users(
     assert len(list_response.json()) == 2  # admin + neu angelegt
 
     login_response = await client.post(
-        "/auth/hr/login", json={"email": "new-hr@example.com", "password": "pw123456"}
+        "/auth/login", json={"email": "new-hr@example.com", "password": "pw123456"}
     )
     assert login_response.status_code == 200
 

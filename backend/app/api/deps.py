@@ -6,90 +6,70 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.errors import AppError
-from app.models import Device, Employee, HrRole, HrUser
-from app.services.auth_service import decode_token, password_fingerprint
+from app.models import Account, Device, Employee, HrRole
+from app.services.auth_service import account_can_sign_in, decode_token, session_fingerprint
 
 bearer_scheme = HTTPBearer()
 
 
 @dataclass
 class Actor:
-    """Wer die Anfrage stellt: Kiosk-Gerät, HR-User (eigener Account) oder
-    Mitarbeiter (Self-Service, ggf. mit hr_role für vollen HR-Zugriff über
-    dieselben Zugangsdaten)."""
+    """Wer die Anfrage stellt: ein Tablet (device) oder eine Person mit Konto (account). Das Konto hat
+    ggf. eine Verwaltungsrolle und ggf. einen verknüpften Mitarbeiter („Mein Bereich“)."""
 
     device: Device | None = None
-    hr_user: HrUser | None = None
-    employee: Employee | None = None
+    account: Account | None = None
+
+    @property
+    def employee(self) -> Employee | None:
+        return self.account.employee if self.account is not None else None
+
+    @property
+    def role(self) -> HrRole | None:
+        return self.account.role if self.account is not None else None
 
     @property
     def tenant_id(self) -> int | None:
-        """None nur für den plattformweiten Super-Admin (HrUser.tenant_id
-        ist dann ebenfalls None), siehe app/middleware/tenant.py."""
+        """None nur für den plattformweiten Super-Admin, siehe app/middleware/tenant.py."""
         if self.device is not None:
             return self.device.tenant_id
-        if self.hr_user is not None:
-            return self.hr_user.tenant_id
-        if self.employee is not None:
-            return self.employee.tenant_id
+        if self.account is not None:
+            return self.account.tenant_id
         return None
 
     @property
+    def account_id(self) -> int | None:
+        """Für alle „wer war das“-Spalten (*_account_id)."""
+        return self.account.id if self.account is not None else None
+
+    @property
     def is_super_admin(self) -> bool:
-        return self.hr_user is not None and self.hr_user.role == HrRole.SUPER_ADMIN
+        return self.role == HrRole.SUPER_ADMIN
 
     @property
     def is_hr_level(self) -> bool:
-        return self.hr_user is not None or (self.employee is not None and self.employee.hr_role is not None)
+        return self.role is not None
 
     @property
     def is_full_hr_level(self) -> bool:
         """ADMIN/HR/SUPER_ADMIN – im Gegensatz zu SUPERVISOR nicht auf
         eigene Teams beschränkt, siehe app/services/team_scope_service.py."""
-        role = self.hr_user.role if self.hr_user is not None else None
-        if self.employee is not None:
-            role = self.employee.hr_role
-        return role is not None and role != HrRole.SUPERVISOR
+        return self.role is not None and self.role != HrRole.SUPERVISOR
 
     @property
     def is_supervisor_level(self) -> bool:
-        role = self.hr_user.role if self.hr_user is not None else None
-        if self.employee is not None:
-            role = self.employee.hr_role
-        return role == HrRole.SUPERVISOR
+        return self.role == HrRole.SUPERVISOR
 
     @property
     def is_admin_level(self) -> bool:
-        if self.hr_user is not None:
-            return self.hr_user.role == HrRole.ADMIN
-        if self.employee is not None:
-            return self.employee.hr_role == HrRole.ADMIN
-        return False
+        return self.role == HrRole.ADMIN
 
     @property
     def has_payroll_access(self) -> bool:
         """Berechtigung „Vergütung & Lohn-Export“: Admins immer, volle HR nur mit Freigabe."""
         if self.is_admin_level:
             return True
-        if not self.is_full_hr_level:
-            return False
-        if self.hr_user is not None:
-            return bool(self.hr_user.payroll_access)
-        return self.employee is not None and bool(self.employee.hr_payroll_access)
-
-    @property
-    def audit_hr_user_id(self) -> int | None:
-        """Für created_by-Spalten: nur gesetzt, wenn ein klassischer HrUser-Account
-        agiert hat."""
-        return self.hr_user.id if self.hr_user is not None else None
-
-    @property
-    def audit_employee_id(self) -> int | None:
-        """Für created_by_employee_id-Spalten: nur gesetzt, wenn ein Mitarbeiter
-        mit hr_role (statt eines separaten HrUser-Accounts) agiert hat."""
-        if self.employee is not None and self.employee.hr_role is not None:
-            return self.employee.id
-        return None
+        return self.is_full_hr_level and bool(self.account.payroll_access)
 
 
 def _require_tenant_context(actor: Actor) -> None:
@@ -121,30 +101,21 @@ async def get_current_actor(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Actor:
-    """Akzeptiert Device-, HR-Access- und Mitarbeiter-Token (Self-Service oder
-    mit hr_role) – z.B. für POST /punches, GET /overtime-balance."""
+    """Akzeptiert Tablet- und Konto-Token – z.B. für POST /punches, GET /overtime-balance."""
     payload = decode_token(credentials.credentials)
     token_type = payload.get("type")
 
     if token_type == "device":
         device = await db.get(Device, int(payload["sub"]))
-        if device is None:
+        # tv: nach neuem Koppeln bzw. „Kopplung aufheben“ sind ältere Tablet-Sitzungen ungültig
+        if device is None or payload.get("tv") != device.token_hash[:16]:
             raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
         actor = Actor(device=device)
-    elif token_type == "access":
-        user = await db.get(HrUser, int(payload["sub"]))
-        if user is None or payload.get("pwv") != password_fingerprint(user.password_hash):
+    elif token_type == "account_access":
+        account = await db.get(Account, int(payload["sub"]))
+        if account is None or not account_can_sign_in(account) or payload.get("pwv") != session_fingerprint(account):
             raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
-        actor = Actor(hr_user=user)
-    elif token_type == "employee_access":
-        employee = await db.get(Employee, int(payload["sub"]))
-        if (
-            employee is None
-            or not employee.active
-            or payload.get("pwv") != password_fingerprint(employee.password_hash)
-        ):
-            raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
-        actor = Actor(employee=employee)
+        actor = Actor(account=account)
     else:
         raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
 
@@ -157,10 +128,7 @@ async def get_current_hr_principal(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Actor:
-    """Für schreibende/verwaltende HR-Aktionen: HrUser-Account ODER Mitarbeiter
-    mit hr_role. Ersetzt die frühere reine HrUser-Prüfung, damit ein Mitarbeiter
-    mit erteilter HR-Berechtigung dieselben Endpoints mit seinem einen Login
-    nutzen kann."""
+    """Für schreibende/verwaltende HR-Aktionen: Konto mit Verwaltungsrolle."""
     actor = await get_current_actor(request, credentials, db)
     if not actor.is_hr_level:
         raise AppError(403, "HR_PERMISSION_REQUIRED", "Keine HR-Berechtigung.")
@@ -173,9 +141,8 @@ async def get_current_admin_principal(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> Actor:
-    """Für Admin-only Aktionen (z.B. HR-Berechtigungen vergeben): HrUser mit
-    role=ADMIN ODER Mitarbeiter mit hr_role=ADMIN. Bewusst getrennt vom
-    plattformweiten Super-Admin, siehe get_current_super_admin_principal."""
+    """Für Admin-only Aktionen (z.B. HR-Berechtigungen vergeben): Konto mit Rolle ADMIN. Bewusst
+    getrennt vom plattformweiten Super-Admin, siehe get_current_super_admin_principal."""
     actor = await get_current_actor(request, credentials, db)
     if not actor.is_admin_level:
         raise AppError(403, "ADMIN_PERMISSION_REQUIRED", "Nur für Administratoren.")
@@ -245,8 +212,7 @@ async def get_current_hr_or_self(
     db: AsyncSession = Depends(get_db),
 ) -> Actor:
     """Für read-only Ansichten, die sowohl HR-Level-Akteure (jeder Mitarbeiter)
-    als auch ein Mitarbeiter per Self-Service-Login (nur eigene Daten) sehen
-    dürfen."""
+    als auch der Mitarbeiter selbst (nur eigene Daten) sehen dürfen."""
     actor = await get_current_actor(request, credentials, db)
 
     if actor.device is not None:

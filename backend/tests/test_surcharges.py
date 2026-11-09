@@ -6,7 +6,7 @@ from datetime import date, datetime, time
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Compensation, Employee, Holiday, HrRole, HrUser, Location, PayType, SurchargeKind, SurchargeRule
+from app.models import Compensation, Employee, Holiday, HrRole, Account, Location, PayType, SurchargeKind, SurchargeRule
 from app.services.auth_service import hash_password
 from app.services.surcharge_service import classify_intervals
 
@@ -59,14 +59,14 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     employee = Employee(location_id=location.id, first_name="Erika", last_name="Muster", employee_number="E1")
     db_session.add_all([
         employee,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
     ])
     await db_session.commit()
     await db_session.refresh(employee)
     tokens = {}
     for name in ("hr", "admin"):
-        tokens[name] = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
+        tokens[name] = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
     return employee, tokens
 
 

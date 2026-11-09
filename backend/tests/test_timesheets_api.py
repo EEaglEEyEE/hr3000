@@ -11,12 +11,13 @@ from app.models import (
     Employee,
     EmployeeDefaultShift,
     HrRole,
-    HrUser,
+    Account,
     Location,
     ShiftTemplate,
 )
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
+from app.services.pairing_service import token_hash
 
 _WEEKDAYS_MO_FR = 0b0011111
 
@@ -54,7 +55,7 @@ async def _create_employee(db_session: AsyncSession, location: Location) -> Empl
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
@@ -77,8 +78,8 @@ async def _assign_default_shift(db_session: AsyncSession, employee: Employee, ta
     await db_session.commit()
 
 
-async def _create_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -91,7 +92,7 @@ async def _device_token(client: AsyncClient, raw_token: str) -> str:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -334,7 +335,7 @@ async def test_timesheet_reports_absence_days_with_type(
             type=AbsenceType.VACATION,
             date_from=date(2026, 8, 10),
             date_to=date(2026, 8, 10),
-            created_by=hr_user.id,
+            created_by_account_id=hr_user.id,
         )
     )
     await db_session.commit()

@@ -40,6 +40,8 @@ export function dashboard(overrides: Partial<DashboardResponse> = {}): Dashboard
     horizon_date: '2026-11-20',
     portal_punching_enabled: false,
     absence_requests_enabled: true,
+    team_calendar_for_employees: false,
+    org_chart_for_employees: false,
     shift_planning_enabled: false,
     ...overrides,
   }
@@ -68,12 +70,14 @@ export function hrTodoRoutes({
   pendingAbsences = [] as unknown[],
   corrections = [] as unknown[],
   caps = [] as Schemas['MonthlyCapRow'][],
+  limits = [] as Schemas['BalanceLimitRow'][],
 } = {}): Record<string, unknown> {
   return {
     'GET /timesheet/open-days': openDays,
     'GET /absences/pending': pendingAbsences,
     'GET /punch-correction-requests': corrections,
     'GET /timesheet/monthly-caps': caps,
+    'GET /timesheet/balance-limits': limits,
   }
 }
 
@@ -128,6 +132,15 @@ export function settings(overrides: Partial<Schemas['SettingsResponse']> = {}): 
     portal_punching_enabled: false,
     absence_requests_enabled: true,
     absence_four_eyes: false,
+    absence_overlaps_for_employees: false,
+    overtime_limit_max_hours: null,
+    overtime_limit_min_hours: null,
+    reminders_enabled: false,
+    reduce_vacation_parental_leave: false,
+    seniority_leave_rules: [],
+    team_calendar_for_employees: false,
+    org_chart_for_employees: false,
+    two_factor_roles: [],
     kiosk_greeting: null,
     kiosk_sort: 'LAST_NAME',
     kiosk_theme: 'DARK',
@@ -135,4 +148,34 @@ export function settings(overrides: Partial<Schemas['SettingsResponse']> = {}): 
     kiosk_screen_on_until: null,
     ...overrides,
   }
+}
+
+export function employee(overrides: Partial<Schemas['EmployeeResponse']> = {}): Schemas['EmployeeResponse'] {
+  return {
+    id: 5,
+    location_id: 1,
+    first_name: 'Erika',
+    last_name: 'Muster',
+    employee_number: '1001',
+    active: true,
+    login_email: null,
+    two_factor_enabled: false,
+    hr_role: null,
+    hr_payroll_access: false,
+    auto_break_enabled: true,
+    has_pin: false,
+    nfc_uid: null,
+    hire_date: null,
+    termination_date: null,
+    birth_date: null,
+    show_birthday_in_calendar: true,
+    team_id: null,
+    department_id: null,
+    position: null,
+    supervisor_id: null,
+    employment_status: 'ACTIVE',
+    cost_centers: [],
+    anonymized_at: null,
+    ...overrides,
+  } as Schemas['EmployeeResponse']
 }

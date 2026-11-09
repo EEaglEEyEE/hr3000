@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.errors import AppError
-from app.models import AbsenceType, AbsenceTypeDefinition
+from app.models import UNPAID_CATEGORIES, AbsenceType, AbsenceTypeDefinition
 
 # Anzeigename je Kategorie (für Abwesenheiten ohne eigene Art)
 CATEGORY_LABELS: dict[AbsenceType, str] = {
@@ -14,6 +14,10 @@ CATEGORY_LABELS: dict[AbsenceType, str] = {
     AbsenceType.WORK_TIME: "Arbeitszeit",
     AbsenceType.PUBLIC_HOLIDAY: "Feiertag",
     AbsenceType.CHILD_SICK: "Kind krank",
+    AbsenceType.PARENTAL_LEAVE: "Mutterschutz/Elternzeit",
+    AbsenceType.SHORT_TIME_WORK: "Kurzarbeit",
+    AbsenceType.UNEXCUSED: "Unentschuldigt",
+    AbsenceType.CARE_LEAVE: "Pflege von Angehörigen",
 }
 
 def format_days(days: float) -> str:
@@ -86,7 +90,7 @@ def absence_day_values(category: AbsenceType, target_minutes: int | None, credit
     """(Ist, Soll) eines Abwesenheitstags ohne Stempelung je Kategorie:
     bezahlte Abwesenheit = Soll gutgeschrieben, unbezahlt = Soll entfällt,
     Freizeitausgleich = Soll bleibt ohne Gutschrift (Saldo sinkt)."""
-    if category == AbsenceType.UNPAID:
+    if category in UNPAID_CATEGORIES:
         return 0, (0 if target_minutes is not None else None)
     if category == AbsenceType.TIME_OFF_IN_LIEU:
         return 0, target_minutes

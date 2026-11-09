@@ -33,6 +33,66 @@ export interface UploadDocumentInput {
   employeeVisible: boolean
   confidential: boolean
   retentionUntil: string
+  /** Eigene Kategorie (dann category = OTHER) */
+  categoryId?: number | null
+}
+
+export type DocumentCategoryDefinition = components['schemas']['DocumentCategoryResponse']
+
+export function useDocumentCategoriesQuery(enabled = true) {
+  return useQuery({
+    queryKey: ['document-categories'],
+    enabled,
+    queryFn: async () => unwrap(await apiClient.GET('/document-categories')),
+  })
+}
+
+export function useCreateDocumentCategoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: components['schemas']['DocumentCategoryRequest']) =>
+      unwrap(await apiClient.POST('/document-categories', { body: payload })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['document-categories'] }),
+  })
+}
+
+export function useUpdateDocumentCategoryMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id: number; payload: components['schemas']['DocumentCategoryUpdateRequest'] }) =>
+      unwrap(await apiClient.PATCH('/document-categories/{category_id}', { params: { path: { category_id: id } }, body: payload })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['document-categories'] }),
+  })
+}
+
+/** Mitarbeiter lädt selbst in eine freigegebene Kategorie hoch („Mein Bereich“ → „Dokumente“). */
+export function useUploadOwnDocumentMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      file,
+      categoryId,
+      title,
+      checklistItemId,
+    }: {
+      file: File
+      categoryId: number
+      title: string
+      checklistItemId?: number
+    }) => {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('category_id', String(categoryId))
+      form.append('title', title)
+      if (checklistItemId) form.append('checklist_item_id', String(checklistItemId))
+      const response = await authFetch('/api/me/documents', { method: 'POST', body: form })
+      if (!response.ok) throw await failure(response, 'Upload fehlgeschlagen.')
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['my-checklist-items'] })
+    },
+  })
 }
 
 export function useDocumentsQuery(employeeId: number) {
@@ -54,6 +114,7 @@ export function useUploadDocumentMutation(employeeId: number) {
       form.append('employee_visible', String(input.employeeVisible))
       form.append('confidential', String(input.confidential))
       if (input.retentionUntil) form.append('retention_until', input.retentionUntil)
+      if (input.categoryId) form.append('category_id', String(input.categoryId))
       const response = await authFetch(`/api/employees/${employeeId}/documents`, { method: 'POST', body: form })
       if (!response.ok) throw await failure(response, 'Upload fehlgeschlagen.')
     },
@@ -123,4 +184,56 @@ export async function openPdfInNewTab(path: string): Promise<void> {
     win?.close()
     throw err
   }
+}
+
+export type DocumentTemplate = components['schemas']['DocumentTemplateResponse']
+export type DocumentTemplateRequest = components['schemas']['DocumentTemplateRequest']
+
+export function useDocumentTemplatesQuery() {
+  return useQuery({
+    queryKey: ['document-templates'],
+    queryFn: async () => unwrap(await apiClient.GET('/document-templates')),
+  })
+}
+
+export function usePlaceholdersQuery() {
+  return useQuery({
+    queryKey: ['document-template-placeholders'],
+    queryFn: async () => unwrap(await apiClient.GET('/document-templates/placeholders')),
+    staleTime: Infinity,
+  })
+}
+
+export function useSaveDocumentTemplateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, payload }: { id?: number; payload: DocumentTemplateRequest & { archived?: boolean } }) =>
+      id
+        ? unwrap(await apiClient.PATCH('/document-templates/{template_id}', { params: { path: { template_id: id } }, body: { ...payload, clear_category_id: payload.category_id == null } }))
+        : unwrap(await apiClient.POST('/document-templates', { body: payload })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['document-templates'] }),
+  })
+}
+
+export function useGenerateFromTemplateMutation(employeeId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ templateId, title }: { templateId: number; title?: string }) =>
+      unwrap(
+        await apiClient.POST('/employees/{employee_id}/documents/from-template', {
+          params: { path: { employee_id: employeeId } },
+          body: { template_id: templateId, title: title || null },
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees', employeeId, 'documents'] }),
+  })
+}
+
+/** Vorschau als PDF in einem neuen Tab (ohne Ablage). */
+export async function previewTemplate(employeeId: number, templateId: number): Promise<void> {
+  const response = await authFetch(`/api/employees/${employeeId}/document-templates/${templateId}/preview`)
+  if (!response.ok) throw await failure(response, 'Vorschau fehlgeschlagen.')
+  const url = URL.createObjectURL(await response.blob())
+  window.open(url, '_blank', 'noopener')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }

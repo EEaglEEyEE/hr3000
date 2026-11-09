@@ -7,7 +7,7 @@ import { MigrationValuesSection } from './MigrationValuesSection'
 
 const preview = {
   applied: false,
-  rows: [{ row: 2, employee_id: 1, employee_number: '100', name: 'Alt, Anna', changes: ['Gleitzeit-Übertrag +12,5 h', 'Urlaubsanspruch 30 Tage'] }],
+  rows: [{ row: 2, employee_id: 1, employee_number: '100', name: 'Alt, Anna', changes: ['Überstunden-Übertrag +12,5 h', 'Urlaubsanspruch 30 Tage'] }],
   errors: [{ row: 3, message: "Personalnummer '999' nicht gefunden." }],
 }
 
@@ -31,7 +31,7 @@ describe('Werte aus dem Altsystem', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
 
     expect(await screen.findByText(/Vorschau: 1 Mitarbeiter/)).toBeInTheDocument()
-    expect(screen.getByText('Gleitzeit-Übertrag +12,5 h · Urlaubsanspruch 30 Tage')).toBeInTheDocument()
+    expect(screen.getByText('Überstunden-Übertrag +12,5 h · Urlaubsanspruch 30 Tage')).toBeInTheDocument()
     expect(screen.getByText("Personalnummer '999' nicht gefunden.")).toBeInTheDocument()
     const firstBody = fetchMock.mock.calls[0][1]?.body as FormData
     expect(firstBody.get('apply')).toBe('false')

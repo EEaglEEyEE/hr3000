@@ -5,14 +5,14 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BreakRule, HrRole, HrUser
+from app.models import BreakRule, HrRole, Account
 from app.services.auth_service import hash_password
 
 
 async def _admin(db_session: AsyncSession, client: AsyncClient, tenant_id: int, email: str) -> dict:
-    db_session.add(HrUser(tenant_id=tenant_id, email=email, password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(tenant_id=tenant_id, email=email, password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
-    login = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    login = await client.post("/auth/login", json={"email": email, "password": "pw"})
     assert login.status_code == 200, login.text
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
@@ -125,9 +125,9 @@ async def test_import_validation(client: AsyncClient, db_session: AsyncSession) 
     assert r.status_code == 422 and r.json()["code"] == "INVALID_SETTINGS_FILE"
     bad_rule = {**exported, "break_rules": [{"kind": "LEGAL", "min_work_minutes": -1, "deduct_minutes": 30}]}
     assert (await client.post("/migration/settings-import", headers=admin, json=bad_rule)).status_code == 422
-    hr_user = HrUser(tenant_id=1, email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+    hr_user = Account(tenant_id=1, email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(hr_user)
     await db_session.commit()
-    login = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     hr = {"Authorization": f"Bearer {login.json()['access_token']}"}
     assert (await client.get("/migration/settings-export", headers=hr)).status_code == 403

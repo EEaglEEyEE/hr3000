@@ -1,12 +1,12 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser
+from app.models import HrRole, Account
 from app.services.auth_service import hash_password
 
 
-async def _create_hr_user(db_session: AsyncSession, role: HrRole) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=role)
+async def _create_hr_user(db_session: AsyncSession, role: HrRole) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -14,7 +14,7 @@ async def _create_hr_user(db_session: AsyncSession, role: HrRole) -> HrUser:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -58,6 +58,15 @@ async def test_settings_default_to_pin_not_required(
         "portal_punching_enabled": False,
         "absence_requests_enabled": True,
         "absence_four_eyes": False,
+        "absence_overlaps_for_employees": False,
+        "overtime_limit_max_hours": None,
+        "overtime_limit_min_hours": None,
+        "reminders_enabled": False,
+        "reduce_vacation_parental_leave": False,
+        "seniority_leave_rules": [],
+        "team_calendar_for_employees": False,
+        "org_chart_for_employees": False,
+        "two_factor_roles": [],
         "datev_consultant_number": None,
         "datev_client_number": None,
         "core_time_start": None,
@@ -181,7 +190,7 @@ async def test_hr_role_cannot_read_or_change_settings(
 
 
 async def test_kiosk_screen_hours_set_clear_and_validate(client: AsyncClient, db_session: AsyncSession) -> None:
-    """Bildschirmzeiten am Tablet: beide Zeiten zusammen, nicht gleich, leeren = immer an, im Audit-Log."""
+    """Bildschirmzeiten am Tablet: beide Zeiten zusammen, nicht gleich, leeren = immer an, im Audit-Protokoll."""
     await _create_hr_user(db_session, HrRole.ADMIN)
     headers = {"Authorization": f"Bearer {await _hr_token(client)}"}
 

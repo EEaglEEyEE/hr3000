@@ -4,21 +4,21 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Employee, HrRole, HrUser, Location, Tenant, TenantPlan
+from app.models import Employee, HrRole, Account, Location, Tenant, TenantPlan
 from app.services.auth_service import hash_password
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient, active: int = 0, inactive: int = 0):
     location = Location(name="Zentrale", timezone="UTC")
     db_session.add(location)
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
     for i in range(active + inactive):
         db_session.add(
             Employee(location_id=location.id, first_name=f"M{i}", last_name="Test", employee_number=f"E{i}", active=i < active)
         )
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return location, {"Authorization": f"Bearer {token}"}
 
 
@@ -109,10 +109,10 @@ async def test_downgrade_keeps_existing_employees_but_blocks_new(client: AsyncCl
 
 async def test_super_admin_sees_usage_and_sets_plan(client: AsyncClient, db_session: AsyncSession) -> None:
     await _setup(db_session, client, active=2, inactive=3)
-    db_session.add(HrUser(tenant_id=None, email="super@example.com", password_hash=hash_password("super-pw"), role=HrRole.SUPER_ADMIN))
+    db_session.add(Account(tenant_id=None, email="super@example.com", password_hash=hash_password("super-pw"), role=HrRole.SUPER_ADMIN))
     await db_session.commit()
     host = {"Host": settings.super_admin_hostname}
-    token = (await client.post("/auth/hr/login", headers=host, json={"email": "super@example.com", "password": "super-pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", headers=host, json={"email": "super@example.com", "password": "super-pw"})).json()["access_token"]
     sa = {**host, "Authorization": f"Bearer {token}"}
 
     tenants = (await client.get("/tenants", headers=sa)).json()

@@ -38,11 +38,11 @@ describe('Seitenleiste', () => {
     mockApi({ ...features(), ...hrTodoRoutes() })
     renderLayout()
     await screen.findByText('Inhalt')
-    for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Monatsabschluss', 'Lohn-Export', 'Checklisten']) {
+    for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Monatsabschluss', 'Lohn-Export', 'On- & Offboarding']) {
       expect(within(nav()).getByRole('link', { name: new RegExp(label) })).toBeInTheDocument()
     }
     // Standorte, Teams, Feiertage, Tablets, Pausenregeln … stehen jetzt in den Einstellungen.
-    for (const label of ['Teams', 'Audit-Log', 'Feiertage', 'Tablets', 'Pausenregeln', 'Standorte', 'Lohnarten', 'Zuschläge']) {
+    for (const label of ['Teams', 'Audit-Protokoll', 'Feiertagskalender', 'Tablets', 'Pausenregeln', 'Standorte', 'Lohnarten', 'Zuschläge']) {
       expect(within(nav()).queryByRole('link', { name: new RegExp(label) })).not.toBeInTheDocument()
     }
     expect(within(nav()).getAllByRole('link').length).toBeLessThanOrEqual(10)
@@ -55,7 +55,7 @@ describe('Seitenleiste', () => {
     renderLayout()
     await screen.findByText('Inhalt')
     expect(within(nav()).getByRole('link', { name: /Zu klären/ })).toBeInTheDocument()
-    for (const label of ['Lohn-Export', 'Monatsabschluss', 'Teams', 'Tablets', 'Audit-Log']) {
+    for (const label of ['Lohn-Export', 'Monatsabschluss', 'Teams', 'Tablets', 'Audit-Protokoll']) {
       expect(within(nav()).queryByRole('link', { name: new RegExp(label) })).not.toBeInTheDocument()
     }
     expect(screen.queryByRole('link', { name: 'Einstellungen' })).not.toBeInTheDocument()

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +22,7 @@ def _require_non_device(actor: Actor) -> None:
 
 
 def _recipient_clause(actor: Actor):
-    if actor.hr_user is not None:
-        return Notification.recipient_hr_user_id == actor.hr_user.id
-    return Notification.recipient_employee_id == actor.employee.id
+    return Notification.recipient_account_id == actor.account_id
 
 
 @router.get("/notifications", response_model=list[NotificationResponse])
@@ -32,8 +31,7 @@ async def list_notifications(
     actor: Actor = Depends(get_current_actor),
     db: AsyncSession = Depends(get_db),
 ) -> list[NotificationResponse]:
-    """Eigene Benachrichtigungen (HrUser ODER Employee-Login, siehe
-    app/services/notification_service.py) – neueste zuerst."""
+    """Eigene Benachrichtigungen (siehe app/services/notification_service.py) – neueste zuerst."""
     _require_non_device(actor)
 
     stmt = (
@@ -74,10 +72,7 @@ async def mark_notification_read(
     _require_non_device(actor)
 
     notification = await db.get(Notification, notification_id)
-    is_owner = notification is not None and (
-        (actor.hr_user is not None and notification.recipient_hr_user_id == actor.hr_user.id)
-        or (actor.employee is not None and notification.recipient_employee_id == actor.employee.id)
-    )
+    is_owner = notification is not None and notification.recipient_account_id == actor.account_id
     if notification is None or notification.tenant_id != actor.tenant_id or not is_owner:
         raise AppError(404, "NOTIFICATION_NOT_FOUND", "Benachrichtigung nicht gefunden.")
 
@@ -87,3 +82,27 @@ async def mark_notification_read(
         await db.refresh(notification)
 
     return NotificationResponse.model_validate(notification)
+
+
+class NotificationSettings(BaseModel):
+    """Persönliche Einstellung: Benachrichtigungen zusätzlich per E-Mail (Glocke immer)."""
+
+    email: bool
+
+
+@router.get("/notifications/settings", response_model=NotificationSettings)
+async def get_notification_settings(actor: Actor = Depends(get_current_actor)) -> NotificationSettings:
+    _require_non_device(actor)
+    return NotificationSettings(email=bool(actor.account.notification_emails))
+
+
+@router.put("/notifications/settings", response_model=NotificationSettings)
+async def update_notification_settings(
+    payload: NotificationSettings,
+    actor: Actor = Depends(get_current_actor),
+    db: AsyncSession = Depends(get_db),
+) -> NotificationSettings:
+    _require_non_device(actor)
+    actor.account.notification_emails = payload.email
+    await db.commit()
+    return NotificationSettings(email=payload.email)

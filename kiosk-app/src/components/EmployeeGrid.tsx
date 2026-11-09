@@ -51,6 +51,7 @@ export function EmployeeGrid({
   sort = 'LAST_NAME',
   onRegisterCard,
   cardReaderReady = false,
+  onScanQr,
 }: {
   employees: Employee[]
   deviceName: string
@@ -64,6 +65,8 @@ export function EmployeeGrid({
   nfcActive: boolean
   nfcError: string | null
   onToggleNfc: () => void
+  /** Anmeldung per QR-Code (Kamera) – nur, wenn das Tablet QR-Codes lesen kann und Chips an sind. */
+  onScanQr?: () => void
   onSelect: (employee: Employee) => void
   /** Prüft die Admin-PIN (wirft bei falscher PIN) und setzt das Gerät danach zurück. */
   onReset: (adminPin: string) => Promise<void>
@@ -148,6 +151,15 @@ export function EmployeeGrid({
           >
             <span className={`h-2.5 w-2.5 rounded-full ${nfcActive ? 'bg-emerald-500' : 'bg-slate-600'}`} />
             {nfcActive ? 'NFC aktiv – Chip vorhalten' : 'NFC aktivieren'}
+          </button>
+        )}
+        {onScanQr && (
+          <button
+            type="button"
+            onClick={onScanQr}
+            className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"
+          >
+            QR-Code scannen
           </button>
         )}
         <button

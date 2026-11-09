@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -32,7 +32,7 @@ async def _employee(
 
 
 async def _employee_headers(client: AsyncClient, email: str) -> dict[str, str]:
-    login = await client.post("/auth/employee/login", json={"email": email, "password": "pw"})
+    login = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
@@ -104,7 +104,7 @@ async def test_admin_can_demote_self_when_another_admin_exists(
 ) -> None:
     location = await _location(db_session)
     first = await _employee(db_session, location, "EMP-A", "a@example.com", HrRole.ADMIN)
-    db_session.add(HrUser(email="hr-admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(email="hr-admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
     headers = await _employee_headers(client, "a@example.com")
 

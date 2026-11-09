@@ -37,8 +37,7 @@ def _audit(db: AsyncSession, actor: Actor, row: AbsenceTypeDefinition, detail: s
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SETTINGS_CHANGED,
         entity_type="absence_type",
         entity_id=row.id,
@@ -67,6 +66,7 @@ async def create_absence_type(
 ) -> AbsenceTypeResponse:
     await list_absence_types(db, actor.tenant_id)  # Standardarten zuerst anlegen
     await _ensure_unique_name(db, actor.tenant_id, payload.name)
+    _ensure_comment_allowed(payload.category, payload.comment_required)
     row = AbsenceTypeDefinition(tenant_id=actor.tenant_id, active=True, **payload.model_dump())
     db.add(row)
     await db.flush()
@@ -74,6 +74,12 @@ async def create_absence_type(
     await db.commit()
     await db.refresh(row)
     return AbsenceTypeResponse.model_validate(row)
+
+
+def _ensure_comment_allowed(category: AbsenceType, comment_required: bool) -> None:
+    """Pflichtkommentar nicht bei Krankheit – sonst würden Diagnosen abgefragt (Gesundheitsdaten)."""
+    if comment_required and category in (AbsenceType.SICK, AbsenceType.CHILD_SICK):
+        raise AppError(400, "COMMENT_NOT_FOR_SICKNESS", "Bei Krankheit darf kein Kommentar verlangt werden.")
 
 
 async def _change_category(db: AsyncSession, actor: Actor, row: AbsenceTypeDefinition, category: AbsenceType) -> None:
@@ -110,7 +116,7 @@ async def update_absence_type(
     db: AsyncSession = Depends(get_db),
 ) -> AbsenceTypeResponse:
     """Eine geänderte Kategorie gilt auch für bestehende Einträge dieser Art: sie werden neu
-    berechnet (Gleitzeitkonto, Urlaubskonto) – außer ein Eintrag liegt in einem abgeschlossenen
+    berechnet (Überstundenkonto, Urlaubskonto) – außer ein Eintrag liegt in einem abgeschlossenen
     bzw. vorgelegten Monat, dann wird die Änderung abgelehnt. Statt Löschen gibt es Deaktivieren."""
     row = await _get_in_tenant(db, type_id, actor.tenant_id)
     if payload.category is not None and payload.category != row.category:
@@ -124,6 +130,15 @@ async def update_absence_type(
         row.requires_approval = payload.requires_approval
     if payload.employee_can_request is not None:
         row.employee_can_request = payload.employee_can_request
+    if payload.substitute_mode is not None:
+        row.substitute_mode = payload.substitute_mode
+    if payload.comment_required is not None:
+        row.comment_required = payload.comment_required
+    if payload.calendar_visibility is not None:
+        row.calendar_visibility = payload.calendar_visibility
+    if payload.approval_chain is not None:
+        row.approval_chain = payload.approval_chain
+    _ensure_comment_allowed(payload.category or row.category, row.comment_required)
     if payload.clear_certificate_from_day:
         row.certificate_from_day = None
     elif payload.certificate_from_day is not None:

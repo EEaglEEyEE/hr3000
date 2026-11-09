@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_full_hr_principal
 from app.db import get_db
-from app.models import AuditLogEntry, Employee, HrUser
+from app.models import Account, AuditLogEntry
 from app.schemas.audit_log import AuditLogEntryResponse
 
 router = APIRouter(tags=["audit_log"])
@@ -40,27 +40,17 @@ async def list_audit_log(
     result = await db.execute(stmt)
     entries = result.scalars().all()
 
-    hr_user_ids = {e.actor_hr_user_id for e in entries if e.actor_hr_user_id is not None}
-    employee_ids = {e.actor_employee_id for e in entries if e.actor_employee_id is not None}
-
-    hr_users: dict[int, HrUser] = {}
-    if hr_user_ids:
-        result = await db.execute(select(HrUser).where(HrUser.id.in_(hr_user_ids)))
-        hr_users = {u.id: u for u in result.scalars().all()}
-
-    employees: dict[int, Employee] = {}
-    if employee_ids:
-        result = await db.execute(select(Employee).where(Employee.id.in_(employee_ids)))
-        employees = {e.id: e for e in result.scalars().all()}
+    account_ids = {e.actor_account_id for e in entries if e.actor_account_id is not None}
+    accounts: dict[int, Account] = {}
+    if account_ids:
+        result = await db.execute(select(Account).where(Account.id.in_(account_ids)))
+        accounts = {a.id: a for a in result.scalars().all()}
 
     def _actor_label(entry: AuditLogEntry) -> str:
-        if entry.actor_hr_user_id is not None:
-            user = hr_users.get(entry.actor_hr_user_id)
-            return user.email if user else "Unbekannt"
-        if entry.actor_employee_id is not None:
-            employee = employees.get(entry.actor_employee_id)
-            return f"{employee.first_name} {employee.last_name}" if employee else "Unbekannt"
-        return "System"
+        if entry.actor_account_id is None:
+            return "System"
+        account = accounts.get(entry.actor_account_id)
+        return account.display_name if account else "Unbekannt"
 
     return [
         AuditLogEntryResponse(

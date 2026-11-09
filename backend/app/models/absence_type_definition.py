@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.absence import AbsenceType
@@ -31,5 +31,15 @@ class AbsenceTypeDefinition(Base):
     employee_can_request: Mapped[bool] = mapped_column(Boolean, default=True)
     # Ab diesem Kalendertag der Abwesenheit ist ein Nachweis nötig (z.B. AU ab dem 4. Tag) – nur Hinweis.
     certificate_from_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Vertretung am Antrag: NONE (kein Feld), OPTIONAL oder REQUIRED (Pflicht, wenn Mitarbeiter
+    # selbst beantragen; HR darf sie weglassen).
+    substitute_mode: Mapped[str] = mapped_column(String(10), default="NONE", server_default="NONE")
+    # Kommentar (Notiz) ist beim Eintragen Pflicht – nicht für Krankheit (Gesundheitsdaten).
+    comment_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Teamkalender für Mitarbeiter: GREY = nur „abwesend“ (Standard), COLOR = mit Art
+    calendar_visibility: Mapped[str] = mapped_column(String(10), default="GREY", server_default="GREY")
+    # Wer genehmigt (app/services/approval_service.py): DEFAULT = Teamleitung des Teams oder Admin/HR,
+    # SUPERVISOR = Führungskraft, SUPERVISOR_HR = erst Führungskraft, dann Admin/HR, HR = nur Admin/HR
+    approval_chain: Mapped[str] = mapped_column(String(20), default="DEFAULT", server_default="DEFAULT")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

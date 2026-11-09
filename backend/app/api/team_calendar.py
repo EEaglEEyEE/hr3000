@@ -1,13 +1,14 @@
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import Actor, get_current_hr_principal
+from app.api.deps import Actor, get_current_actor, get_current_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import Absence, AbsenceApprovalStatus, Employee, Holiday, SummaryStatus
+from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Employee, Holiday, SummaryStatus
 from app.schemas.team_calendar import TeamCalendarDay, TeamCalendarEmployee
 from app.services.absence_type_service import list_absence_types
 from app.services.holiday_service import location_scope
@@ -63,11 +64,25 @@ async def get_team_calendar(
     if not employees:
         return []
 
+    return await _calendar(db, actor.tenant_id, employees, date_from, date_to)
+
+
+@dataclass(frozen=True)
+class _Mask:
+    """Sicht eines Mitarbeiters: eigene Einträge voll, bei Kollegen die Art nur bei „farbig“."""
+
+    self_id: int
+    colored_type_ids: frozenset[int]
+
+
+async def _calendar(
+    db: AsyncSession, tenant_id: int, employees, date_from: date, date_to: date, mask: _Mask | None = None
+) -> list[TeamCalendarEmployee]:
     employee_ids = [employee.id for employee in employees]
 
     holidays_result = await db.execute(
         select(Holiday).where(
-            Holiday.tenant_id == actor.tenant_id,
+            Holiday.tenant_id == tenant_id,
             Holiday.date >= date_from,
             Holiday.date <= date_to,
         )
@@ -92,10 +107,12 @@ async def get_team_calendar(
     )
     absences_by_employee: dict[int, list[Absence]] = {}
     for absence in absences_result.scalars().all():
-        absences_by_employee.setdefault(absence.employee_id, []).append(absence)
+        hidden_work_time = mask is not None and absence.employee_id != mask.self_id and absence.type == AbsenceType.WORK_TIME
+        if not hidden_work_time:  # Homeoffice o. ä. ist für Kollegen keine Abwesenheit
+            absences_by_employee.setdefault(absence.employee_id, []).append(absence)
 
-    show_birthdays = (await get_or_create_settings(db, actor.tenant_id)).show_birthdays_in_calendar
-    type_names = {t.id: t.name for t in await list_absence_types(db, actor.tenant_id)}
+    show_birthdays = (await get_or_create_settings(db, tenant_id)).show_birthdays_in_calendar
+    type_names = {t.id: t.name for t in await list_absence_types(db, tenant_id)}
 
     responses: list[TeamCalendarEmployee] = []
     for employee in employees:
@@ -116,7 +133,18 @@ async def get_team_calendar(
                 halves = [a for a in covering if a.half_day][:2]
                 durations = [a for a in covering if a.duration_minutes is not None]
                 parts = full[:1] or halves + durations
-                if parts:
+                if parts and mask is not None and employee.id != mask.self_id and not any(
+                    a.absence_type_id in mask.colored_type_ids for a in parts
+                ):
+                    # „ausgegraut“: nur, dass jemand fehlt – ohne Art
+                    days.append(
+                        TeamCalendarDay(
+                            date=current, status=SummaryStatus.ABSENCE, absence_type=None,
+                            half_day=not full and len(halves) == 1 and not durations,
+                            is_birthday=is_birthday(birth_date, current),
+                        )
+                    )
+                elif parts:
                     partial = not full
                     days.append(
                         TeamCalendarDay(
@@ -146,3 +174,28 @@ async def get_team_calendar(
         )
 
     return responses
+
+
+@router.get("/me/team-calendar", response_model=list[TeamCalendarEmployee])
+async def get_my_team_calendar(
+    date_from: date = Query(alias="from"),
+    date_to: date = Query(alias="to"),
+    actor: Actor = Depends(get_current_actor),
+    db: AsyncSession = Depends(get_db),
+) -> list[TeamCalendarEmployee]:
+    """Teamkalender für Mitarbeiter („Mein Bereich“): das eigene Team (ohne Team nur man selbst).
+    Bei Kollegen erscheint die Art nur bei Abwesenheitsarten mit „im Teamkalender farbig“, sonst
+    „ausgegraut“; Arbeitszeit-Angaben (Homeoffice) gar nicht. Nur mit Einstellung
+    team_calendar_for_employees."""
+    if actor.employee is None:
+        raise AppError(403, "FORBIDDEN", "Nur für Mitarbeiter mit eigenem Login.")
+    if date_to < date_from or (date_to - date_from).days > _MAX_RANGE_DAYS:
+        raise AppError(400, "INVALID_RANGE", f"Bitte einen Zeitraum von höchstens {_MAX_RANGE_DAYS} Tagen angeben.")
+    if not (await get_or_create_settings(db, actor.tenant_id)).team_calendar_for_employees:
+        raise AppError(403, "TEAM_CALENDAR_DISABLED", "Der Teamkalender ist für Mitarbeiter nicht freigeschaltet.")
+    me = actor.employee
+    stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
+    stmt = stmt.where(Employee.team_id == me.team_id) if me.team_id is not None else stmt.where(Employee.id == me.id)
+    employees = (await db.execute(stmt.order_by(Employee.last_name, Employee.first_name))).scalars().all()
+    colored = frozenset(t.id for t in await list_absence_types(db, actor.tenant_id) if t.calendar_visibility == "COLOR")
+    return await _calendar(db, actor.tenant_id, employees, date_from, date_to, _Mask(me.id, colored))

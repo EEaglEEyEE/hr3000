@@ -6,25 +6,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.services.tenant_provisioning as tenant_provisioning
 from app.config import settings
 from app.main import _ensure_production_secrets
-from app.models import Employee, HrRole, HrUser, Location, ShiftTemplate, Tenant
+from app.models import Employee, HrRole, Account, Location, ShiftTemplate, Tenant
 from app.services.auth_service import hash_password
 
 
 async def _admin(db_session: AsyncSession, client: AsyncClient):
     location = Location(name="Standort A", timezone="UTC")
     db_session.add(location)
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
     await db_session.refresh(location)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return location, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 async def _super(db_session: AsyncSession, client: AsyncClient) -> dict:
-    db_session.add(HrUser(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN))
+    db_session.add(Account(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN))
     await db_session.commit()
     host = {"Host": settings.super_admin_hostname}
-    login = await client.post("/auth/hr/login", headers=host, json={"email": "super@example.com", "password": "sp"})
+    login = await client.post("/auth/login", headers=host, json={"email": "super@example.com", "password": "sp"})
     return {**host, "Authorization": f"Bearer {login.json()['access_token']}"}
 
 
@@ -119,7 +119,7 @@ async def test_self_signup_is_atomic(client: AsyncClient, db_session: AsyncSessi
     await db_session.rollback()
 
     assert (await db_session.execute(select(func.count()).select_from(Tenant).where(Tenant.subdomain == "kunde"))).scalar_one() == 0
-    assert (await db_session.execute(select(func.count()).select_from(HrUser).where(HrUser.email == "k@kunde.de"))).scalar_one() == 0
+    assert (await db_session.execute(select(func.count()).select_from(Account).where(Account.email == "k@kunde.de"))).scalar_one() == 0
 
 
 async def test_super_admin_cannot_use_tenant_endpoints(client: AsyncClient, db_session: AsyncSession) -> None:

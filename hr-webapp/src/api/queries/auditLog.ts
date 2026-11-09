@@ -16,6 +16,7 @@ export function useAuditLogQuery(filters: { entityType?: string; from?: string; 
               entity_type: filters.entityType,
               from: filters.from,
               to: filters.to,
+              limit: 500,
             },
           },
         }),

@@ -19,7 +19,7 @@ from app.models import (
     Employee,
     Holiday,
     HrRole,
-    HrUser,
+    Account,
     Location,
     PayComponent,
     PayComponentKind,
@@ -35,10 +35,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[Employe
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Lia", last_name="Lohn", employee_number="100", auto_break_enabled=False)
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     await db_session.refresh(employee)
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     r = await client.put(
         f"/employees/{employee.id}/work-time-model", headers=admin,
@@ -133,7 +133,7 @@ async def test_month_status_and_export_log(client: AsyncClient, db_session: Asyn
     employee_id, location_id = employee.id, employee.location_id
     other = Employee(location_id=location_id, first_name="Otto", last_name="Offen", employee_number="101")
     third = Employee(location_id=location_id, first_name="Vera", last_name="Vorgelegt", employee_number="102")
-    db_session.add_all([other, third, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([other, third, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     other_id, third_id = other.id, third.id
 
@@ -159,7 +159,7 @@ async def test_month_status_and_export_log(client: AsyncClient, db_session: Asyn
     # anderer Monat: nichts
     assert (await client.get("/payroll-export/status", headers=admin, params={"month": "2026-09"})).json()["exports"] == []
 
-    token = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
     hr = {"Authorization": f"Bearer {token}"}
     exports = (await client.get("/payroll-export/status", headers=hr, params={"month": "2026-10"})).json()["exports"]
     assert [e["kind"] for e in exports] == ["CSV"]  # DATEV nur für Admins

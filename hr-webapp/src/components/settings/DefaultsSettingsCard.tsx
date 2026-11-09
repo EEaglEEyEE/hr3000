@@ -217,6 +217,85 @@ export function VacationRulesCard({ settings }: { settings: Settings }) {
         Teilurlaub bei Eintritt oder Austritt im Jahr berechnen (anteilig nach Beschäftigungstagen, gesetzlicher
         Mindesturlaub bleibt, wenn er voll zusteht)
       </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={settings.reduce_vacation_parental_leave}
+          onChange={(e) => void save({ reduce_vacation_parental_leave: e.target.checked })}
+        />
+        Urlaub bei Elternzeit kürzen: je vollem Kalendermonat Elternzeit 1/12 weniger (§ 17 BEEG; Abwesenheiten der
+        Kategorie „Mutterschutz/Elternzeit“)
+      </label>
+    </SettingsCard>
+  )
+}
+
+/** Zusatzurlaub nach Betriebszugehörigkeit (Stufen „ab X Jahren + Y Tage“). */
+export function SeniorityLeaveCard({ settings }: { settings: Settings }) {
+  const { save, message, error } = useSettingsSave()
+  const toRows = (rules: Settings['seniority_leave_rules']) =>
+    rules.map((rule) => ({ years: String(rule.years), days: String(rule.days).replace('.', ',') }))
+  const [rows, setRows] = useState(() => toRows(settings.seniority_leave_rules))
+  useEffect(() => setRows(toRows(settings.seniority_leave_rules)), [settings.seniority_leave_rules])
+
+  function update(index: number, field: 'years' | 'days', value: string) {
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
+  }
+
+  return (
+    <SettingsCard
+      title="Zusatzurlaub nach Betriebszugehörigkeit"
+      description="Zusätzliche Tage (5-Tage-Woche, bei Teilzeit anteilig) ab dem Kalenderjahr, in dem die Jahre vollendet werden. Nur mit hinterlegtem Jahresurlaub."
+      message={message}
+      error={error}
+    >
+      <div className="flex flex-col gap-2 text-sm">
+        {rows.map((row, index) => (
+          <div key={index} className="flex items-center gap-2">
+            ab
+            <Input
+              aria-label={`Jahre Stufe ${index + 1}`}
+              type="number"
+              min={1}
+              max={50}
+              className="w-20"
+              value={row.years}
+              onChange={(e) => update(index, 'years', e.target.value)}
+            />
+            Jahren +
+            <Input
+              aria-label={`Tage Stufe ${index + 1}`}
+              inputMode="decimal"
+              className="w-20"
+              value={row.days}
+              onChange={(e) => update(index, 'days', e.target.value)}
+            />
+            Tage
+            <Button size="sm" variant="ghost" onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>
+              Entfernen
+            </Button>
+          </div>
+        ))}
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setRows((current) => [...current, { years: '', days: '1' }])}>
+            Stufe hinzufügen
+          </Button>
+          <Button
+            size="sm"
+            onClick={() =>
+              void save({
+                seniority_leave_rules: rows
+                  .filter((row) => row.years && row.days)
+                  .map((row) => ({ years: Number(row.years), days: Number(row.days.replace(',', '.')) }))
+                  .sort((a, b) => a.years - b.years),
+              })
+            }
+          >
+            Übernehmen
+          </Button>
+        </div>
+      </div>
     </SettingsCard>
   )
 }
@@ -267,6 +346,52 @@ export function OpenDayChecksCard({ settings }: { settings: Settings }) {
           </label>
         ))}
         <p className="pl-1 text-xs text-slate-500">Zu spät, zu früh und Gleitzeit-Rahmen: unter „Arbeitszeit“ → „Kernarbeitszeit &amp; Gleitzeit“.</p>
+      </div>
+    </SettingsCard>
+  )
+}
+
+/** Grenzen fürs Überstundenkonto: Hinweis unter „Zu klären“ → „Grenzen“, keine Kappung. */
+export function OvertimeLimitsCard({ settings }: { settings: Settings }) {
+  const { save, message, error } = useSettingsSave()
+  const [max, setMax] = useState(settings.overtime_limit_max_hours?.toString() ?? '')
+  const [min, setMin] = useState(settings.overtime_limit_min_hours ? String(-settings.overtime_limit_min_hours) : '')
+
+  useEffect(() => setMax(settings.overtime_limit_max_hours?.toString() ?? ''), [settings.overtime_limit_max_hours])
+  useEffect(
+    () => setMin(settings.overtime_limit_min_hours ? String(-settings.overtime_limit_min_hours) : ''),
+    [settings.overtime_limit_min_hours],
+  )
+
+  return (
+    <SettingsCard title="Grenzen fürs Überstundenkonto" message={message} error={error}>
+      <div className="flex flex-col gap-2 text-sm">
+        <span>
+          Ab 90 % der Obergrenze oder unter der Untergrenze erscheint die Person unter „Zu klären“ → „Grenzen“. Das Konto
+          wird nicht gekappt. Leer = keine Grenze.
+        </span>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            Obergrenze (Std.)
+            <Input type="number" min={1} max={2000} className="w-28" value={max} onChange={(e) => setMax(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-1">
+            Untergrenze (Minusstunden)
+            <Input type="number" min={1} max={2000} className="w-28" value={min} onChange={(e) => setMin(e.target.value)} />
+          </label>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              void save({
+                ...(max ? { overtime_limit_max_hours: Number(max) } : { clear_overtime_limit_max: true }),
+                ...(min ? { overtime_limit_min_hours: -Math.abs(Number(min)) } : { clear_overtime_limit_min: true }),
+              })
+            }
+          >
+            Übernehmen
+          </Button>
+        </div>
       </div>
     </SettingsCard>
   )
@@ -403,7 +528,7 @@ export function KioskLoginCard({ settings }: { settings: Settings }) {
             <span className="block text-slate-500">
               Am Tablet den eigenen Namen antippen, „Eigenen Chip registrieren“ wählen (bei „Nur Chip“ direkt), mit dem
               eigenen PIN bestätigen und den Chip vorhalten. Ein vorhandener Chip wird ersetzt, jede Registrierung steht
-              im Audit-Log.
+              im Audit-Protokoll.
             </span>
           </span>
         </label>
@@ -421,7 +546,7 @@ export function KioskLoginCard({ settings }: { settings: Settings }) {
             <span className="block font-medium text-slate-800">PIN beim ersten Mal selbst festlegen</span>
             <span className="block text-slate-500">
               Wer noch keinen PIN hat, legt ihn am Tablet selbst fest (zweimal eingeben). Bei vergessenem PIN setzt HR ihn
-              am Mitarbeiter zurück oder vergibt selbst einen. Jede Festlegung steht im Audit-Log.
+              am Mitarbeiter zurück oder vergibt selbst einen. Jede Festlegung steht im Audit-Protokoll.
             </span>
           </span>
         </label>
@@ -446,7 +571,7 @@ export function KioskAdminPinCard({ settings }: { settings: Settings }) {
       message={message}
       error={error}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           type="password"
           inputMode="numeric"
@@ -586,7 +711,7 @@ export function KioskDisplayCard({ settings }: { settings: Settings }) {
           checked={settings.kiosk_show_balance}
           onChange={(e) => void save({ kiosk_show_balance: e.target.checked })}
         />
-        Gleitzeitsaldo nach dem Stempeln anzeigen
+        Überstundenkonto nach dem Stempeln anzeigen
       </label>
       <label className="flex items-start gap-2 text-sm">
         <input
@@ -818,7 +943,7 @@ export function CoreTimeCard({ settings }: { settings: Settings }) {
   return (
     <SettingsCard
       title="Kernarbeitszeit & Gleitzeit"
-      description="Optional. Hinweise erscheinen als Sonderfall unter „Zu klären“ (oben einzeln abschaltbar); an den Stunden ändert sich nichts. Je Mitarbeiter abweichend einstellbar (Mitarbeiter → Bearbeiten)."
+      description="Optional. Hinweise erscheinen als Sonderfall unter „Zu klären“ (oben einzeln abschaltbar); an den Stunden ändert sich nichts. Je Mitarbeiter abweichend einstellbar (Mitarbeiter → „Arbeitszeit“)."
       message={message}
       error={error}
     >

@@ -25,7 +25,7 @@ class TenantPlan(str, enum.Enum):
 class Tenant(Base):
     """Ein Mandant (Firma) im Mehrmandantensystem – über die Subdomain
     (siehe app/middleware/tenant.py) wird jeder Request genau einem Tenant
-    zugeordnet. Der Super-Admin (HrUser.role=SUPER_ADMIN, tenant_id=NULL) ist
+    zugeordnet. Der Super-Admin (Account.role=SUPER_ADMIN, tenant_id=NULL) ist
     keinem Tenant zugeordnet und verwaltet diese Tabelle."""
 
     __tablename__ = "tenants"

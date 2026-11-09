@@ -7,7 +7,7 @@ from app.models.base import Base
 
 
 class OvertimeBalance(Base):
-    """Gleitzeitsaldo, pro Mitarbeiter und Stichtag fortgeschrieben."""
+    """Überstundenkonto, pro Mitarbeiter und Stichtag fortgeschrieben."""
 
     __tablename__ = "overtime_balances"
     __table_args__ = (UniqueConstraint("employee_id", "balance_date"),)

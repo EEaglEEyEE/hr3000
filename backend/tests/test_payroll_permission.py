@@ -10,12 +10,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import AllowanceUnit, Employee, HrRole, HrUser, Location, PayComponent, PayComponentKind, PayComponentType
+from app.models import AllowanceUnit, Employee, HrRole, Account, Location, PayComponent, PayComponentKind, PayComponentType
 from app.services.auth_service import hash_password
 
 
 async def _login(client: AsyncClient, email: str) -> dict:
-    token = (await client.post("/auth/hr/login", json={"email": email, "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": email, "password": "pw"})).json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -27,9 +27,9 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[int, di
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-            HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-            HrUser(email="lohn@example.com", password_hash=hash_password("pw"), role=HrRole.HR, payroll_access=True),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+            Account(email="lohn@example.com", password_hash=hash_password("pw"), role=HrRole.HR, payroll_access=True),
         ]
     )
     await db_session.commit()

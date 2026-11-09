@@ -148,14 +148,14 @@ describe('Anmeldung', () => {
   it('erklärt eine noch nicht bestätigte E-Mail-Adresse statt "Passwort falsch"', async () => {
     const calls = mockFetch({
       '/api/branding': () => ({ status: 200, json: { tenant_name: null, logo_data_url: null } }),
-      '/api/auth/hr/login': () => ({ status: 403, json: { detail: 'Bitte bestätige zuerst deine E-Mail-Adresse.', code: 'EMAIL_NOT_VERIFIED' } }),
+      '/api/auth/login': () => ({ status: 403, json: { detail: 'Bitte bestätige zuerst deine E-Mail-Adresse.', code: 'EMAIL_NOT_VERIFIED' } }),
     })
     renderWithProviders(<LoginPage />, { route: '/login' })
     await userEvent.type(screen.getByLabelText('E-Mail'), 'nina@example.com')
     await userEvent.type(screen.getByLabelText('Passwort'), 'sehr-geheim-123')
     await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }))
     expect(await screen.findByText('Bitte bestätige zuerst deine E-Mail-Adresse.')).toBeInTheDocument()
-    expect(calls.some((c) => c.url === '/api/auth/employee/login')).toBe(false)
+    expect(calls.filter((c) => c.url === '/api/auth/login')).toHaveLength(1)
   })
 })
 

@@ -13,7 +13,7 @@ from app.models import (
     Employee,
     EmploymentContract,
     HrRole,
-    HrUser,
+    Account,
     Location,
     PayType,
 )
@@ -28,15 +28,15 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     employee = Employee(location_id=location.id, first_name="Erika", last_name="Muster", employee_number="E1")
     db_session.add_all([
         employee,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-        HrUser(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+        Account(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
     ])
     await db_session.commit()
     await db_session.refresh(employee)
     headers = {}
     for name in ("hr", "admin", "sup"):
-        headers[name] = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
+        headers[name] = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
     return employee, headers
 
 

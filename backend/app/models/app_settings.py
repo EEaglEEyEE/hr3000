@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Time
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Time, false
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,7 +41,7 @@ class AppSettings(Base):
     # Mandanten starten ohne Schichtplanung, Bestandsmandanten behalten sie
     # (Migration 0045 setzt dort true).
     shift_planning_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Ab diesem Tag führt der Mandant Gleitzeitkonten (früher nichts zählen, Altsalden per
+    # Ab diesem Tag führt der Mandant Überstundenkonten (früher nichts zählen, Altsalden per
     # Korrekturbuchung "Übertrag"). NULL = ab der ersten Stempelung je Mitarbeiter.
     balance_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # --- Standardwerte für neue Mitarbeiter (individualisierbar je Mandant) ---
@@ -54,6 +54,19 @@ class AppSettings(Base):
     # Teilurlaub bei Ein-/Austritt im Jahr berechnen (§ 5 BUrlG). Neue Mandanten an, bestehende aus
     # (Migration 0098) – dort galt bisher immer der volle Jahresurlaub.
     prorate_partial_year_vacation: Mapped[bool] = mapped_column(Boolean, default=True)
+    # § 17 BEEG: Urlaub je vollem Kalendermonat Elternzeit (Kategorie „Mutterschutz/Elternzeit“)
+    # um 1/12 kürzen – Kann-Regel des Arbeitgebers, Standard aus.
+    reduce_vacation_parental_leave: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Zusatzurlaub nach Betriebszugehörigkeit: "Jahre:Tage" durch Komma getrennt, z. B. "5:1,10:2" –
+    # gilt ab dem Kalenderjahr, in dem die Jahre vollendet werden (leer = keiner).
+    seniority_leave_rules: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Zwei-Faktor-Anmeldung verpflichtend für diese Gruppen, durch Komma getrennt: ADMIN, HR,
+    # SUPERVISOR (Führungskraft), EMPLOYEE (Konten ohne Rolle); leer = für niemanden (Migration 0131)
+    two_factor_roles: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Mitarbeiter sehen in „Mein Bereich“ das Organigramm (Standard aus; Admin/HR/Führungskräfte immer)
+    org_chart_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Mitarbeiter sehen in „Mein Bereich“ den Teamkalender ihres Teams (Standard aus)
+    team_calendar_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Resturlaub automatisch ins Folgejahr übertragen (sonst trägt HR den Übertrag ein).
     vacation_carry_over_auto: Mapped[bool] = mapped_column(Boolean, default=False)
     # Höchstens so viele Tage übertragen (NULL = unbegrenzt).
@@ -108,7 +121,7 @@ class AppSettings(Base):
     kiosk_card_self_registration: Mapped[bool] = mapped_column(Boolean, default=True)
     # Mitarbeiter ohne PIN legen ihn beim ersten Stempeln am Tablet selbst fest (bei PIN-Pflicht).
     kiosk_pin_self_setup: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Gleitzeitsaldo/Resturlaub am Gemeinschafts-Tablet zeigen (Datenschutz: abschaltbar).
+    # Überstundenkonto/Resturlaub am Gemeinschafts-Tablet zeigen (Datenschutz: abschaltbar).
     kiosk_show_balance: Mapped[bool] = mapped_column(Boolean, default=True)
     kiosk_show_vacation: Mapped[bool] = mapped_column(Boolean, default=True)
     # Pausen-Buttons am Tablet (aus = Pausen nur über automatische Pausenregelung)
@@ -120,6 +133,17 @@ class AppSettings(Base):
     # Vier-Augen-Prinzip: eigene Abwesenheiten werden nie selbst genehmigt (auch nicht von HR,
     # Admin oder Teamleader) – sie gehen als Antrag an jemand anderen. Aus = bisheriges Verhalten.
     absence_four_eyes: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Mitarbeiter sehen beim eigenen Antrag, wer im Team gleichzeitig abwesend ist (nur Namen und
+    # Zeitraum, keine Art). Genehmigende sehen es immer. Standard aus.
+    absence_overlaps_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Grenzen fürs Überstundenkonto in Stunden (leer = keine): Hinweis unter „Zu klären“ ab 90 % der
+    # Obergrenze bzw. bei Unterschreiten der Untergrenze (negativ). Keine Kappung.
+    overtime_limit_max_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overtime_limit_min_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Erinnerungen (Probezeit-, Befristungsende, Austritt, verfallender Urlaub) als Benachrichtigung
+    # und E-Mail; Standard aus. reminders_sent_on: einmal pro Tag (services/reminder_service.py).
+    reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    reminders_sent_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Mitarbeiter dürfen über den Web-Login (Startseite) selbst stempeln – Standard aus.
     portal_punching_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # Begrüßungs-/Hinweistext über den Kacheln

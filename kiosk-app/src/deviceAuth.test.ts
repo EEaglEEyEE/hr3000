@@ -36,6 +36,22 @@ describe('resumeSession', () => {
     expect(getStoredDeviceToken()).toBe('geraet-1')
   })
 
+  it('per MDM registriert und noch nicht freigegeben: wartet mit Prüfcode, Token bleibt', async () => {
+    storeDeviceToken('tok')
+    login.mockRejectedValue(
+      new ApiError(403, 'DEVICE_PENDING', 'Dieses Gerät wartet auf Freigabe in der HR-Webapp unter „Tablets“. Prüfcode: K7Q-4XZ'),
+    )
+    expect(await resumeSession()).toEqual({ kind: 'pending', verifyCode: 'K7Q-4XZ' })
+    expect(getStoredDeviceToken()).toBe('tok')
+  })
+
+  it('erkennt, wenn ein anderes Gerät den Zugang belegt (kein automatischer neuer Versuch)', async () => {
+    storeDeviceToken('tok')
+    login.mockRejectedValue(new ApiError(401, 'DEVICE_IN_USE', 'Anderes Gerät.'))
+    expect(await resumeSession()).toEqual({ kind: 'in_use' })
+    expect(getStoredDeviceToken()).toBe('tok')
+  })
+
   it('behält das Token ohne Netz und bei Serverfehlern', async () => {
     storeDeviceToken('geraet-1')
     for (const err of [new NetworkError(), new ApiError(502, undefined, 'Bad Gateway')]) {

@@ -8,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import BreakMode, EmployeeDefaultShift, Location, ShiftPlanEntry, ShiftTemplate
+from app.models import BreakMode, EmployeeDefaultShift, Location, ShiftPlanEntry, ShiftTemplate, WorkTimeProfileVersion
 from app.schemas.break_rule import check_window
 from app.services.period_service import ensure_open_from
 from app.services.timesheet_service import invalidate_balance
+from app.services.work_time_profile_service import sync_employee
 from app.schemas.shift_template import (
     ShiftTemplateCreateRequest,
     ShiftTemplateResponse,
@@ -158,6 +159,18 @@ async def _version_for_target_change(
         if (target_changes and d.target_minutes is None) or (break_changes and d.break_mode is None)
     ]
     times_only = [d for d in defaults if d not in inheriting]
+    # Arbeitszeitmodelle mit dieser Vorlage: ihre Fassungen genauso teilen bzw. umstellen wie die der
+    # Mitarbeiter – die Zuweisungen (Fassungen mit profile_id) folgen ihnen beim Nachziehen.
+    profile_rows = (
+        await db.execute(select(WorkTimeProfileVersion).where(WorkTimeProfileVersion.shift_template_id == template.id))
+    ).scalars().all()
+    profile_inheriting = [
+        p for p in profile_rows
+        if (target_changes and p.target_minutes is None) or (break_changes and p.break_mode is None)
+    ]
+    profile_times_only = [p for p in profile_rows if p not in profile_inheriting]
+    affected_profiles = [p for p in profile_inheriting if p.valid_to is None or p.valid_to >= effective]
+    profile_employees = {d.employee_id for d in defaults if d.profile_id is not None}
     planned = (
         await db.execute(select(ShiftPlanEntry).where(ShiftPlanEntry.shift_template_id == template.id))
     ).scalars().all()
@@ -166,7 +179,11 @@ async def _version_for_target_change(
     for employee_id in affected:
         await ensure_open_from(db, employee_id, effective)
         await invalidate_balance(db, employee_id, effective)
-    if not any(d.valid_from < effective for d in inheriting) and not any(e.date < effective for e in planned):
+    if (
+        not any(d.valid_from < effective for d in inheriting)
+        and not any(e.date < effective for e in planned)
+        and not any(p.valid_from < effective for p in profile_inheriting)
+    ):
         return template
 
     new_template = ShiftTemplate(
@@ -198,6 +215,17 @@ async def _version_for_target_change(
         default.valid_to = effective - timedelta(days=1)
     for default in times_only:
         default.shift_template_id = new_template.id
+    for version in affected_profiles:
+        if version.valid_from >= effective:
+            version.shift_template_id = new_template.id
+            continue
+        db.add(version.copy(shift_template_id=new_template.id, valid_from=effective))
+        version.valid_to = effective - timedelta(days=1)
+    for version in profile_times_only:
+        version.shift_template_id = new_template.id
+    await db.flush()
+    for employee_id in profile_employees:
+        await sync_employee(db, employee_id)
     # Künftige Tagesausnahmen zeigen auf die neue Fassung (ihr eigenes Soll bleiben sie behalten).
     entries = (
         await db.execute(
@@ -223,6 +251,10 @@ async def delete_shift_template(
         await db.execute(select(EmployeeDefaultShift.id).where(EmployeeDefaultShift.shift_template_id == template_id).limit(1))
     ).first() is not None or (
         await db.execute(select(ShiftPlanEntry.id).where(ShiftPlanEntry.shift_template_id == template_id).limit(1))
+    ).first() is not None or (
+        await db.execute(
+            select(WorkTimeProfileVersion.id).where(WorkTimeProfileVersion.shift_template_id == template_id).limit(1)
+        )
     ).first() is not None
     if in_use:
         raise AppError(409, "SHIFT_TEMPLATE_IN_USE", "Die Vorlage wird noch verwendet und kann nicht gelöscht werden.")

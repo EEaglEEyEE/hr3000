@@ -90,6 +90,43 @@ describe('Einstellungen', () => {
     expect(screen.queryByRole('checkbox', { name: /Stempeln über den Web-Login/ })).not.toBeInTheDocument()
   })
 
+  it('schreibt die Zwei-Faktor-Anmeldung je Gruppe vor, „Alle“ kreuzt alle an (Standard: niemand)', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const server = settingsServer()
+    const calls = mockApi(server.routes)
+    renderSettings('/einstellungen/firma')
+
+    const group = await screen.findByRole('group', { name: 'Zwei-Faktor-Anmeldung verpflichtend für' })
+    const box = (name: string) => within(group).getByRole('checkbox', { name })
+    // gesendete Felder ohne die festen "nicht leeren"-Marker
+    const sent = () => Object.fromEntries(Object.entries(patches(calls).at(-1) ?? {}).filter(([key]) => !key.startsWith('clear_')))
+    expect(box('Alle')).not.toBeChecked()
+    expect(box('Admin')).not.toBeChecked()
+
+    await userEvent.click(box('HR'))
+    await waitFor(() => expect(sent()).toEqual({ two_factor_roles: ['HR'] }))
+    await waitFor(() => expect(box('HR')).toBeChecked())
+    await userEvent.click(box('Admin'))
+    // feste Reihenfolge, unabhängig von der Klickfolge
+    await waitFor(() => expect(sent()).toEqual({ two_factor_roles: ['ADMIN', 'HR'] }))
+    await waitFor(() => expect(box('Admin')).toBeChecked())
+
+    await userEvent.click(box('Alle'))
+    await waitFor(() => expect(sent()).toEqual({ two_factor_roles: ['ADMIN', 'HR', 'SUPERVISOR', 'EMPLOYEE'] }))
+    await waitFor(() => expect(box('Mitarbeiter ohne Rolle')).toBeChecked())
+    expect(box('Alle')).toBeChecked()
+
+    await userEvent.click(box('Führungskräfte'))
+    await waitFor(() => expect(sent()).toEqual({ two_factor_roles: ['ADMIN', 'HR', 'EMPLOYEE'] }))
+    await waitFor(() => expect(box('Alle')).not.toBeChecked())
+
+    await userEvent.click(box('Alle'))
+    await waitFor(() => expect(box('Alle')).toBeChecked())
+    await userEvent.click(box('Alle'))
+    await waitFor(() => expect(sent()).toEqual({ two_factor_roles: [] }))
+    expect(server.current().two_factor_roles).toEqual([])
+  })
+
   it('führt alte Reiter-Links (?bereich=) zum passenden Bereich und unbekannte zum ersten', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     mockApi(settingsServer().routes)
@@ -108,7 +145,7 @@ describe('Einstellungen', () => {
       'PATCH /settings': new ApiFailure(409, 'PERIOD_LOCKED', 'Der Monat 10/2026 ist abgeschlossen.'),
     })
     renderSettings('/einstellungen/arbeitszeit')
-    const input = await screen.findByLabelText('Gleitzeitkonten führen ab')
+    const input = await screen.findByLabelText('Überstundenkonten führen ab')
     fireEvent.change(input, { target: { value: '2026-10-01' } })
     expect(await screen.findByText('Der Monat 10/2026 ist abgeschlossen.')).toBeInTheDocument()
   })
@@ -118,7 +155,7 @@ describe('Einstellungen', () => {
     const calls = mockApi({ 'GET /features': { shift_planning_enabled: false, absence_requests_enabled: true } })
     const { unmount } = renderSettings('/einstellungen')
     const links = await within(settingsNav()).findAllByRole('link')
-    expect(links.map((link) => link.textContent)).toEqual(['Standorte', 'Teams', 'Feiertage', 'Tablets', 'Audit-Log'])
+    expect(links.map((link) => link.textContent)).toEqual(['Standorte', 'Teams', 'Abteilungen', 'Kostenstellen', 'Feiertagskalender', 'Arbeitszeitmodelle', 'Tablets', 'Audit-Protokoll'])
     expect(calls.some((call) => call.path === '/settings')).toBe(false)
     unmount()
 

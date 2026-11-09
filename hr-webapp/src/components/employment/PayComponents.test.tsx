@@ -59,6 +59,7 @@ describe('Zulagen & Einmalzahlungen', () => {
         kind: 'ONE_TIME',
         type_name: 'Weihnachtsgeld',
         amount: 500.5,
+        recurs_yearly: false,
         pay_date: '2026-11-30',
         wage_type: null,
         note: null,
@@ -122,5 +123,21 @@ describe('Zulagen & Einmalzahlungen', () => {
     await waitFor(() => expect(calls.some((call) => call.path.includes('contracts'))).toBe(true))
     expect(screen.queryByText('Zulagen & Einmalzahlungen')).not.toBeInTheDocument()
     expect(calls.some((call) => call.path.includes('pay-components'))).toBe(false)
+  })
+
+  it('legt eine jährliche Einmalzahlung in Prozent des Monatsgehalts an', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi(routes())
+    renderWithProviders(<EmploymentTab employeeId={7} isAdmin />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Neue Einmalzahlung' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.clear(within(dialog).getByLabelText('Bezeichnung'))
+    await userEvent.type(within(dialog).getByLabelText('Bezeichnung'), 'Urlaubsgeld')
+    await userEvent.click(within(dialog).getByLabelText(/in % des Monatsgehalts/))
+    await userEvent.type(within(dialog).getByLabelText('% des Monatsgehalts'), '50')
+    await userEvent.click(within(dialog).getByLabelText(/jährlich wiederholen/))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(lastBody(calls, 'POST')).toMatchObject({ percent_of_salary: 50, recurs_yearly: true }))
+    expect(lastBody(calls, 'POST')).not.toHaveProperty('amount')
   })
 })

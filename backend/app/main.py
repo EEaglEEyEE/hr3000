@@ -11,6 +11,7 @@ from app.api.absence_types import router as absence_types_router
 from app.api.dashboard import router as dashboard_router
 from app.api.punch_correction_requests import router as punch_correction_requests_router
 from app.api.audit_log import router as audit_log_router
+from app.api.calendar_feed import router as calendar_feed_router
 from app.api.auth import router as auth_router
 from app.api.break_rules import router as break_rules_router
 from app.api.devices import router as devices_router
@@ -28,6 +29,13 @@ from app.api.employee_default_shifts import router as employee_default_shifts_ro
 from app.api.employees import router as employees_router
 from app.api.holidays import router as holidays_router
 from app.api.hr_users import router as hr_users_router
+from app.api.departments import router as departments_router
+from app.api.personal_data import router as personal_data_router
+from app.api.attributes import router as attributes_router
+from app.api.change_requests import router as change_requests_router
+from app.api.document_templates import router as document_templates_router
+from app.api.public_api import router as public_api_router
+from app.api.two_factor import router as two_factor_router
 from app.api.leave_entitlements import router as leave_entitlements_router
 from app.api.locations import router as locations_router
 from app.api.notifications import router as notifications_router
@@ -48,6 +56,7 @@ from app.api.server_metrics import router as server_metrics_router
 from app.api.tls import router as tls_router
 from app.api.public import router as public_router
 from app.api.work_time_model import router as work_time_model_router
+from app.api.work_time_profiles import router as work_time_profiles_router
 from app.api.ws import router as ws_router
 from app.config import settings
 from app.db import AsyncSessionLocal
@@ -55,6 +64,8 @@ from app.errors import AppError
 from app.middleware.tenant import TenantResolutionMiddleware
 from app.services.holiday_import_service import ensure_holidays_imported_for_all_tenants
 from app.services.server_metrics import run_sampler
+from app.services.reminder_service import run_reminders
+from app.services.webhook_service import run_deliveries
 
 logger = logging.getLogger(__name__)
 
@@ -120,11 +131,21 @@ async def lifespan(app: FastAPI):
                 settings.server_metrics_disk_path,
             )
         )
+    # Erinnerungen (Probezeit, Befristung, Austritt, verfallender Urlaub), siehe
+    # app/services/reminder_service.py – nur bei Mandanten mit eingeschalteten Erinnerungen.
+    reminders = None
+    if settings.reminders_interval_seconds > 0:
+        reminders = asyncio.create_task(run_reminders(AsyncSessionLocal, settings.reminders_interval_seconds))
+    # Webhooks aus der Ausgangswarteschlange zustellen, siehe app/services/webhook_service.py.
+    webhooks = None
+    if settings.webhook_interval_seconds > 0:
+        webhooks = asyncio.create_task(run_deliveries(AsyncSessionLocal, settings.webhook_interval_seconds))
     yield
-    if sampler is not None:
-        sampler.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sampler
+    for task in (sampler, reminders, webhooks):
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(title="HR3000 Backend", lifespan=lifespan)
@@ -134,6 +155,7 @@ app.add_middleware(TenantResolutionMiddleware)
 app.include_router(tenants_router)
 app.include_router(server_metrics_router)
 app.include_router(auth_router)
+app.include_router(calendar_feed_router)
 app.include_router(employees_router)
 app.include_router(locations_router)
 app.include_router(devices_router)
@@ -144,6 +166,13 @@ app.include_router(absence_types_router)
 app.include_router(dashboard_router)
 app.include_router(punch_correction_requests_router)
 app.include_router(hr_users_router)
+app.include_router(departments_router)
+app.include_router(personal_data_router)
+app.include_router(attributes_router)
+app.include_router(change_requests_router)
+app.include_router(document_templates_router)
+app.include_router(public_api_router)
+app.include_router(two_factor_router)
 app.include_router(break_rules_router)
 app.include_router(settings_router)
 app.include_router(plan_router)
@@ -162,6 +191,7 @@ app.include_router(migration_router)
 app.include_router(employee_data_export_router)
 app.include_router(team_calendar_router)
 app.include_router(work_time_model_router)
+app.include_router(work_time_profiles_router)
 app.include_router(employment_router)
 app.include_router(documents_router)
 app.include_router(period_closures_router)

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.models.period_closure import PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 from app.services.period_service import build_month_report
@@ -25,12 +25,12 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-            HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
         ]
     )
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     r = await client.put(
         f"/employees/{employee.id}/work-time-model",
@@ -148,5 +148,5 @@ async def test_category_change_validation_and_permissions(client: AsyncClient, d
     _, admin = await _setup(db_session, client)
     home = await _type(client, admin, "Homeoffice", "SPECIAL_LEAVE")
     assert (await client.patch(f"/absence-types/{home}", headers=admin, json={"category": "HOMEOFFICE"})).status_code == 422
-    hr = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]}
+    hr = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]}
     assert (await client.patch(f"/absence-types/{home}", headers=hr, json={"category": "WORK_TIME"})).status_code == 403

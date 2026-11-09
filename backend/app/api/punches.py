@@ -36,7 +36,7 @@ router = APIRouter(tags=["punches"])
 async def _broadcast_balance_update(
     db: AsyncSession, employee: Employee, calculation: DayCalculation
 ) -> None:
-    """Sendet den aktuellen Gleitzeitsaldo nach jeder abgeschlossenen Stempelung an
+    """Sendet den aktuellen Überstundenkonto nach jeder abgeschlossenen Stempelung an
     alle verbundenen Kiosks des Standorts, siehe docs/konzept.md Abschnitt 5."""
     message: dict = {
         "type": "OVERTIME_BALANCE_UPDATED",
@@ -104,15 +104,13 @@ async def create_punch(
             rate_limiter.reset(pin_key)
         source = PunchSource.KIOSK
         device_id = actor.device.id
-        created_by = None
-        created_by_employee_id = None
+        created_by_account_id = None
     elif actor.is_full_hr_level:
         # Supervisor dürfen Zeiten nur ansehen; manuelle Buchungen/Korrekturen sind Admin/HR vorbehalten.
         await ensure_employee_visible(db, actor, employee)
         source = PunchSource.MANUAL_HR
         device_id = None
-        created_by = actor.audit_hr_user_id
-        created_by_employee_id = actor.audit_employee_id
+        created_by_account_id = actor.account_id
     else:
         raise AppError(403, "FORBIDDEN", "Mitarbeiter-Login erlaubt keine eigene Stempelung.")
 
@@ -128,8 +126,7 @@ async def create_punch(
         timestamp_utc=payload.timestamp_utc,
         source=source,
         device_id=device_id,
-        created_by=created_by,
-        created_by_employee_id=created_by_employee_id,
+        created_by_account_id=created_by_account_id,
         idempotency_key=payload.idempotency_key,
     )
     db.add(punch)
@@ -211,7 +208,7 @@ async def create_own_punch(
         punch_type=payload.punch_type,
         timestamp_utc=now,
         source=PunchSource.PORTAL,
-        created_by_employee_id=employee.id,
+        created_by_account_id=actor.account_id,
         idempotency_key=str(uuid.uuid4()),
     )
     db.add(punch)
@@ -273,14 +270,12 @@ async def correct_punch(
         punch.timestamp_utc = payload.timestamp_utc
     punch.corrected = True
     punch.correction_reason = payload.correction_reason
-    punch.created_by = actor.audit_hr_user_id
-    punch.created_by_employee_id = actor.audit_employee_id
+    punch.created_by_account_id = actor.account_id
 
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.PUNCH_CORRECTED,
         entity_type="punch",
         entity_id=punch.id,
@@ -323,8 +318,7 @@ async def delete_punch(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.PUNCH_DELETED,
         entity_type="punch",
         entity_id=punch.id,

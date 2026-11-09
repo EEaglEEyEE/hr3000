@@ -1,9 +1,9 @@
 /** „HR-Berechtigung“: Admins geben HR-Personen die Berechtigung „Vergütung & Lohn-Export“. */
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { loginAs, mockApi, renderWithProviders, type ApiInit } from '../../test/utils'
-import { EmployeeFormDialog } from './EmployeeFormDialog'
+import { EmployeeForm } from './EmployeeFormDialog'
 
 const LOCATIONS = [{ id: 1, name: 'Zentrale', timezone: 'Europe/Berlin' }] as never
 
@@ -22,7 +22,7 @@ describe('HR-Berechtigung: Vergütung & Lohn-Export', () => {
       'GET /teams': [],
       'PATCH /employees/{employee_id}/hr-role': (init: ApiInit) => ({ ...(employee as object), hr_payroll_access: (init.body as { payroll_access?: boolean }).payroll_access }),
     })
-    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} employee={employee} locations={LOCATIONS} />)
+    renderWithProviders(<EmployeeForm employee={employee} locations={LOCATIONS} />)
     const box = await screen.findByRole('checkbox', { name: /Vergütung & Lohn-Export/ })
     expect(box).not.toBeChecked()
     await userEvent.click(box)
@@ -36,7 +36,7 @@ describe('HR-Berechtigung: Vergütung & Lohn-Export', () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     mockApi({ 'GET /features': {}, 'GET /teams': [] })
     renderWithProviders(
-      <EmployeeFormDialog open onOpenChange={vi.fn()} employee={{ ...(employee as object), hr_role: 'SUPERVISOR' } as never} locations={LOCATIONS} />,
+      <EmployeeForm employee={{ ...(employee as object), hr_role: 'SUPERVISOR' } as never} locations={LOCATIONS} />,
     )
     await screen.findByText('HR-Berechtigung')
     expect(screen.queryByRole('checkbox', { name: /Vergütung & Lohn-Export/ })).not.toBeInTheDocument()

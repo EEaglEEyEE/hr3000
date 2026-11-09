@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.config import settings
-from app.models import AppSettings, BreakRule, HrRole, HrUser, Tenant, TenantPlan, TenantStatus
+from app.models import AppSettings, BreakRule, HrRole, Account, Tenant, TenantPlan, TenantStatus
 from app.services.auth_service import hash_password
 from app.services.tenant_provisioning import TERMS_VERSION
 
@@ -60,14 +60,14 @@ async def test_signup_creates_ready_to_use_company(client, db_session, platform)
 
     # Der Erst-Admin meldet sich mit dem selbst gewählten Passwort an – unter der eigenen Adresse.
     login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         json={"email": "nina@neue-firma.example", "password": "sehr-geheim-123"},
         headers={"Host": "neue-firma.hr3000.de"},
     )
     assert login.status_code == 200, login.text
     # ... aber nicht bei einer anderen Firma.
     other = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         json={"email": "nina@neue-firma.example", "password": "sehr-geheim-123"},
         headers={"Host": "musterfirma.hr3000.de"},
     )
@@ -80,7 +80,7 @@ async def test_taken_address_is_rejected_without_side_effects(client, db_session
     assert response.status_code == 409
     assert response.json()["code"] == "SUBDOMAIN_TAKEN"
     assert await _tenant_count(db_session) == before
-    assert await db_session.scalar(select(func.count()).select_from(HrUser).where(HrUser.email == "nina@neue-firma.example")) == 0
+    assert await db_session.scalar(select(func.count()).select_from(Account).where(Account.email == "nina@neue-firma.example")) == 0
 
 
 @pytest.mark.parametrize(
@@ -174,13 +174,13 @@ async def test_availability_checks_are_rate_limited(client, platform):
 
 
 async def test_super_admin_sees_self_signups(client, db_session, platform):
-    db_session.add(HrUser(tenant_id=None, email="chef@example.com", password_hash=hash_password("pw"), role=HrRole.SUPER_ADMIN))
+    db_session.add(Account(tenant_id=None, email="chef@example.com", password_hash=hash_password("pw"), role=HrRole.SUPER_ADMIN))
     await db_session.commit()
     assert (await client.post(SIGNUP, json=_payload(), headers=WEBSITE)).status_code == 201
 
     admin_host = {"Host": settings.super_admin_hostname}
     token = (
-        await client.post("/auth/hr/login", json={"email": "chef@example.com", "password": "pw"}, headers=admin_host)
+        await client.post("/auth/login", json={"email": "chef@example.com", "password": "pw"}, headers=admin_host)
     ).json()["access_token"]
     tenants = (await client.get("/tenants", headers={**admin_host, "Authorization": f"Bearer {token}"})).json()
     by_subdomain = {t["subdomain"]: t for t in tenants}

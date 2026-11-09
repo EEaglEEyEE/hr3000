@@ -1,7 +1,7 @@
 """Migration aus einem Altsystem: Werte bestehender Mitarbeiter per CSV übernehmen (Semikolon,
 UTF-8), zugeordnet über die Personalnummer, alles zu einem Stichtag:
 
-- saldo_stunden: Gleitzeit-Übertrag (Buchung "Übertrag" zum Stichtag, auch negativ),
+- saldo_stunden: Überstunden-Übertrag (Buchung "Übertrag" zum Stichtag, auch negativ),
 - urlaubsanspruch_tage / uebertrag_vorjahr_tage: Urlaubskonto des Stichtag-Jahres,
 - Arbeitszeitmodell ab Stichtag: wochenstunden + arbeitstage, tagesstunden, monatsstunden +
   arbeitstage, nur wochenstunden (flexibel) oder arbeitstage "nach Aufwand" (+ monatsgrenze);
@@ -141,7 +141,7 @@ def parse_migration_csv(content: str, employees_by_number: dict[str, Employee]) 
             if row.get("saldo_stunden"):
                 hours = _number(row["saldo_stunden"], "saldo_stunden", -2000, 2000)
                 result.balance_minutes = round(hours * 60)
-                result.changes.append(f"Gleitzeit-Übertrag {'+' if hours >= 0 else '−'}{_de(abs(hours))} h")
+                result.changes.append(f"Überstunden-Übertrag {'+' if hours >= 0 else '−'}{_de(abs(hours))} h")
             if row.get("urlaubsanspruch_tage"):
                 result.entitled_days = _days(_number(row["urlaubsanspruch_tage"], "urlaubsanspruch_tage", 0, 365))
                 result.changes.append(f"Urlaubsanspruch {_de(result.entitled_days)} Tage")

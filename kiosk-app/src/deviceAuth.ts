@@ -28,8 +28,12 @@ export type ResumeResult =
   | { kind: 'ok'; session: DeviceLoginResponse }
   /** kein Token gespeichert – Tablet ist nicht eingerichtet */
   | { kind: 'none' }
+  /** Per MDM registriert, wartet auf Freigabe in der HR-Webapp (Prüfcode am Bildschirm zeigen) */
+  | { kind: 'pending'; verifyCode: string | null }
   /** Server hat das Token abgelehnt (401/403) */
   | { kind: 'rejected' }
+  /** Ein anderes Gerät ist mit diesem Zugang gekoppelt (DEVICE_IN_USE) – nicht automatisch erneut versuchen */
+  | { kind: 'in_use' }
   /** Server nicht erreichbar oder gestört (Netzwerk, 5xx) */
   | { kind: 'unreachable' }
 
@@ -45,7 +49,14 @@ export async function resumeSession(): Promise<ResumeResult> {
   try {
     return { kind: 'ok', session: await deviceLogin(token) }
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'DEVICE_IN_USE') return { kind: 'in_use' }
+    if (err instanceof ApiError && err.code === 'DEVICE_PENDING') return { kind: 'pending', verifyCode: verifyCodeFrom(err.message) }
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return { kind: 'rejected' }
     return { kind: 'unreachable' }
   }
+}
+
+/** Prüfcode aus der Meldung „… Prüfcode: K7Q-4XZ“ (DEVICE_PENDING). */
+export function verifyCodeFrom(message: string): string | null {
+  return /Prüfcode: ([A-Z0-9]{3}-[A-Z0-9]{3})/.exec(message)?.[1] ?? null
 }

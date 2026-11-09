@@ -1,12 +1,13 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, HrRole, HrUser, Location
+from app.models import Device, HrRole, Account, Location
 from app.services.auth_service import decode_token, hash_password
+from app.services.pairing_service import token_hash
 
 
-async def _create_hr_user(db_session: AsyncSession, email: str, password: str) -> HrUser:
-    user = HrUser(email=email, password_hash=hash_password(password), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession, email: str, password: str) -> Account:
+    user = Account(email=email, password_hash=hash_password(password), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -19,7 +20,7 @@ async def _create_device(db_session: AsyncSession, token: str) -> Device:
     await db_session.commit()
     await db_session.refresh(location)
 
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
@@ -30,20 +31,20 @@ async def test_hr_login_success(client: AsyncClient, db_session: AsyncSession) -
     await _create_hr_user(db_session, "hr@example.com", "s3cret-pw")
 
     response = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
+        "/auth/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert decode_token(body["access_token"])["type"] == "access"
-    assert decode_token(body["refresh_token"])["type"] == "refresh"
+    assert decode_token(body["access_token"])["type"] == "account_access"
+    assert decode_token(body["refresh_token"])["type"] == "account_refresh"
 
 
 async def test_hr_login_wrong_password(client: AsyncClient, db_session: AsyncSession) -> None:
     await _create_hr_user(db_session, "hr@example.com", "s3cret-pw")
 
     response = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "wrong"}
+        "/auth/login", json={"email": "hr@example.com", "password": "wrong"}
     )
 
     assert response.status_code == 401
@@ -52,7 +53,7 @@ async def test_hr_login_wrong_password(client: AsyncClient, db_session: AsyncSes
 
 async def test_hr_login_unknown_email(client: AsyncClient, db_session: AsyncSession) -> None:
     response = await client.post(
-        "/auth/hr/login", json={"email": "nobody@example.com", "password": "whatever"}
+        "/auth/login", json={"email": "nobody@example.com", "password": "whatever"}
     )
 
     assert response.status_code == 401
@@ -64,14 +65,14 @@ async def test_hr_refresh_issues_new_token_pair(
 ) -> None:
     await _create_hr_user(db_session, "hr@example.com", "s3cret-pw")
     login_response = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
+        "/auth/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
     )
     refresh_token = login_response.json()["refresh_token"]
 
-    response = await client.post("/auth/hr/refresh", json={"refresh_token": refresh_token})
+    response = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
 
     assert response.status_code == 200
-    assert decode_token(response.json()["access_token"])["type"] == "access"
+    assert decode_token(response.json()["access_token"])["type"] == "account_access"
 
 
 async def test_hr_refresh_rejects_access_token(
@@ -79,11 +80,11 @@ async def test_hr_refresh_rejects_access_token(
 ) -> None:
     await _create_hr_user(db_session, "hr@example.com", "s3cret-pw")
     login_response = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
+        "/auth/login", json={"email": "hr@example.com", "password": "s3cret-pw"}
     )
     access_token = login_response.json()["access_token"]
 
-    response = await client.post("/auth/hr/refresh", json={"refresh_token": access_token})
+    response = await client.post("/auth/refresh", json={"refresh_token": access_token})
 
     assert response.status_code == 401
     assert response.json()["code"] == "TOKEN_INVALID"

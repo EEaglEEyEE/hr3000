@@ -20,6 +20,7 @@ export function HolidayEditDialog({
   const [date, setDate] = useState('')
   const [name, setName] = useState('')
   const [locationIds, setLocationIds] = useState<number[]>([])
+  const [halfDay, setHalfDay] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function HolidayEditDialog({
       setDate(holiday.date)
       setName(holiday.name)
       setLocationIds(holiday.location_ids)
+      setHalfDay(holiday.half_day ?? false)
       setError(null)
     }
   }, [holiday])
@@ -38,7 +40,7 @@ export function HolidayEditDialog({
     try {
       await updateHoliday.mutateAsync({
         holidayId: holiday.id,
-        payload: { date, name, location_ids: locationIds },
+        payload: { date, name, location_ids: locationIds, half_day: halfDay },
       })
       onOpenChange(false)
     } catch (err) {
@@ -80,6 +82,10 @@ export function HolidayEditDialog({
             <Label>Gilt für</Label>
             <LocationMultiSelect locations={locations} value={locationIds} onChange={setLocationIds} />
           </div>
+          <label className="flex items-center gap-1.5 text-sm">
+            <input type="checkbox" checked={halfDay} onChange={(event) => setHalfDay(event.target.checked)} />
+            Halber Tag (halbes Soll, Urlaub zählt halb)
+          </label>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

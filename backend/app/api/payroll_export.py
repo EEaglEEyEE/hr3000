@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_full_hr_principal, get_current_payroll_principal
 from app.db import get_db
 from app.errors import AppError
-from app.models import AppSettings, AuditAction, Employee, HrUser, PayrollExportLog, PeriodClosure, PeriodStatus
+from app.models import AbsenceType, Account, AppSettings, AuditAction, Employee, PayrollExportLog, PeriodClosure, PeriodStatus
 from app.services.audit_service import log_action
 from app.services.settings_service import get_or_create_settings
 from app.services.absence_type_service import format_days
@@ -20,6 +20,15 @@ from app.services.pay_component_service import PayComponentAmount, pay_component
 from app.services.payroll_export_service import PayrollPeriod, payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges, merge_by_family
 from app.services.team_scope_service import ensure_employee_visible
+
+
+# Eigene Spalten im Lohn-Export, in dieser Reihenfolge (nur wenn im Zeitraum genutzt).
+_SEPARATE_UNPAID_COLUMNS: dict[AbsenceType, str] = {
+    AbsenceType.PARENTAL_LEAVE: "Mutterschutz/Elternzeit-Tage",
+    AbsenceType.SHORT_TIME_WORK: "Kurzarbeit-Tage",
+    AbsenceType.UNEXCUSED: "Unentschuldigte Tage",
+    AbsenceType.CARE_LEAVE: "Pflege-Tage",
+}
 
 router = APIRouter(tags=["payroll_export"])
 
@@ -53,7 +62,7 @@ def _log_export(db: AsyncSession, actor: Actor, kind: str, date_from: date, date
     db.add(
         PayrollExportLog(
             tenant_id=actor.tenant_id, kind=kind, date_from=date_from, date_to=date_to, employee_count=count,
-            created_by_hr_user_id=actor.audit_hr_user_id,
+            created_by_account_id=actor.account_id,
         )
     )
 
@@ -112,6 +121,16 @@ async def export_payroll(
         {amount.column for amounts in pay.values() for amount in amounts},
         key=lambda column: (not column.startswith("Zulage "), column.lower()),
     )
+    summaries = {employee.id: periods[employee.id].summary() for employee in employees}
+    # Mutterschutz/Elternzeit, Kurzarbeit, Unentschuldigt, Pflege: eigene Spalte nur, wenn im Zeitraum
+    # genutzt – so bleibt der Export für alle anderen unverändert.
+    unpaid_columns = [
+        category
+        for category in _SEPARATE_UNPAID_COLUMNS
+        if any(summary.separate_unpaid_days.get(category) for summary in summaries.values())
+    ]
+    # Auszahlung mit Faktor (z. B. 1,5): gewichtete Stunden als eigene Spalte, nur wenn vorhanden.
+    weighted_payout_column = any(summary.payout_has_factor for summary in summaries.values())
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";")
     writer.writerow(
@@ -133,13 +152,15 @@ async def export_payroll(
             "Offene/fehlerhafte Tage",
             "Kind-krank-Tage",
             "Ausgezahlte Überstunden (Std.)",
+            *(["Ausgezahlte Überstunden gewichtet (Std.)"] if weighted_payout_column else []),
+            *[_SEPARATE_UNPAID_COLUMNS[category] for category in unpaid_columns],
             *[_csv_text(f"Zuschlag {name} (Std.)") for name in families.values()],
             *[_csv_text(f"{column} (€)") for column in pay_columns],
         ]
     )
 
     for employee in sorted(employees, key=lambda e: (e.last_name, e.first_name)):
-        summary = periods[employee.id].summary()
+        summary = summaries[employee.id]
         by_family = {rule.family: minutes for rule, minutes in merge_by_family(await compute_surcharges(db, employee, date_from, date_to, rules))}
         surcharge_hours = [_minutes_to_hours_str(by_family.get(family, 0)) for family in families]
         writer.writerow(
@@ -161,6 +182,8 @@ async def export_payroll(
                 summary.open_or_error_days,
                 format_days(summary.child_sick_days),
                 _minutes_to_hours_str(summary.payout_minutes),
+                *([_minutes_to_hours_str(summary.weighted_payout_minutes)] if weighted_payout_column else []),
+                *[format_days(summary.separate_unpaid_days[category]) for category in unpaid_columns],
                 *surcharge_hours,
                 *[_euro(pay.get(employee.id, []), column) for column in pay_columns],
             ]
@@ -210,8 +233,7 @@ async def update_datev_settings(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SETTINGS_CHANGED,
         entity_type="settings",
         entity_id=actor.tenant_id,
@@ -344,8 +366,8 @@ async def payroll_month_status(
     closed = sum(1 for e in employees if statuses.get(e.id) == PeriodStatus.CLOSED)
     submitted = sum(1 for e in employees if statuses.get(e.id) == PeriodStatus.SUBMITTED)
     query = (
-        select(PayrollExportLog, HrUser.email)
-        .outerjoin(HrUser, HrUser.id == PayrollExportLog.created_by_hr_user_id)
+        select(PayrollExportLog, Account)
+        .outerjoin(Account, Account.id == PayrollExportLog.created_by_account_id)
         .where(PayrollExportLog.tenant_id == actor.tenant_id, PayrollExportLog.date_from <= last, PayrollExportLog.date_to >= first)
         .order_by(PayrollExportLog.created_at.desc(), PayrollExportLog.id.desc())
         .limit(10)
@@ -355,9 +377,9 @@ async def payroll_month_status(
     exports = [
         ExportLogEntry(
             kind=log.kind, date_from=log.date_from, date_to=log.date_to, employee_count=log.employee_count,
-            created_at=log.created_at, created_by=email,
+            created_at=log.created_at, created_by=account.display_name if account else None,
         )
-        for log, email in (await db.execute(query)).all()
+        for log, account in (await db.execute(query)).all()
     ]
     return PayrollMonthStatus(
         month=month, employee_count=len(employees), closed=closed, submitted=submitted,

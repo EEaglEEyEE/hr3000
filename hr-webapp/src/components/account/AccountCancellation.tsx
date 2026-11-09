@@ -42,7 +42,7 @@ export function AccountCancellationCard() {
         {cancelled ? (
           <p className="text-sm text-amber-800">
             Gekündigt zum {formatDate(plan.contract_end ?? '')}. Bis zum {formatDate(plan.deletion_due_on ?? '')} könnt
-            ihr HR3000 weiter nutzen und alles exportieren (Auswertungen, Lohn-Export, DSGVO-Datenexport je
+            ihr HR3000 weiter nutzen und alles exportieren (Analysen, Lohn-Export, DSGVO-Datenexport je
             Mitarbeiter) – danach werden alle Daten endgültig gelöscht.
           </p>
         ) : (
@@ -118,7 +118,7 @@ export function CancellationBanner() {
   return (
     <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
       HR3000 ist gekündigt. Alle Daten werden am <strong>{formatDate(plan.deletion_due_on)}</strong> endgültig gelöscht
-      – bitte vorher exportieren (<Link to="/auswertungen" className="underline">Auswertungen</Link>,{' '}
+      – bitte vorher exportieren (<Link to="/auswertungen" className="underline">Analysen</Link>,{' '}
       <Link to="/lohn-export" className="underline">Lohn-Export</Link>).
       {isAdmin && (
         <>

@@ -1,4 +1,4 @@
-import { LogOut } from 'lucide-react'
+import { LogOut, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { initialDashboardRange, useAbsenceRequestsEnabled, useDashboardQuery } from '../api/queries/dashboard'
@@ -13,18 +13,28 @@ import { ThemeToggle } from '../components/layout/ThemeToggle'
 import { PunchHistoryTab } from '../components/punches/PunchHistoryTab'
 import { CorrectionRequestSelfCard } from '../components/punches/CorrectionRequests'
 import { CalendarTab } from '../components/timesheet/CalendarTab'
+import { TeamCalendarPage } from './TeamCalendarPage'
+import { CalendarSubscribe } from '../components/calendar/CalendarSubscribe'
 import { TimesheetTab } from '../components/timesheet/TimesheetTab'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { BrandLogo } from '../components/layout/BrandLogo'
 import { ShiftPlanTab } from '../components/shiftplanning/ShiftPlanTab'
 import { ChangePasswordButton } from '../components/account/ChangePasswordDialog'
+import { TwoFactorButton } from '../components/account/TwoFactorDialog'
+import { OrgChart } from '../components/org/OrgChart'
+import { OwnAttributes, OwnPersonalData } from '../components/employees/OwnPersonalData'
+import { ProposeChange } from '../components/employees/ChangeRequests'
+import { MyTasks } from '../components/checklists/MyTasks'
 
 export function SelfServicePage() {
   const { employeeId, logout, hasHrAccess } = useAuth()
   const employeeQuery = useEmployeeQuery(employeeId ?? undefined)
   const absenceRequestsEnabled = useAbsenceRequestsEnabled()
   // Reiter "Schichtplanung" nur, wenn die Firma Schichtplanung nutzt.
-  const shiftPlanningEnabled = useDashboardQuery(initialDashboardRange()).data?.shift_planning_enabled ?? false
+  const dashboardFlags = useDashboardQuery(initialDashboardRange()).data
+  const shiftPlanningEnabled = dashboardFlags?.shift_planning_enabled ?? false
+  const teamCalendarEnabled = dashboardFlags?.team_calendar_for_employees ?? false
+  const orgChartEnabled = dashboardFlags?.org_chart_for_employees ?? false
 
   if (employeeId === null) return null
   if (employeeQuery.isLoading) return <p className="p-6 text-slate-500">Lädt…</p>
@@ -56,6 +66,10 @@ export function SelfServicePage() {
           <ThemeToggle />
           <NotificationBell />
           <ChangePasswordButton className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800" />
+          <TwoFactorButton className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800" title="Zwei-Faktor-Anmeldung">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">Zwei-Faktor</span>
+          </TwoFactorButton>
           <button
             type="button"
             onClick={logout}
@@ -73,14 +87,20 @@ export function SelfServicePage() {
             <TabsTrigger value="overview">Übersicht</TabsTrigger>
             <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
             <TabsTrigger value="calendar">Kalender</TabsTrigger>
-            <TabsTrigger value="timesheet">Saldenübersicht</TabsTrigger>
+            {teamCalendarEnabled && <TabsTrigger value="teamcalendar">Teamkalender</TabsTrigger>}
+            {orgChartEnabled && <TabsTrigger value="orgchart">Organigramm</TabsTrigger>}
+            <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>
             <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
             {shiftPlanningEnabled && <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>}
             <TabsTrigger value="periods">Monatsabschluss</TabsTrigger>
             <TabsTrigger value="documents">Dokumente</TabsTrigger>
+            <TabsTrigger value="mydata">Meine Daten</TabsTrigger>
           </TabsList>
           <TabsContent value="overview">
-            <Dashboard />
+            <div className="flex flex-col gap-4">
+              <MyTasks employeeId={employeeId} />
+              <Dashboard />
+            </div>
           </TabsContent>
           <TabsContent value="punches">
             <div className="flex flex-col gap-4">
@@ -89,8 +109,21 @@ export function SelfServicePage() {
             </div>
           </TabsContent>
           <TabsContent value="calendar">
-            <CalendarTab employeeId={employeeId} />
+            <div className="flex flex-col gap-4">
+              {!teamCalendarEnabled && <CalendarSubscribe />}
+              <CalendarTab employeeId={employeeId} />
+            </div>
           </TabsContent>
+          {orgChartEnabled && (
+            <TabsContent value="orgchart">
+              <OrgChart />
+            </TabsContent>
+          )}
+          {teamCalendarEnabled && (
+            <TabsContent value="teamcalendar">
+              <TeamCalendarPage own />
+            </TabsContent>
+          )}
           <TabsContent value="timesheet">
             <TimesheetTab employeeId={employeeId} />
           </TabsContent>
@@ -102,6 +135,13 @@ export function SelfServicePage() {
           </TabsContent>
           <TabsContent value="periods">
             <PeriodClosuresSelfTab employeeId={employeeId} />
+          </TabsContent>
+          <TabsContent value="mydata">
+            <div className="flex flex-col gap-6">
+              <OwnPersonalData />
+              <OwnAttributes />
+              <ProposeChange />
+            </div>
           </TabsContent>
           <TabsContent value="documents">
             <DocumentsTab employeeId={employeeId} readOnly />

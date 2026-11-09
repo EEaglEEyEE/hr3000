@@ -12,16 +12,17 @@ from app.models import (
     Employee,
     Holiday,
     HrRole,
-    HrUser,
+    Account,
     Location,
     Tenant,
 )
 from app.services.auth_service import hash_password
 from app.services.leave_service import used_vacation_days
+from app.services.pairing_service import token_hash
 
 
 async def _login(client: AsyncClient, email: str) -> dict:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
@@ -29,7 +30,7 @@ async def _world(db_session: AsyncSession):
     location = Location(name="Standort A", timezone="UTC")
     db_session.add(location)
     for email, role in (("admin@example.com", HrRole.ADMIN), ("hr@example.com", HrRole.HR), ("sup@example.com", HrRole.SUPERVISOR)):
-        db_session.add(HrUser(email=email, password_hash=hash_password("pw"), role=role))
+        db_session.add(Account(email=email, password_hash=hash_password("pw"), role=role))
     await db_session.commit()
     await db_session.refresh(location)
     boss = Employee(
@@ -80,9 +81,9 @@ async def test_last_admin_cannot_be_deactivated_or_anonymized(client: AsyncClien
     _, boss, _ = await _world(db_session)
     # Der einzige HR-User-Admin wird entfernt -> der Chef-Mitarbeiter ist der letzte Admin.
     await db_session.delete((await db_session.execute(
-        __import__("sqlalchemy").select(HrUser).where(HrUser.email == "admin@example.com"))).scalar_one())
+        __import__("sqlalchemy").select(Account).where(Account.email == "admin@example.com"))).scalar_one())
     await db_session.commit()
-    login = await client.post("/auth/employee/login", json={"email": "chef@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "chef@example.com", "password": "pw"})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     boss.termination_date = date(2026, 1, 1)
     await db_session.commit()
@@ -114,10 +115,10 @@ async def test_location_employee_list_not_available_to_self_service(client: Asyn
     )
     db_session.add(colleague)
     await db_session.commit()
-    login = await client.post("/auth/employee/login", json={"email": "k@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "k@example.com", "password": "pw"})
     self_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     hr = await _login(client, "hr@example.com")
-    db_session.add(Device(location_id=location.id, device_token="dev-1", name="Kiosk"))
+    db_session.add(Device(location_id=location.id, token_hash=token_hash("dev-1"), name="Kiosk"))
     await db_session.commit()
     device = (await client.post("/auth/device/login", json={"device_token": "dev-1"})).json()
 

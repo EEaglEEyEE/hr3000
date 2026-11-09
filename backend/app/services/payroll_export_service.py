@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AbsenceType, AdjustmentKind, BalanceAdjustment, Employee, SummaryStatus
+from app.models import SEPARATE_UNPAID_CATEGORIES, AbsenceType, AdjustmentKind, BalanceAdjustment, Employee, SummaryStatus
 from app.services.timesheet_service import (
     absence_day_counts,
     calculate_day,
@@ -52,6 +52,8 @@ class PayrollSummary:
     unpaid_days: float
     time_off_days: float
     child_sick_days: float
+    # Mutterschutz/Elternzeit, Kurzarbeit, Unentschuldigt, Pflege – je Kategorie (Soll entfällt)
+    separate_unpaid_days: dict[AbsenceType, float]
     # Feiertage laut Kalender + Abwesenheiten der Kategorie "Feiertag" (z.B. Feiertag GfB)
     holiday_days: float
     open_or_error_days: int
@@ -61,6 +63,9 @@ class PayrollSummary:
     credit_minutes: dict[AbsenceType, int] = field(default_factory=dict)
     # Ausgezahlte Überstunden (Korrekturbuchung "Auszahlung") im Zeitraum, positiv
     payout_minutes: int = 0
+    # Auszahlungen × Faktor (z. B. 10 Std. mit 1,5 = 15 Std.) und ob ein Faktor ≠ 1 vorkam
+    weighted_payout_minutes: int = 0
+    payout_has_factor: bool = False
 
 
 @dataclass
@@ -72,6 +77,8 @@ class PayrollPeriod:
     last: date
     days: list[PayrollDay]
     payouts: list[tuple[date, int]]
+    # Auszahlungen mit Faktor (Tag, Minuten, Faktor) – für die gewichtete Spalte im Lohn-Export
+    payout_factors: list[tuple[date, int, float]] = field(default_factory=list)
 
     def summary(self, start: date | None = None, end: date | None = None) -> PayrollSummary:
         start, end = start or self.first, end or self.last
@@ -94,11 +101,14 @@ class PayrollPeriod:
             unpaid_days=counts[AbsenceType.UNPAID],
             time_off_days=counts[AbsenceType.TIME_OFF_IN_LIEU],
             child_sick_days=counts[AbsenceType.CHILD_SICK],
+            separate_unpaid_days={category: counts[category] for category in SEPARATE_UNPAID_CATEGORIES},
             holiday_days=sum(1 for d in days if d.holiday) + counts[AbsenceType.PUBLIC_HOLIDAY],
             open_or_error_days=sum(1 for d in days if d.open),
             worked_minutes=sum(d.worked for d in days),
             credit_minutes=credits,
             payout_minutes=sum(minutes for day, minutes in self.payouts if start <= day <= end),
+            weighted_payout_minutes=round(sum(m * f for day, m, f in self.payout_factors if start <= day <= end)),
+            payout_has_factor=any(f != 1 for day, m, f in self.payout_factors if start <= day <= end),
         )
 
 
@@ -141,7 +151,7 @@ async def payroll_period(db: AsyncSession, employee: Employee, date_from: date, 
         current += timedelta(days=1)
     payouts = (
         await db.execute(
-            select(BalanceAdjustment.effective_date, BalanceAdjustment.minutes).where(
+            select(BalanceAdjustment.effective_date, BalanceAdjustment.minutes, BalanceAdjustment.payout_factor).where(
                 BalanceAdjustment.employee_id == employee.id,
                 BalanceAdjustment.kind == AdjustmentKind.PAYOUT,
                 BalanceAdjustment.effective_date >= date_from,
@@ -149,7 +159,11 @@ async def payroll_period(db: AsyncSession, employee: Employee, date_from: date, 
             )
         )
     ).all()
-    return PayrollPeriod(employee, date_from, date_to, days, [(day, -minutes) for day, minutes in payouts])
+    return PayrollPeriod(
+        employee, date_from, date_to, days,
+        [(day, -minutes) for day, minutes, _ in payouts],
+        [(day, -minutes, float(factor or 1)) for day, minutes, factor in payouts],
+    )
 
 
 async def summarize_payroll(db: AsyncSession, employee: Employee, date_from: date, date_to: date) -> PayrollSummary:

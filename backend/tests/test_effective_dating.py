@@ -12,7 +12,7 @@ from app.models import (
     EmployeeDefaultShift,
     Holiday,
     HrRole,
-    HrUser,
+    Account,
     Location,
     PeriodClosure,
     PeriodStatus,
@@ -22,9 +22,9 @@ from app.services.auth_service import hash_password
 
 
 async def _admin(db_session: AsyncSession, client: AsyncClient) -> dict:
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 

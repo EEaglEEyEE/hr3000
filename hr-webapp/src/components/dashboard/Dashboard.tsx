@@ -101,7 +101,7 @@ function MyFigures({ me }: { me: NonNullable<DashboardData['me']> }) {
           />
         ) : (
         <Tile
-          label="Gleitzeitsaldo"
+          label="Überstundenkonto"
           value={`${formatMinutesAsHours(me.balance_minutes)} Std.`}
           tone={me.balance_minutes < 0 ? 'bad' : 'good'}
           hint={me.balance_date ? `Stand ${formatDate(me.balance_date)}` : undefined}

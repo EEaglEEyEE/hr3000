@@ -6,9 +6,31 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.schemas.common import normalize_card_uid
 
 
+def clean_mdm_name(value: str | None) -> str | None:
+    """Gerätename aus dem MDM: getrimmt, leer = keiner. Nicht ersetzte Platzhalter ({{devicename}},
+    %DeviceName%, $env:COMPUTERNAME) zählen als „kein Name“ statt als Name."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value or (value.startswith("{{") and value.endswith("}}")) or (
+        len(value) > 1 and value.startswith("%") and value.endswith("%")
+    ) or value.startswith("$"):
+        return None
+    if any(ord(ch) < 32 or ch in "<>" for ch in value):
+        raise ValueError("Der Gerätename enthält unzulässige Zeichen.")
+    return value
+
+
 class DeviceCreateRequest(BaseModel):
     location_id: int
     name: str = Field(min_length=1, max_length=255)
+    # Gerätename im MDM (optional): bindet ein per Registrierungsschlüssel startendes Gerät ohne Freigabe
+    mdm_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("mdm_name")
+    @classmethod
+    def _clean_mdm_name(cls, value: str | None) -> str | None:
+        return clean_mdm_name(value)
 
 
 class DeviceUpdateRequest(BaseModel):
@@ -21,6 +43,13 @@ class DeviceUpdateRequest(BaseModel):
     screen_hours_mode: Literal["DEFAULT", "ALWAYS", "CUSTOM"] | None = None
     screen_on_from: time | None = None
     screen_on_until: time | None = None
+    # Nur wenn mitgeschickt: neuer Gerätename im MDM, leer = entfernen
+    mdm_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("mdm_name")
+    @classmethod
+    def _clean_mdm_name(cls, value: str | None) -> str | None:
+        return clean_mdm_name(value)
 
     @model_validator(mode="after")
     def _valid_screen_hours(self) -> "DeviceUpdateRequest":
@@ -38,12 +67,16 @@ class DeviceResponse(BaseModel):
     id: int
     location_id: int
     name: str
-    device_token: str
     last_seen: datetime | None
+    # Gebunden an ein Tablet seit (None = noch kein Tablet angemeldet)
+    bound_at: datetime | None = None
+    # Letzter abgewiesener Versuch eines anderen Geräts
+    rejected_at: datetime | None = None
     theme: str | None = None
     screen_hours_mode: str | None = None
     screen_on_from: time | None = None
     screen_on_until: time | None = None
+    mdm_name: str | None = None
 
 
 class PairingCodeResponse(BaseModel):
@@ -75,7 +108,69 @@ class PinSetupRequest(BaseModel):
 
 class DevicePairRequest(BaseModel):
     code: str = Field(min_length=8, max_length=12)
+    installation_id: str = Field(min_length=16, max_length=100)
 
 
 class DevicePairResponse(BaseModel):
     device_token: str
+
+
+class DeviceEnrollRequest(BaseModel):
+    """Selbstregistrierung eines Tablets mit dem Registrierungsschlüssel aus der MDM-Start-URL."""
+
+    key: str = Field(min_length=20, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+    installation_id: str = Field(min_length=16, max_length=100)
+    name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str | None) -> str | None:
+        return clean_mdm_name(value)
+
+
+class DeviceEnrollResponse(BaseModel):
+    # BOUND = an einen Tablet-Eintrag gebunden, PENDING = wartet auf Freigabe in der Webapp
+    status: Literal["BOUND", "PENDING"]
+    device_token: str
+    # Prüfcode für den Abgleich bei der Freigabe (nur PENDING)
+    verify_code: str | None = None
+
+
+class EnrollmentKeyCreateRequest(BaseModel):
+    location_id: int
+    # None = unbefristet
+    valid_days: int | None = Field(default=30, ge=1, le=365)
+
+
+class EnrollmentKeyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    location_id: int
+    created_at: datetime
+    expires_at: datetime | None
+    last_used_at: datetime | None
+
+
+class EnrollmentKeyCreatedResponse(EnrollmentKeyResponse):
+    # Nur jetzt sichtbar – gespeichert wird nur der Hash
+    key: str
+    # Start-URL für das MDM (ohne Gerätenamen); None, wenn sich die Kiosk-Adresse nicht ableiten lässt
+    enroll_url: str | None = None
+
+
+class DeviceEnrollmentResponse(BaseModel):
+    id: int
+    location_id: int
+    reported_name: str | None
+    verify_code: str
+    created_at: datetime
+    last_seen_at: datetime | None
+    # Es gibt schon einen benutzten Tablet-Eintrag mit diesem Gerätenamen (möglicher Doppelgänger)
+    conflict_device_name: str | None = None
+
+
+class EnrollmentApproveRequest(BaseModel):
+    # Vorhandenen Tablet-Eintrag (gleicher Standort) übernehmen; None = neuen Eintrag anlegen
+    device_id: int | None = None
+    # Name eines neuen Eintrags (Standard: gemeldeter Gerätename)
+    name: str | None = Field(default=None, min_length=1, max_length=255)

@@ -1,7 +1,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Numeric, String, UniqueConstraint, func, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -38,7 +38,7 @@ class PayComponentType(Base):
 
 class PayComponent(Base):
     """Zulage oder Einmalzahlung eines Mitarbeiters – Teil der Vergütung, daher wie Compensation nur
-    für Admins sichtbar; Audit-Log ohne Beträge. Erscheint im Lohn-Export (nur wenn ein Admin ihn
+    für Admins sichtbar; Audit-Protokoll ohne Beträge. Erscheint im Lohn-Export (nur wenn ein Admin ihn
     zieht) bzw. im DATEV-Export mit der Lohnart seiner Art. Berechnung siehe
     app/services/pay_component_service.py."""
 
@@ -59,6 +59,11 @@ class PayComponent(Base):
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Nur Einmalzahlung: Datum (zählt im Lohn-Export des Zeitraums, in dem es liegt)
     pay_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Nur Einmalzahlung: Betrag als Prozent des Monatsgehalts am Zahltag (z. B. 50 = Urlaubsgeld,
+    # 100 = 13. Monatsgehalt); amount ist dann 0. recurs_yearly: jedes Jahr am selben Tag ab pay_date,
+    # bis valid_to (leer = unbefristet).
+    percent_of_salary: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    recurs_yearly: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

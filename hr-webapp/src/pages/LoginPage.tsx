@@ -1,13 +1,14 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { requestPasswordReset } from '../api/auth'
+import { enableTwoFactorAtLogin, loginTwoFactor, requestPasswordReset, setupTwoFactorAtLogin, type TwoFactorEnabled } from '../api/auth'
 import { ApiError } from '../api/client'
 import { useBrandingQuery } from '../api/queries/branding'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth, type TwoFactorStep } from '../auth/AuthContext'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { BrandLogo } from '../components/layout/BrandLogo'
+import { TwoFactorSetup } from '../components/account/TwoFactorSetup'
 import { Label } from '../components/ui/label'
 
 function loginErrorMessage(error: unknown): string {
@@ -17,7 +18,7 @@ function loginErrorMessage(error: unknown): string {
 }
 
 export function LoginPage() {
-  const { login } = useAuth()
+  const { login, updateTokens } = useAuth()
   const navigate = useNavigate()
   const branding = useBrandingQuery().data
   const [email, setEmail] = useState('')
@@ -27,13 +28,20 @@ export function LoginPage() {
   const [forgotOpen, setForgotOpen] = useState(false)
   const [forgotSent, setForgotSent] = useState<string | null>(null)
   const [forgotError, setForgotError] = useState<string | null>(null)
+  const [twoFactor, setTwoFactor] = useState<TwoFactorStep | null>(null)
+  const [code, setCode] = useState('')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setIsSubmitting(true)
     try {
-      await login(email, password)
+      const step = await login(email, password)
+      if (step) {
+        setTwoFactor(step)
+        setCode('')
+        return
+      }
       // Der Zugangsbereich (HR-Webapp vs. Mein Bereich) richtet sich nach den
       // hinterlegten Berechtigungen – ProtectedRoute leitet beim nächsten
       // Render automatisch an die richtige Stelle weiter.
@@ -43,6 +51,34 @@ export function LoginPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function handleCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!twoFactor) return
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      const tokens = await loginTwoFactor(twoFactor.challengeToken, code.trim())
+      updateTokens(tokens.access_token, tokens.refresh_token)
+      navigate('/', { replace: true })
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setTwoFactor(null)
+        setError('Die Anmeldung ist abgelaufen. Bitte erneut anmelden.')
+      } else if (err instanceof ApiError && err.status === 429) setError('Zu viele Fehlversuche. Bitte warte 15 Minuten.')
+      else setError('Der Code stimmt nicht.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const challengeToken = twoFactor?.challengeToken ?? ''
+  const startSetup = useCallback(() => setupTwoFactorAtLogin(challengeToken), [challengeToken])
+  const finishSetup = useCallback((value: string) => enableTwoFactorAtLogin(challengeToken, value), [challengeToken])
+  function handleSetupDone(result: TwoFactorEnabled) {
+    updateTokens(result.access_token, result.refresh_token)
+    navigate('/', { replace: true })
   }
 
   async function handleForgot(event: FormEvent<HTMLFormElement>) {
@@ -70,10 +106,56 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <BrandLogo size="lg" />
-          <CardTitle className="mt-3">{forgotOpen ? 'Passwort vergessen' : 'Anmelden'}</CardTitle>
+          <CardTitle className="mt-3">
+            {twoFactor?.kind === 'setup'
+              ? 'Zwei-Faktor-Anmeldung einrichten'
+              : twoFactor
+                ? 'Bestätigungscode'
+                : forgotOpen
+                  ? 'Passwort vergessen'
+                  : 'Anmelden'}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {forgotOpen ? (
+          {twoFactor?.kind === 'setup' ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-slate-600">Deine Firma schreibt für deine Rolle eine Zwei-Faktor-Anmeldung vor.</p>
+              <TwoFactorSetup start={startSetup} enable={finishSetup} onDone={handleSetupDone} />
+            </div>
+          ) : twoFactor ? (
+            <form className="flex flex-col gap-4" onSubmit={handleCode}>
+              <p className="text-sm text-slate-600">
+                Gib den 6-stelligen Code aus deiner Authenticator-App ein. Ohne Handy geht auch ein
+                Wiederherstellungscode.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="totp-code">Code</Label>
+                <Input
+                  id="totp-code"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  required
+                  maxLength={20}
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                />
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <Button type="submit" disabled={isSubmitting || code.trim().length < 6}>
+                {isSubmitting ? 'Prüfe…' : 'Anmelden'}
+              </Button>
+              <button
+                type="button"
+                className="text-sm text-sky-700 hover:underline"
+                onClick={() => {
+                  setTwoFactor(null)
+                  setError(null)
+                }}
+              >
+                Zurück
+              </button>
+            </form>
+          ) : forgotOpen ? (
             <form className="flex flex-col gap-4" onSubmit={handleForgot}>
               {forgotSent ? (
                 <p className="text-sm text-slate-700" role="status">

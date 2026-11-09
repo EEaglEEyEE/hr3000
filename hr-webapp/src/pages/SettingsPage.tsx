@@ -9,12 +9,15 @@ import { BUNDESLAND_LABELS } from '../lib/labels'
 import { cn } from '../lib/utils'
 import { SmtpSettingsCard } from '../components/settings/SmtpSettingsCard'
 import { LogoSettingsCard } from '../components/settings/LogoSettingsCard'
+import { TwoFactorPolicyCard } from '../components/settings/TwoFactorPolicyCard'
 import {
   CoreTimeCard,
   EmployeeDefaultsCard,
   KioskAdminPinCard,
   KioskDisplayCard,
   MaxShiftSpanCard,
+  SeniorityLeaveCard,
+  OvertimeLimitsCard,
   OpenDayChecksCard,
   KioskLoginCard,
   SettingsCard,
@@ -33,12 +36,19 @@ import { DevicesPage } from './DevicesPage'
 import { HolidaysPage } from './HolidaysPage'
 import { LocationsPage } from './LocationsPage'
 import { ShiftTemplatesPage } from './ShiftTemplatesPage'
+import { WorkTimeProfilesPage } from './WorkTimeProfilesPage'
 import { SurchargeRulesPage } from './SurchargeRulesPage'
 import { TeamsPage } from './TeamsPage'
+import { DepartmentsPage } from './DepartmentsPage'
+import { CostCentersPage } from './CostCentersPage'
+import { AttributeSettingsPage } from './AttributeSettingsPage'
+import { DocumentCategoriesPage } from './DocumentCategoriesPage'
+import { DocumentTemplatesPage } from './DocumentTemplatesPage'
+import { IntegrationsPage } from './IntegrationsPage'
 import { WageTypesPage } from './WageTypesPage'
 
 // Zwei Spalten ab großer Breite – lange Einstellungsseiten bleiben überschaubar.
-const GRID = 'grid items-start gap-4 xl:grid-cols-2'
+const GRID = 'grid grid-cols-1 items-start gap-4 xl:grid-cols-2'
 
 interface SectionContext {
   /** Firmen-Einstellungen (nur Admin – für HR nicht geladen). */
@@ -67,13 +77,19 @@ const GROUPS: { title: string; sections: Section[] }[] = [
       { key: 'firma', label: 'Allgemein', access: 'admin', needsSettings: true, render: ({ settings }) => <CompanySection settings={settings!} /> },
       { key: 'standorte', label: 'Standorte', access: 'hr', render: () => <LocationsPage /> },
       { key: 'teams', label: 'Teams', access: 'hr', render: () => <TeamsPage /> },
-      { key: 'feiertage', label: 'Feiertage', access: 'hr', render: () => <HolidaysPage /> },
+      { key: 'abteilungen', label: 'Abteilungen', access: 'hr', render: () => <DepartmentsPage /> },
+      { key: 'kostenstellen', label: 'Kostenstellen', access: 'hr', render: () => <CostCentersPage /> },
+      { key: 'personalakte-felder', label: 'Felder der Personalakte', access: 'admin', render: () => <AttributeSettingsPage /> },
+      { key: 'dokumentkategorien', label: 'Dokumentkategorien', access: 'admin', render: () => <DocumentCategoriesPage /> },
+      { key: 'dokumentvorlagen', label: 'Dokumentvorlagen', access: 'admin', render: () => <DocumentTemplatesPage /> },
+      { key: 'feiertage', label: 'Feiertagskalender', access: 'hr', render: () => <HolidaysPage /> },
     ],
   },
   {
     title: 'Arbeitszeit & Pausen',
     sections: [
       { key: 'arbeitszeit', label: 'Arbeitszeit', access: 'admin', needsSettings: true, render: ({ settings }) => <WorkingTimeSection settings={settings!} /> },
+      { key: 'arbeitszeitmodelle', label: 'Arbeitszeitmodelle', access: 'hr', render: () => <WorkTimeProfilesPage /> },
       { key: 'pausen', label: 'Pausenregeln', access: 'admin', render: () => <BreakRulesPage /> },
       {
         key: 'schichtplanung',
@@ -173,7 +189,8 @@ const GROUPS: { title: string; sections: Section[] }[] = [
           </div>
         ),
       },
-      { key: 'audit-log', label: 'Audit-Log', access: 'hr', render: () => <AuditLogPage /> },
+      { key: 'api', label: 'API & Webhooks', access: 'admin', render: () => <IntegrationsPage /> },
+      { key: 'audit-log', label: 'Audit-Protokoll', access: 'hr', render: () => <AuditLogPage /> },
     ],
   },
 ]
@@ -300,13 +317,13 @@ function CompanySection({ settings }: { settings: Settings }) {
         <div className="flex flex-col gap-4">
           <SettingsCard
             title="Standard-Bundesland"
-            description="Wird beim automatischen Import der Feiertage (siehe „Feiertage“) verwendet, wenn dort kein abweichendes Bundesland gewählt wird."
+            description="Wird beim automatischen Import der Feiertage (siehe „Feiertagskalender“) verwendet, wenn dort kein abweichendes Bundesland gewählt wird."
           >
             <Select
               value={settings.default_bundesland ?? undefined}
               onValueChange={(value) => update.mutate({ default_bundesland: value as Bundesland })}
             >
-              <SelectTrigger className="w-64" aria-label="Standard-Bundesland">
+              <SelectTrigger className="w-64 max-w-full" aria-label="Standard-Bundesland">
                 <SelectValue placeholder="Bundesland wählen" />
               </SelectTrigger>
               <SelectContent>
@@ -327,6 +344,30 @@ function CompanySection({ settings }: { settings: Settings }) {
             Markiert den Geburtstag eines Mitarbeiters im Kalender, sofern ein Geburtsdatum hinterlegt ist. Kann im
             Mitarbeiterformular pro Mitarbeiter zusätzlich deaktiviert werden.
           </SettingsToggle>
+          <SettingsToggle
+            checked={settings.reminders_enabled}
+            disabled={pending}
+            onChange={(checked) => update.mutate({ reminders_enabled: checked })}
+            title="Erinnerungen an Admin und HR"
+          >
+            Einmal am Tag als Benachrichtigung (und per E-Mail, wenn ein Mailversand eingerichtet ist): Probezeit endet in 14
+            Tagen, Befristung endet in 30 Tagen, Austritt in 14 Tagen, Resturlaub aus dem Vorjahr verfällt in 30 Tagen – das
+            Letzte auch an die Person selbst.
+          </SettingsToggle>
+          <SettingsToggle
+            checked={settings.org_chart_for_employees}
+            disabled={pending}
+            onChange={(checked) => update.mutate({ org_chart_for_employees: checked })}
+            title="Mitarbeiter sehen das Organigramm"
+          >
+            Reiter „Organigramm“ in „Mein Bereich“ mit Name, Position, Abteilung und Führungskraft aller aktiven
+            Mitarbeiter. Admin, HR und Führungskräfte sehen es immer.
+          </SettingsToggle>
+          <TwoFactorPolicyCard
+            roles={settings.two_factor_roles}
+            disabled={pending}
+            onChange={(roles) => update.mutate({ two_factor_roles: roles })}
+          />
         </div>
         <LogoSettingsCard />
       </div>
@@ -342,12 +383,12 @@ function WorkingTimeSection({ settings }: { settings: Settings }) {
       <div className={GRID}>
         <div className="flex flex-col gap-4">
           <SettingsCard
-            title="Gleitzeitkonten führen ab"
+            title="Überstundenkonten führen ab"
             description="Leer = je Mitarbeiter ab der ersten Stempelung (frühestens ab Eintritt). Mit einem Datum (z. B. Einführung von HR3000) beginnt das Konto für alle an diesem Tag – auch für Mitarbeiter, die noch nie gestempelt haben; fehlende Stunden zählen dann ins Minus. Altsalden lassen sich am Mitarbeiter als „Übertrag“ buchen. Eine Änderung rechnet alle Konten neu."
           >
             <input
               type="date"
-              aria-label="Gleitzeitkonten führen ab"
+              aria-label="Überstundenkonten führen ab"
               className="h-9 w-44 rounded-md border border-slate-300 px-2 text-sm"
               value={settings.balance_start_date ?? ''}
               disabled={pending}
@@ -362,6 +403,7 @@ function WorkingTimeSection({ settings }: { settings: Settings }) {
           </SettingsCard>
           <EmployeeDefaultsCard settings={settings} />
           <MaxShiftSpanCard settings={settings} />
+          <OvertimeLimitsCard settings={settings} />
         </div>
         <CoreTimeCard settings={settings} />
       </div>
@@ -400,6 +442,7 @@ function VacationSection({ settings }: { settings: Settings }) {
       <div className={GRID}>
         <div className="flex flex-col gap-4">
           <VacationRulesCard settings={settings} />
+          <SeniorityLeaveCard settings={settings} />
           <VacationCarryOverCard settings={settings} />
         </div>
         <div className="flex flex-col gap-4">
@@ -419,9 +462,27 @@ function VacationSection({ settings }: { settings: Settings }) {
             onChange={(checked) => update.mutate({ absence_four_eyes: checked })}
             title="Vier-Augen-Prinzip: eigene Anträge genehmigt jemand anderes"
           >
-            An = Wer genehmigen darf (Admin, HR, Teamleiter/innen), bekommt eigene Abwesenheiten mit „Genehmigung nötig“ nicht
+            An = Wer genehmigen darf (Admin, HR, Führungskräfte), bekommt eigene Abwesenheiten mit „Genehmigung nötig“ nicht
             direkt genehmigt – sie erscheinen als Antrag unter „Zu klären“ → „Urlaubsanträge“ und eine andere Person entscheidet. Aus =
             eigene Einträge gelten sofort.
+          </SettingsToggle>
+          <SettingsToggle
+            checked={settings.absence_overlaps_for_employees}
+            disabled={pending}
+            onChange={(checked) => update.mutate({ absence_overlaps_for_employees: checked })}
+            title="Mitarbeiter sehen beim Antrag, wer im Team gleichzeitig abwesend ist"
+          >
+            An = Im Antrag stehen Name und Zeitraum der Abwesenheiten anderer aus demselben Team (ohne Art). Wer genehmigt,
+            sieht das unter „Zu klären“ → „Urlaubsanträge“ immer – dort mit Art und Resturlaub.
+          </SettingsToggle>
+          <SettingsToggle
+            checked={settings.team_calendar_for_employees}
+            disabled={pending}
+            onChange={(checked) => update.mutate({ team_calendar_for_employees: checked })}
+            title="Mitarbeiter sehen den Teamkalender ihres Teams"
+          >
+            An = In „Mein Bereich“ gibt es den Reiter „Teamkalender“ mit den Abwesenheiten im eigenen Team. Die Art steht nur bei
+            Abwesenheitsarten mit „Im Teamkalender: farbig“, sonst nur, dass jemand fehlt; Homeoffice-Angaben gar nicht.
           </SettingsToggle>
         </div>
       </div>

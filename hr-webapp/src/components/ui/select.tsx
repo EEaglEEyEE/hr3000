@@ -10,16 +10,17 @@ export function SelectTrigger({
   children,
   ...props
 }: React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>) {
+  // Lange Werte einzeilig mit „…“ kürzen: Umbrechen würde aus dem 36 px hohen Feld laufen
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        'flex h-9 w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-slate-300 bg-white px-3 py-1 text-sm shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-50 [&>span:first-child]:truncate',
         className,
       )}
       {...props}
     >
       {children}
-      <SelectPrimitive.Icon>
+      <SelectPrimitive.Icon className="shrink-0">
         <ChevronDown className="h-4 w-4 text-slate-500" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>

@@ -6,7 +6,16 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Employee, EmployeeDefaultShift, EmploymentContract, LeaveEntitlement
+from app.models import (
+    Absence,
+    AbsenceApprovalStatus,
+    AbsenceType,
+    Employee,
+    EmployeeDefaultShift,
+    EmploymentContract,
+    LeaveAdjustment,
+    LeaveEntitlement,
+)
 from app.services.settings_service import get_or_create_settings
 
 
@@ -24,6 +33,16 @@ async def is_leave_day(db: AsyncSession, employee: Employee, day: date) -> bool:
     if plan.plan_exists and plan.flexible_weekly_minutes is None:
         return plan.is_workday and (plan.target_minutes or 0) > 0
     return day.weekday() < 5
+
+
+async def leave_day_weight(db: AsyncSession, employee: Employee, day: date) -> float:
+    """Wie viel ein ganzer Abwesenheitstag an diesem Tag zählt: 1, an einem halben Feiertag 0,5,
+    an Tagen ohne Arbeitspflicht (siehe is_leave_day) 0."""
+    from app.services.timesheet_service import _half_holiday
+
+    if not await is_leave_day(db, employee, day):
+        return 0.0
+    return 0.5 if await _half_holiday(db, employee, day) else 1.0
 
 
 async def vacation_days_between(db: AsyncSession, employee_id: int, start: date, end: date) -> float:
@@ -49,8 +68,8 @@ async def vacation_days_between(db: AsyncSession, employee_id: int, start: date,
         current = max(absence.date_from, start)
         last = min(absence.date_to, end)
         while current <= last:
-            if await is_leave_day(db, employee, current):
-                total_days += 0.5 if absence.half_day else 1
+            weight = await leave_day_weight(db, employee, current)
+            total_days += weight * (0.5 if absence.half_day else 1)
             current += timedelta(days=1)
     return total_days
 
@@ -73,6 +92,8 @@ class LeaveBalance:
     expiring_days: float
     expiry_date: date | None
     remaining_days: float
+    # Summe der Korrekturen (LeaveAdjustment) des Jahres, auch verfallene
+    adjustment_days: float = 0.0
 
 
 def _expiry_date(settings_row, year: int) -> date | None:
@@ -126,12 +147,28 @@ async def leave_balance(
         carried = float(entitlement.carried_over_days) if entitlement else 0.0
 
     expiry = _expiry_date(settings_row, year)
-    expiring = expired = 0.0
+    adjustments = (
+        await db.execute(select(LeaveAdjustment).where(LeaveAdjustment.employee_id == employee_id, LeaveAdjustment.year == year))
+    ).scalars().all()
+    adjustment_days = sum(float(a.days) for a in adjustments)
+    # Verfallende Töpfe – Übertrag und positive Korrekturen mit Verfallsdatum – in der Reihenfolge
+    # ihres Verfalls: genommener Urlaub bis zum jeweiligen Stichtag zählt zuerst gegen den frühesten.
+    pools: list[tuple[date, float, bool]] = []
     if expiry is not None and carried > 0:
-        used_until_expiry = await vacation_days_between(db, employee_id, date(year, 1, 1), expiry)
-        expiring = max(0.0, carried - used_until_expiry)
-        if date.today() > expiry:
-            expired, expiring = expiring, 0.0
+        pools.append((expiry, carried, True))
+    pools += [(a.expires_on, float(a.days), False) for a in adjustments if a.expires_on is not None and float(a.days) > 0]
+    pools.sort(key=lambda pool: pool[0])
+    expiring = expired = 0.0
+    consumed = 0.0
+    for when, amount, is_carry in pools:
+        used_until = await vacation_days_between(db, employee_id, date(year, 1, 1), when)
+        take = min(amount, max(0.0, used_until - consumed))
+        consumed += take
+        leftover = amount - take
+        if date.today() > when:
+            expired += leftover
+        elif is_carry:
+            expiring = leftover
 
     return LeaveBalance(
         entitled_days=entitled,
@@ -141,7 +178,8 @@ async def leave_balance(
         expired_days=expired,
         expiring_days=expiring,
         expiry_date=expiry if carried > 0 else None,
-        remaining_days=entitled + carried - expired - used,
+        remaining_days=entitled + carried + adjustment_days - expired - used,
+        adjustment_days=adjustment_days,
     )
 
 
@@ -249,6 +287,7 @@ async def computed_entitlement(db: AsyncSession, employee: Employee, year: int) 
         )
     ).scalars().all()
     days_in_year = (last - first).days + 1
+    extra = seniority_extra_days(settings_row.seniority_leave_rules, employee.hire_date, year)
     total = 0.0
     factor_sum = 0.0
     employed_days = 0
@@ -262,6 +301,8 @@ async def computed_entitlement(db: AsyncSession, employee: Employee, year: int) 
             default=None,
         )
         base = float(contract.annual_vacation_days) if contract is not None else default
+        if base > 0:
+            base += extra  # Zusatzurlaub nach Betriebszugehörigkeit (nur mit hinterlegtem Jahresurlaub)
         total += base * factor / days_in_year
         factor_sum += factor
         employed_days += 1
@@ -270,7 +311,55 @@ async def computed_entitlement(db: AsyncSession, employee: Employee, year: int) 
         # gesetzlicher Mindesturlaub für das ganze Jahr (bei Teilzeit anteilig) – nur, wenn überhaupt
         # ein Jahresurlaub hinterlegt ist (Standard 0 = HR trägt den Anspruch selbst ein)
         total = max(total, STATUTORY_DAYS_5 * factor_sum / employed_days)
+    if settings_row.reduce_vacation_parental_leave and total > 0:
+        # § 17 BEEG: je vollem Kalendermonat Elternzeit 1/12 des Jahresurlaubs (auch des gesetzlichen).
+        months = await full_parental_leave_months(db, employee.id, year)
+        if months:
+            yearly = total * days_in_year / max(1, (end - start).days + 1) if partial else total
+            total = max(0.0, total - yearly * months / 12)
     return round_vacation(total)
+
+
+def seniority_extra_days(rules: str | None, hire_date: date | None, year: int) -> float:
+    """Zusatzurlaub (Tage, 5-Tage-Woche) der höchsten Stufe, deren Jahre im Kalenderjahr vollendet
+    werden – z. B. "5:1,10:2", Eintritt 01.08.2020: ab 2025 +1, ab 2030 +2."""
+    if not rules or hire_date is None:
+        return 0.0
+    completed = year - hire_date.year  # im Lauf des Jahres vollendete Jahre
+    extra = 0.0
+    for part in rules.split(","):
+        years, days = part.split(":", 1)
+        if completed >= int(years):
+            extra = float(days)
+    return extra
+
+
+async def full_parental_leave_months(db: AsyncSession, employee_id: int, year: int) -> int:
+    """Volle Kalendermonate des Jahres, die ganz von genehmigter Elternzeit (Kategorie
+    „Mutterschutz/Elternzeit“) abgedeckt sind."""
+    absences = (
+        await db.execute(
+            select(Absence.date_from, Absence.date_to).where(
+                Absence.employee_id == employee_id,
+                Absence.type == AbsenceType.PARENTAL_LEAVE,
+                Absence.approval_status == AbsenceApprovalStatus.APPROVED,
+                Absence.date_from <= date(year, 12, 31),
+                Absence.date_to >= date(year, 1, 1),
+            )
+        )
+    ).all()
+    covered = set()
+    for date_from, date_to in absences:
+        day = max(date_from, date(year, 1, 1))
+        while day <= min(date_to, date(year, 12, 31)):
+            covered.add(day)
+            day += timedelta(days=1)
+    months = 0
+    for month in range(1, 13):
+        last_day = calendar.monthrange(year, month)[1]
+        if all(date(year, month, d) in covered for d in range(1, last_day + 1)):
+            months += 1
+    return months
 
 
 async def suggested_entitlement(db: AsyncSession, employee_id: int, year: int, full_time_days: float | None = None) -> float | None:

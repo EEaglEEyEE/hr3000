@@ -1,8 +1,7 @@
 const ACCESS_TOKEN_KEY = 'hr3000.access_token'
 const REFRESH_TOKEN_KEY = 'hr3000.refresh_token'
-const PRINCIPAL_TYPE_KEY = 'hr3000.principal_type'
-
-export type PrincipalType = 'hr' | 'employee'
+// Bis zum Kontomodell (11/2026) gespeichert – wird beim An- und Abmelden entfernt.
+const LEGACY_PRINCIPAL_TYPE_KEY = 'hr3000.principal_type'
 
 export function getAccessToken(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY)
@@ -12,21 +11,16 @@ export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_TOKEN_KEY)
 }
 
-export function getPrincipalType(): PrincipalType | null {
-  const value = localStorage.getItem(PRINCIPAL_TYPE_KEY)
-  return value === 'hr' || value === 'employee' ? value : null
-}
-
-export function setTokens(accessToken: string, refreshToken: string, principalType: PrincipalType): void {
+export function setTokens(accessToken: string, refreshToken: string): void {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
   localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-  localStorage.setItem(PRINCIPAL_TYPE_KEY, principalType)
+  localStorage.removeItem(LEGACY_PRINCIPAL_TYPE_KEY)
 }
 
 export function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
-  localStorage.removeItem(PRINCIPAL_TYPE_KEY)
+  localStorage.removeItem(LEGACY_PRINCIPAL_TYPE_KEY)
   window.dispatchEvent(new Event('auth:logout'))
 }
 
@@ -62,23 +56,21 @@ let refreshPromise: Promise<string | null> | null = null
  * Refresh-Requests zu feuern. */
 export function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken()
-  const principalType = getPrincipalType()
-  if (!refreshToken || !principalType) {
+  if (!refreshToken) {
     return Promise.resolve(null)
   }
 
   if (!refreshPromise) {
-    refreshPromise = doRefresh(refreshToken, principalType).finally(() => {
+    refreshPromise = doRefresh(refreshToken).finally(() => {
       refreshPromise = null
     })
   }
   return refreshPromise
 }
 
-async function doRefresh(refreshToken: string, principalType: PrincipalType): Promise<string | null> {
-  const endpoint = principalType === 'hr' ? '/api/auth/hr/refresh' : '/api/auth/employee/refresh'
+async function doRefresh(refreshToken: string): Promise<string | null> {
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch('/api/auth/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
@@ -93,7 +85,7 @@ async function doRefresh(refreshToken: string, principalType: PrincipalType): Pr
       return null
     }
     const body = (await response.json()) as TokenPair
-    setTokens(body.access_token, body.refresh_token, principalType)
+    setTokens(body.access_token, body.refresh_token)
     return body.access_token
   } catch {
     // Netzwerkfehler: nicht abmelden, der nächste Versuch klappt vielleicht.

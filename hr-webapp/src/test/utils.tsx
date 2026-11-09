@@ -22,18 +22,19 @@ export function fakeJwt(payload: Record<string, unknown>): string {
 }
 
 export function loginAs(login: Login): void {
+  // Ein Konto: Rolle (Verwaltung) und/oder Mitarbeiter (emp), wie im echten Token
   const payload =
     login.kind === 'hr'
-      ? { sub: '1', role: login.role, type: 'hr', ...(login.payroll ? { payroll: true } : {}) }
+      ? { sub: '1', type: 'account_access', role: login.role, emp: null, ...(login.payroll ? { payroll: true } : {}) }
       : {
-          sub: String(login.employeeId),
-          type: 'employee',
-          ...(login.hrRole ? { hr_role: login.hrRole } : {}),
+          sub: '2',
+          type: 'account_access',
+          role: login.hrRole ?? null,
+          emp: login.employeeId,
           ...(login.payroll ? { payroll: true } : {}),
         }
   localStorage.setItem('hr3000.access_token', fakeJwt(payload))
   localStorage.setItem('hr3000.refresh_token', fakeJwt(payload))
-  localStorage.setItem('hr3000.principal_type', login.kind)
 }
 
 /** Fehlerantwort des Servers im Format {detail, code}. */

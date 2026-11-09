@@ -40,6 +40,10 @@ export const ABSENCE_TYPE_LABELS: Record<AbsenceType, string> = {
   WORK_TIME: 'Arbeitszeit',
   PUBLIC_HOLIDAY: 'Feiertag',
   CHILD_SICK: 'Kind krank',
+  PARENTAL_LEAVE: 'Mutterschutz/Elternzeit',
+  SHORT_TIME_WORK: 'Kurzarbeit',
+  UNEXCUSED: 'Unentschuldigt',
+  CARE_LEAVE: 'Pflege von Angehörigen',
 }
 
 /** Wie eine Abwesenheitsart zählt (Kategorie) – Erklärung für die Einstellungen. */
@@ -52,6 +56,10 @@ export const ABSENCE_CATEGORY_HINTS: Record<AbsenceType, string> = {
   WORK_TIME: 'Arbeitszeit (z. B. Homeoffice, zusätzliche Stunden): zählt als gearbeitet, kein Abwesenheitstag',
   PUBLIC_HOLIDAY: 'Feiertag (z. B. Feiertag GfB): Soll wird gutgeschrieben, zählt als Feiertag',
   CHILD_SICK: 'Kind krank: Soll wird gutgeschrieben, wird getrennt von eigener Krankheit gezählt',
+  PARENTAL_LEAVE: 'Mutterschutz/Elternzeit: Soll entfällt, eigene Spalte im Lohn-Export',
+  SHORT_TIME_WORK: 'Kurzarbeit: Soll entfällt, eigene Spalte im Lohn-Export',
+  UNEXCUSED: 'Unentschuldigtes Fehlen: Soll entfällt, eigene Spalte im Lohn-Export',
+  CARE_LEAVE: 'Pflege von Angehörigen: Soll entfällt, eigene Spalte im Lohn-Export',
 }
 
 export const DAY_STATUS_LABELS: Record<SummaryStatus, string> = {
@@ -96,12 +104,21 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   PERIOD_DISPUTED: 'Monatsnachweis beanstandet',
   PERIOD_CLOSED: 'Monat abgeschlossen',
   PERIOD_REOPENED: 'Monat wieder geöffnet',
-  CHECKLIST_STARTED: 'Checkliste gestartet',
+  CHECKLIST_STARTED: 'On-/Offboarding zugewiesen',
   SURCHARGE_RULES_CHANGED: 'Zuschlagsregeln geändert',
   PUNCH_CORRECTION_DECIDED: 'Korrekturantrag entschieden',
   EMPLOYEE_CARD_REGISTERED: 'Chip am Tablet registriert',
   EMPLOYEE_PIN_SET_AT_KIOSK: 'PIN am Tablet festgelegt',
-  BALANCE_ADJUSTED: 'Gleitzeitkonto gebucht',
+  BALANCE_ADJUSTED: 'Überstundenkonto gebucht',
+  LOGIN: 'Anmeldung',
+  LEAVE_ADJUSTED: 'Urlaubskonto korrigiert',
+  DEVICE_LOGIN_REJECTED: 'Tablet-Anmeldung eines anderen Geräts abgewiesen',
+  TWO_FACTOR_CHANGED: 'Zwei-Faktor-Anmeldung geändert',
+  DEPARTMENT_CHANGED: 'Abteilung geändert',
+  PERSONAL_DATA_CHANGED: 'Persönliche Daten geändert',
+  COST_CENTERS_CHANGED: 'Kostenstellen geändert',
+  ATTRIBUTE_CHANGED: 'Feld der Personalakte geändert',
+  DEVICE_ENROLLMENT: 'Tablet-Registrierung per MDM',
 }
 
 export const AUDIT_ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -109,7 +126,7 @@ export const AUDIT_ENTITY_TYPE_LABELS: Record<string, string> = {
   employee: 'Mitarbeiter',
   absence: 'Abwesenheit',
   app_settings: 'Einstellungen',
-  hr_user: 'HR-Nutzer',
+  hr_user: 'HR-Konto',
   team: 'Team',
   surcharge_rule: 'Zuschlagsregel',
 }
@@ -190,7 +207,7 @@ export const CHECKLIST_KIND_LABELS: Record<components['schemas']['ChecklistRespo
 export const CHECKLIST_ROLE_LABELS: Record<components['schemas']['ChecklistRole'], string> = {
   HR: 'HR',
   IT: 'IT',
-  SUPERVISOR: 'Teamleiter/in',
+  SUPERVISOR: 'Führungskraft',
   EMPLOYEE: 'Mitarbeiter/in',
   OTHER: 'Sonstige',
 }
@@ -205,4 +222,20 @@ export const DAY_FLAG_LABELS: Record<string, string> = {
   LATE_ARRIVAL: 'Zu spät gekommen (nach Schicht-/Kernzeitbeginn)',
   EARLY_LEAVE: 'Zu früh gegangen (vor Schicht-/Kernzeitende)',
   OUTSIDE_FLEX_FRAME: 'Außerhalb der Gleitzeit-Rahmenzeit gestempelt',
+}
+
+/** Status wie in der Personalakte (aus Eintritt/Austritt, Aktiv und Elternzeit/Pflegezeit). */
+export const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
+  ONBOARDING: 'Onboarding',
+  ACTIVE: 'Aktiv',
+  LEAVE: 'Auszeit',
+  INACTIVE: 'Inaktiv',
+}
+
+/** Aktion einer On-/Offboarding-Aufgabe. */
+export const CHECKLIST_ACTION_LABELS: Record<string, string> = {
+  TASK: 'Abhaken',
+  UPLOAD_DOCUMENT: 'Person lädt Dokument hoch',
+  FILL_DATA: 'Person trägt Daten ein',
+  SEND_EMAIL: 'E-Mail beim Start senden',
 }

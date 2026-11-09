@@ -3,7 +3,7 @@ from datetime import time
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, ShiftTemplate
+from app.models import Employee, HrRole, Account, Location, ShiftTemplate
 from app.services.auth_service import hash_password
 
 _MO_FR = 0b0011111
@@ -32,8 +32,8 @@ async def _create_template(db_session: AsyncSession, name: str, start: time | No
     return template
 
 
-async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -41,7 +41,7 @@ async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 

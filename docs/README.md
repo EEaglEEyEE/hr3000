@@ -20,8 +20,9 @@ Nutzungsbedingungen (`agb`) und AV-Vertrag (`avv`).
 - `feature-kiosk-bildschirmzeiten.md`: Auftrag für die Bildschirmzeiten, umgesetzt am
   04.11.2026.
 
-**Vorschläge (intern, noch nicht entschieden):**
-- `konzept-konten.md`: ein Kontomodell statt HR-Konten und Mitarbeiter-Logins (07.11.2026).
+**Konzepte (intern):**
+- `konzept-konten.md`: ein Kontomodell statt HR-Konten und Mitarbeiter-Logins (umgesetzt
+  07.11.2026, Migration 0119).
 
 **Öffentlich unter https://hr3000.de/doku**: die beiden Handbücher und die Änderungen, erzeugt
 mit `python3 scripts/build_website_docs.py` (nach jeder Änderung ausführen und `website/doku/`

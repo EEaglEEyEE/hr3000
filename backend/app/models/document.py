@@ -18,6 +18,21 @@ class DocumentCategory(str, enum.Enum):
     OTHER = "OTHER"
 
 
+class DocumentCategoryDefinition(Base):
+    """Eigene Dokumentkategorie der Firma mit Rechten: Mitarbeiter dürfen hochladen, für Mitarbeiter
+    sichtbar (Vorgabe beim Ablegen), vertraulich (nur Admins). Die festen Kategorien bleiben daneben."""
+
+    __tablename__ = "document_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(60))
+    employee_upload: Mapped[bool] = mapped_column(Boolean, default=False)
+    employee_visible: Mapped[bool] = mapped_column(Boolean, default=False)
+    confidential: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class EmployeeDocument(Base):
     """Dokument in der Personalakte. Der Inhalt liegt verschlüsselt im
     Dateisystem (storage_key, siehe app/services/document_service.py), hier
@@ -40,7 +55,7 @@ class EmployeeDocument(Base):
     confidential: Mapped[bool] = mapped_column(Boolean, default=False)
     employee_visible: Mapped[bool] = mapped_column(Boolean, default=False)
     retention_until: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Dual-Actor wie überall: HrUser ODER Mitarbeiter mit hr_role.
-    uploaded_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    uploaded_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    uploaded_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    # Eigene Kategorie (dann category = OTHER)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("document_categories.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

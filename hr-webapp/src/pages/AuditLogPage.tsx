@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { Download } from 'lucide-react'
+import { downloadCsv } from '../lib/csv'
+import { Button } from '../components/ui/button'
 import { useAuditLogQuery } from '../api/queries/auditLog'
 import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_TYPE_LABELS } from '../lib/labels'
 import { Input } from '../components/ui/input'
@@ -26,10 +29,11 @@ export function AuditLogPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Audit-Log</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Audit-Protokoll</h1>
         <p className="text-sm text-slate-500">
-          Sicherheits- und compliancerelevante Änderungen: Stempel-Korrekturen/-Löschungen,
-          Wer wann was geändert hat – z. B. Stempelungen, Mitarbeiter, Rollen, Abwesenheiten, Dokumente, Monatsabschlüsse und Einstellungen.
+          Wer wann was geändert hat – z. B. Stempelungen, Mitarbeiter, Rollen, Abwesenheiten, Dokumente, Monatsabschlüsse
+          und Einstellungen – sowie Anmeldungen in der Webapp (ohne IP-Adresse). „CSV exportieren“ speichert die angezeigten
+          Einträge (höchstens 500; für mehr den Zeitraum eingrenzen).
         </p>
       </div>
 
@@ -58,6 +62,27 @@ export function AuditLogPage() {
           <Label htmlFor="date_to">Bis</Label>
           <Input id="date_to" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
         </div>
+        <Button
+          variant="outline"
+          disabled={!auditLogQuery.data?.length}
+          onClick={() =>
+            downloadCsv(
+              `audit-protokoll${dateFrom ? `_${dateFrom}` : ''}${dateTo ? `_${dateTo}` : ''}.csv`,
+              ['Zeitpunkt', 'Person', 'Aktion', 'Bereich', 'ID', 'Detail'],
+              (auditLogQuery.data ?? []).map((entry) => [
+                formatTimestamp(entry.created_at),
+                entry.actor_label,
+                AUDIT_ACTION_LABELS[entry.action],
+                AUDIT_ENTITY_TYPE_LABELS[entry.entity_type] ?? entry.entity_type,
+                entry.entity_id,
+                entry.detail,
+              ]),
+            )
+          }
+        >
+          <Download className="h-4 w-4" />
+          CSV exportieren
+        </Button>
       </div>
 
       {auditLogQuery.isLoading && <p className="text-slate-500">Lädt…</p>}

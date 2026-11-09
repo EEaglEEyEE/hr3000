@@ -89,8 +89,8 @@ describe('Abwesenheit: halber Tag und Stunden', () => {
     const calls = mockApi({ 'GET /absence-types': HOMEOFFICE, 'PATCH /absences/{absence_id}': (init: ApiInit) => ({ id: 4, ...(init.body as object) }) })
     const absence = {
       id: 4, employee_id: 5, type: 'SPECIAL_LEAVE', absence_type_id: 7, date_from: '2026-10-05', date_to: '2026-10-05',
-      half_day: false, duration_minutes: 180, created_by: null, created_by_employee_id: null, note: null,
-      approval_status: 'APPROVED', decided_by: null, decided_by_employee_id: null, decided_at: null,
+      half_day: false, duration_minutes: 180, created_by_account_id: null, note: null,
+      approval_status: 'APPROVED', decided_by_account_id: null, decided_at: null,
     } as never
     renderWithProviders(<AbsenceFormDialog open onOpenChange={vi.fn()} employeeId={5} absence={absence} />)
     expect(await screen.findByLabelText('Stunden')).toHaveValue('3')

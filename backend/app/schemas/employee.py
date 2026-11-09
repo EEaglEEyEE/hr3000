@@ -3,7 +3,8 @@ import datetime as dt
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models.daily_summary import SummaryStatus
-from app.models.hr_user import HrRole
+from app.models.account import HrRole
+from app.schemas.personal_data import CostCenterShare
 from app.schemas.common import NewPassword, normalize_card_uid
 from app.schemas.work_time_model import WorkTimeModelInput
 
@@ -31,17 +32,28 @@ class EmployeeCreateRequest(BaseModel):
     birth_date: dt.date | None = None
     show_birthday_in_calendar: bool | None = None
     team_id: int | None = None
-    # Optional direkt beim Anlegen: gilt ab Eintritt (bzw. heute, ohne Eintrittsdatum) – inkl.
+    department_id: int | None = None
+    position: str | None = Field(default=None, max_length=150)
+    # Führungskraft (ein anderer Mitarbeiter derselben Firma)
+    supervisor_id: int | None = None
+    # Vertretung bei Genehmigungen (wenn diese Person als Führungskraft abwesend ist)
+    approval_delegate_id: int | None = None
+    # Optional direkt beim Anlegen: gilt ab Eintritt (bzw. heute, ohne Anstelldatum) – inkl.
     # Kernzeit/Pünktlichkeit (die gehört zur Fassung der Arbeitszeit).
     work_time_model: WorkTimeModelInput | None = None
     # True = bewusst ohne Arbeitszeitmodell anlegen (z. B. reines HR-Konto), auch wenn in den
     # Einstellungen ein Standardmodell steht. Ohne Modell gibt es kein Soll.
     no_work_time_model: bool = False
+    # Stattdessen ein Arbeitszeitmodell zuweisen (ab Eintritt bzw. heute); folgt dessen Änderungen.
+    work_time_profile_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _model_or_none(self) -> "EmployeeCreateRequest":
-        if self.no_work_time_model and self.work_time_model is not None:
-            raise ValueError("Entweder ein Arbeitszeitmodell angeben oder „ohne Arbeitszeitmodell“, nicht beides.")
+        chosen = [self.work_time_model is not None, self.no_work_time_model, self.work_time_profile_id is not None]
+        if sum(chosen) > 1:
+            raise ValueError(
+                "Entweder individuelle Angaben, ein zugewiesenes Arbeitszeitmodell oder „ohne Arbeitszeitmodell“ angeben, nicht mehreres."
+            )
         return self
 
 
@@ -75,6 +87,14 @@ class EmployeeUpdateRequest(BaseModel):
     show_birthday_in_calendar: bool | None = None
     team_id: int | None = None
     clear_team_id: bool = False
+    department_id: int | None = None
+    clear_department_id: bool = False
+    # "" entfernt die Position
+    position: str | None = Field(default=None, max_length=150)
+    supervisor_id: int | None = None
+    clear_supervisor_id: bool = False
+    approval_delegate_id: int | None = None
+    clear_approval_delegate_id: bool = False
 
 
 class EmployeeHrRoleUpdateRequest(BaseModel):
@@ -103,6 +123,8 @@ class EmployeeResponse(BaseModel):
     employee_number: str
     active: bool
     login_email: str | None
+    # Zwei-Faktor-Anmeldung eingerichtet (Admins können sie zurücksetzen)
+    two_factor_enabled: bool = False
     hr_role: HrRole | None
     hr_payroll_access: bool = False
     auto_break_enabled: bool
@@ -113,6 +135,13 @@ class EmployeeResponse(BaseModel):
     birth_date: dt.date | None
     show_birthday_in_calendar: bool
     team_id: int | None
+    department_id: int | None = None
+    position: str | None = None
+    supervisor_id: int | None = None
+    approval_delegate_id: int | None = None
+    # ONBOARDING, ACTIVE, LEAVE (Auszeit), INACTIVE
+    employment_status: str = "ACTIVE"
+    cost_centers: list[CostCenterShare] = []
     anonymized_at: dt.datetime | None
 
 
@@ -130,6 +159,8 @@ class LocationEmployeeResponse(BaseModel):
     employee_number: str
     has_pin: bool
     nfc_uid: str | None
+    # Für Tablets: SHA-256(card_salt + normalisierte UID) statt der UID
+    card_hash: str | None = None
     today_status: SummaryStatus
     # Sonderfälle heute, z.B. außerplanmäßig anwesend (UNPLANNED_WORK) – Anzeige "zu klären".
     today_flags: list[str] = []

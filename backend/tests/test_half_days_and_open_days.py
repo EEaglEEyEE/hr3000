@@ -8,7 +8,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from absence_helpers import require_vacation_approval
 from app.services.auth_service import hash_password
 from app.services.period_service import build_month_report
@@ -24,7 +24,7 @@ def _bearer(token: str) -> dict[str, str]:
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
-    """Mitarbeiterin mit 40-Std.-Woche (8 Std. Mo–Fr) und Gleitzeitkonto ab 01.10.2026."""
+    """Mitarbeiterin mit 40-Std.-Woche (8 Std. Mo–Fr) und Überstundenkonto ab 01.10.2026."""
     location = Location(name="Zentrale", timezone="UTC")
     db_session.add(location)
     await db_session.commit()
@@ -39,16 +39,16 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-            HrUser(email="lead@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="lead@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
         ]
     )
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     settings_row.balance_start_date = date(2026, 10, 1)
     await db_session.commit()
-    admin = _bearer((await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"])
+    admin = _bearer((await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"])
     me = _bearer(
-        (await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"})).json()["access_token"]
+        (await client.post("/auth/login", json={"email": "erika@example.com", "password": "pw123456"})).json()["access_token"]
     )
     r = await client.put(
         f"/employees/{employee.id}/work-time-model",
@@ -264,7 +264,7 @@ async def test_mark_missing_day_done_and_reopen(client: AsyncClient, db_session:
 
 async def test_only_full_hr_can_mark_days_done(client: AsyncClient, db_session: AsyncSession) -> None:
     employee, _, me = await _setup(db_session, client)
-    lead = _bearer((await client.post("/auth/hr/login", json={"email": "lead@example.com", "password": "pw"})).json()["access_token"])
+    lead = _bearer((await client.post("/auth/login", json={"email": "lead@example.com", "password": "pw"})).json()["access_token"])
     assert (await client.put(f"/employees/{employee.id}/day-reviews/{MONDAY}", headers=lead)).status_code == 403
     assert (await client.put(f"/employees/{employee.id}/day-reviews/{MONDAY}", headers=me)).status_code in (401, 403)
     assert (await client.put(f"/employees/{employee.id}/day-reviews/kein-datum", headers=_bearer("x"))).status_code in (401, 422)

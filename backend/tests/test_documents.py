@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 PDF = b"%PDF-1.4\n%test\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"
@@ -26,12 +26,12 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, role: HrRole = H
         login_email="erika@example.com", password_hash=hash_password("pw"),
     )
     db_session.add(employee)
-    db_session.add(HrUser(email="user@example.com", password_hash=hash_password("pw"), role=role))
+    db_session.add(Account(email="user@example.com", password_hash=hash_password("pw"), role=role))
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "user@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "user@example.com", "password": "pw"})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    elogin = await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": "pw"})
+    elogin = await client.post("/auth/login", json={"email": "erika@example.com", "password": "pw"})
     self_headers = {"Authorization": f"Bearer {elogin.json()['access_token']}"}
     return employee, headers, self_headers
 
@@ -96,11 +96,11 @@ async def test_visibility_rules_for_hr_admin_employee_and_supervisor(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     employee, hr_headers, self_headers = await _setup(db_session, client, HrRole.HR)
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
-    db_session.add(HrUser(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN))
+    db_session.add(Account(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR))
     await db_session.commit()
-    admin = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()
-    sup = (await client.post("/auth/hr/login", json={"email": "sup@example.com", "password": "pw"})).json()
+    admin = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()
+    sup = (await client.post("/auth/login", json={"email": "sup@example.com", "password": "pw"})).json()
     admin_headers = {"Authorization": f"Bearer {admin['access_token']}"}
     sup_headers = {"Authorization": f"Bearer {sup['access_token']}"}
 

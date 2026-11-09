@@ -1,8 +1,10 @@
+from datetime import timedelta
+
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
-from app.services.auth_service import hash_password
+from app.models import Account, Employee, HrRole, Location
+from app.services.auth_service import create_token, hash_password, password_fingerprint
 
 
 async def _create_location(db_session: AsyncSession) -> Location:
@@ -45,8 +47,8 @@ async def _create_other_employee(db_session: AsyncSession, location: Location) -
     return employee
 
 
-async def _create_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -54,7 +56,7 @@ async def _create_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -63,7 +65,7 @@ async def test_employee_login_success(client: AsyncClient, db_session: AsyncSess
     await _create_employee_with_login(db_session, location)
 
     response = await client.post(
-        "/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"}
+        "/auth/login", json={"email": "erika@example.com", "password": "pw123456"}
     )
 
     assert response.status_code == 200
@@ -77,7 +79,7 @@ async def test_employee_login_wrong_password(client: AsyncClient, db_session: As
     await _create_employee_with_login(db_session, location)
 
     response = await client.post(
-        "/auth/employee/login", json={"email": "erika@example.com", "password": "wrong"}
+        "/auth/login", json={"email": "erika@example.com", "password": "wrong"}
     )
 
     assert response.status_code == 401
@@ -91,7 +93,7 @@ async def test_employee_login_without_login_enabled(
     await _create_other_employee(db_session, location)  # kein login_email gesetzt
 
     response = await client.post(
-        "/auth/employee/login", json={"email": "max@example.com", "password": "whatever"}
+        "/auth/login", json={"email": "max@example.com", "password": "whatever"}
     )
 
     assert response.status_code == 401
@@ -102,35 +104,42 @@ async def test_employee_refresh_flow(client: AsyncClient, db_session: AsyncSessi
     location = await _create_location(db_session)
     await _create_employee_with_login(db_session, location)
     login_response = await client.post(
-        "/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"}
+        "/auth/login", json={"email": "erika@example.com", "password": "pw123456"}
     )
     refresh_token = login_response.json()["refresh_token"]
 
-    response = await client.post("/auth/employee/refresh", json={"refresh_token": refresh_token})
+    response = await client.post("/auth/refresh", json={"refresh_token": refresh_token})
 
     assert response.status_code == 200
     assert "access_token" in response.json()
 
 
-async def test_employee_refresh_rejects_hr_refresh_token(
+async def test_refresh_rejects_access_and_legacy_tokens(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """Ein HR-Refresh-Token darf nicht am Mitarbeiter-Refresh-Endpoint funktionieren,
-    da sub=HrUser.id sonst als Employee.id fehlinterpretiert werden könnte."""
-    await _create_hr_user(db_session)
+    """Nur Refresh-Tokens des Kontomodells taugen zum Erneuern – weder ein Zugriffs-Token noch die
+    Token-Arten von vor dem Kontomodell („refresh“, „employee_refresh“, sub = alte ID)."""
+    account = await _create_hr_user(db_session)
     login_response = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "pw"}
+        "/auth/login", json={"email": "hr@example.com", "password": "pw"}
     )
-    hr_refresh_token = login_response.json()["refresh_token"]
+    access_token = login_response.json()["access_token"]
+    assert (await client.post("/auth/refresh", json={"refresh_token": access_token})).status_code == 401
 
-    response = await client.post("/auth/employee/refresh", json={"refresh_token": hr_refresh_token})
-
-    assert response.status_code == 401
-    assert response.json()["code"] == "TOKEN_INVALID"
+    for legacy_type in ("refresh", "employee_refresh"):
+        legacy = create_token(
+            subject=str(account.id),
+            token_type=legacy_type,
+            expires_delta=timedelta(days=1),
+            extra_claims={"pwv": password_fingerprint(account.password_hash)},
+        )
+        response = await client.post("/auth/refresh", json={"refresh_token": legacy})
+        assert response.status_code == 401
+        assert response.json()["code"] == "TOKEN_INVALID"
 
 
 async def _employee_token(client: AsyncClient, email: str, password: str) -> str:
-    response = await client.post("/auth/employee/login", json={"email": email, "password": password})
+    response = await client.post("/auth/login", json={"email": email, "password": password})
     return response.json()["access_token"]
 
 
@@ -246,7 +255,7 @@ async def test_hr_can_create_employee_with_login(
     assert "password_hash" not in body
 
     login_response = await client.post(
-        "/auth/employee/login", json={"email": "neu@example.com", "password": "startpasswort"}
+        "/auth/login", json={"email": "neu@example.com", "password": "startpasswort"}
     )
     assert login_response.status_code == 200
 

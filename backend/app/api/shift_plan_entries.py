@@ -173,8 +173,7 @@ async def upsert_shift_plan_entry(
         entry = ShiftPlanEntry(
             employee_id=employee_id,
             date=entry_date,
-            planned_by_hr_user_id=actor.audit_hr_user_id,
-            planned_by_employee_id=actor.audit_employee_id,
+            planned_by_account_id=actor.account_id,
         )
         db.add(entry)
 

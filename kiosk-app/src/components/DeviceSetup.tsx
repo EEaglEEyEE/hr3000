@@ -6,10 +6,13 @@ export function DeviceSetup({
   onSubmit,
   error,
   isSubmitting,
+  pending,
 }: {
   onSubmit: (deviceToken: string) => void
   error?: string
   isSubmitting: boolean
+  /** Per MDM registriert, wartet auf Freigabe in der HR-Webapp */
+  pending?: { code: string | null } | null
 }) {
   const [deviceToken, setDeviceToken] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -33,6 +36,17 @@ export function DeviceSetup({
       <form onSubmit={handleSubmit} className="flex w-full max-w-md flex-col gap-4">
         <Brand />
         <h1 className="text-2xl font-semibold">Gerät einrichten</h1>
+        {pending && (
+          <div role="status" className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-center">
+            <p className="text-slate-300">Dieses Gerät wartet auf Freigabe in der HR-Webapp unter „Tablets“.</p>
+            {pending.code && (
+              <p className="mt-2 font-mono text-4xl font-semibold tracking-widest text-white">{pending.code}</p>
+            )}
+            <p className="mt-2 text-sm text-slate-400">
+              Prüfcode beim Freigeben vergleichen. Danach meldet sich das Gerät innerhalb einer Minute von selbst an.
+            </p>
+          </div>
+        )}
         <p className="text-slate-400">
           Scanne den QR-Code aus der HR-Webapp (Tablets → QR-Code) oder gib den dort angezeigten
           Kopplungscode ein (z. B. K7Q4-9XZ2).

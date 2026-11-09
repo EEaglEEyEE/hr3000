@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  useEmployeesQuery,
   useCreateEmployeeMutation,
   useResetEmployeePasswordMutation,
+  useResetEmployeeTwoFactorMutation,
   useUpdateEmployeeHrRoleMutation,
   useUpdateEmployeeMutation,
   type Employee,
@@ -9,23 +11,42 @@ import {
 } from '../../api/queries/employees'
 import type { Location } from '../../api/queries/locations'
 import { useTeamsQuery } from '../../api/queries/teams'
+import { departmentTree, useDepartmentsQuery } from '../../api/queries/departments'
 import { todayIsoDate } from '../../lib/format'
 import { ApiError } from '../../api/client'
 import { ResetPasswordDialog } from '../shared/ResetPasswordDialog'
 import { OneTimeCredentialsDialog } from '../tenants/OneTimeCredentialsDialog'
 import { useAuth } from '../../auth/AuthContext'
 import { Button } from '../ui/button'
+import { randomCardUid } from '../../lib/cardUid'
+import { CardQrCode } from './CardQrCode'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { useFeaturesQuery } from '../../api/queries/workTimeModel'
+import { useWorkTimeProfilesQuery } from '../../api/queries/workTimeProfiles'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 interface EmployeeFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  locations: Location[]
+}
+
+interface EmployeeFormProps {
+  /** Ohne: Neuanlage. */
   employee?: Employee
   locations: Location[]
+  /** Im Dialog: nach dem Speichern bzw. bei „Abbrechen“ schließen. Ohne: Formular bleibt stehen (Reiter „Einstellungen“). */
+  onDone?: () => void
+}
+
+/** Radix-Select meldet beim Vorbelegen per Effekt kurz "" zurück, solange seine Optionen noch nicht
+ * registriert sind – das darf weder ein Feld leeren noch (HR-Berechtigung) sofort speichern. */
+function ifChosen(apply: (value: string) => void) {
+  return (value: string) => {
+    if (value) apply(value)
+  }
 }
 
 const NO_HR_ROLE = 'NONE'
@@ -33,7 +54,8 @@ const NO_TEAM = '__none__'
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
 /** Arbeitszeitmodell beim Anlegen: Standard der Firma, Stunden je Wochentag, nach Aufwand oder keins. */
-type ModelChoice = 'DEFAULT' | 'DAYS' | 'ON_DEMAND' | 'NONE'
+// PROFILE-<id> = Arbeitszeitmodell zuweisen (folgt dessen Änderungen)
+type ModelChoice = 'DEFAULT' | 'DAYS' | 'ON_DEMAND' | 'NONE' | `PROFILE-${number}`
 
 /** Kurzform des Standardmodells, z. B. "Mo–Fr 8 Std." bzw. "Mo 8, Di 8, Mi 4 Std.". */
 function modelSummary(minutes: number[] | null | undefined): string | null {
@@ -48,12 +70,22 @@ function modelSummary(minutes: number[] | null | undefined): string | null {
   return `${days.map((d) => `${WEEKDAY_LABELS[d.day]} ${fmt(d.hours)}`).join(', ')} Std.`
 }
 
-export function EmployeeFormDialog({
-  open,
-  onOpenChange,
-  employee,
-  locations,
-}: EmployeeFormDialogProps) {
+/** „Neuer Mitarbeiter“; bearbeitet wird im Reiter „Einstellungen“ der Detailseite. */
+export function EmployeeFormDialog({ open, onOpenChange, locations }: EmployeeFormDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Neuer Mitarbeiter</DialogTitle>
+        </DialogHeader>
+        {open && <EmployeeForm locations={locations} onDone={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Stammdaten, Zuordnung, Login/PIN/Chip und HR-Berechtigung eines Mitarbeiters (Anlegen im Dialog, Bearbeiten im Reiter). */
+export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps) {
   const isEditMode = employee !== undefined
   const features = useFeaturesQuery().data
   const { isAdmin } = useAuth()
@@ -61,29 +93,40 @@ export function EmployeeFormDialog({
   const updateEmployee = useUpdateEmployeeMutation()
   const updateHrRole = useUpdateEmployeeHrRoleMutation()
   const resetPassword = useResetEmployeePasswordMutation()
+  const resetTwoFactor = useResetEmployeeTwoFactorMutation()
   const [resetOpen, setResetOpen] = useState(false)
   const [resetError, setResetError] = useState<string | null>(null)
   const [resetNotice, setResetNotice] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<{ password: string } | null>(null)
   const teamsQuery = useTeamsQuery()
   const teams = teamsQuery.data ?? []
+  const departments = departmentTree(useDepartmentsQuery().data ?? [])
+  const colleagues = (useEmployeesQuery({ active: true }).data ?? []).filter((e) => e.id !== employee?.id)
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [employeeNumber, setEmployeeNumber] = useState('')
-  const [locationId, setLocationId] = useState<string>('')
+  // Schon beim ersten Rendern vorbelegen (siehe ifChosen).
+  const [locationId, setLocationId] = useState<string>(() =>
+    employee ? String(employee.location_id) : locations[0] ? String(locations[0].id) : '',
+  )
   const [locationValidFrom, setLocationValidFrom] = useState(todayIsoDate())
   // Nur beim Anlegen: optionales Arbeitszeitmodell (gilt ab Eintritt bzw. heute).
   const [modelDailyHours, setModelDailyHours] = useState<string[]>(['', '', '', '', '', '', ''])
   const [modelChoice, setModelChoice] = useState<ModelChoice>('NONE')
   const [modelTouched, setModelTouched] = useState(false)
   const [teamId, setTeamId] = useState<string>(NO_TEAM)
+  const [departmentId, setDepartmentId] = useState<string>(NO_TEAM)
+  const [supervisorId, setSupervisorId] = useState<string>(NO_TEAM)
+  const [delegateId, setDelegateId] = useState<string>(NO_TEAM)
+  const [position, setPosition] = useState('')
   const [active, setActive] = useState(true)
   const [loginEmail, setLoginEmail] = useState('')
   const [password, setPassword] = useState('')
   const [pin, setPin] = useState('')
   const [resetPin, setResetPin] = useState(false)
   const [nfcUid, setNfcUid] = useState('')
+  const [showQr, setShowQr] = useState(false)
   const [hireDate, setHireDate] = useState('')
   const [terminationDate, setTerminationDate] = useState('')
   const [birthDate, setBirthDate] = useState('')
@@ -92,10 +135,12 @@ export function EmployeeFormDialog({
   const [hrRole, setHrRole] = useState<string>(NO_HR_ROLE)
   const [payrollAccess, setPayrollAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  // „Änderungen verwerfen“ im Reiter: Formular neu aus den gespeicherten Daten füllen.
+  const [resetKey, setResetKey] = useState(0)
   const [hrRoleError, setHrRoleError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!open) return
     setFirstName(employee?.first_name ?? '')
     setLastName(employee?.last_name ?? '')
     setEmployeeNumber(employee?.employee_number ?? '')
@@ -108,12 +153,17 @@ export function EmployeeFormDialog({
     setModelChoice(modelSummary(features?.default_day_minutes) ? 'DEFAULT' : 'NONE')
     setModelTouched(false)
     setTeamId(employee?.team_id ? String(employee.team_id) : NO_TEAM)
+    setDepartmentId(employee?.department_id ? String(employee.department_id) : NO_TEAM)
+    setSupervisorId(employee?.supervisor_id ? String(employee.supervisor_id) : NO_TEAM)
+    setDelegateId(employee?.approval_delegate_id ? String(employee.approval_delegate_id) : NO_TEAM)
+    setPosition(employee?.position ?? '')
     setActive(employee?.active ?? true)
     setLoginEmail(employee?.login_email ?? '')
     setPassword('')
     setPin('')
     setResetPin(false)
     setNfcUid(employee?.nfc_uid ?? '')
+    setShowQr(false)
     setHireDate(employee?.hire_date ?? '')
     setTerminationDate(employee?.termination_date ?? '')
     setBirthDate(employee?.birth_date ?? '')
@@ -122,13 +172,15 @@ export function EmployeeFormDialog({
     setHrRole(employee?.hr_role ?? NO_HR_ROLE)
     setPayrollAccess(employee?.hr_payroll_access ?? false)
     setError(null)
+    setSaved(false)
     setHrRoleError(null)
     setResetNotice(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, employee?.id])  // bewusst nicht an das employee-Objekt gebunden: ein Refetch (z.B. nach Rollenwechsel) darf ungespeicherte Eingaben nicht verwerfen
+  }, [resetKey, employee?.id])  // bewusst nicht an das employee-Objekt gebunden: ein Refetch (z.B. nach Rollenwechsel) darf ungespeicherte Eingaben nicht verwerfen
 
   const locationChanged = isEditMode && locationId !== '' && Number(locationId) !== employee.location_id
   const defaultModel = modelSummary(features?.default_day_minutes)
+  const profiles = useWorkTimeProfilesQuery({ enabled: !isEditMode }).data ?? []
 
   // Die Firmen-Standards kommen evtl. erst nach dem Öffnen an – dann vorbelegen, solange nichts gewählt ist.
   useEffect(() => {
@@ -157,13 +209,16 @@ export function EmployeeFormDialog({
       case 'NONE':
         return { no_work_time_model: true }
       default:
-        return { no_work_time_model: false }
+        return modelChoice.startsWith('PROFILE-')
+          ? { no_work_time_model: false, work_time_profile_id: Number(modelChoice.slice('PROFILE-'.length)) }
+          : { no_work_time_model: false }
     }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setSaved(false)
 
     const payload = {
       location_id: Number(locationId),
@@ -184,6 +239,13 @@ export function EmployeeFormDialog({
       show_birthday_in_calendar: showBirthdayInCalendar,
       team_id: teamId === NO_TEAM ? undefined : Number(teamId),
       clear_team_id: teamId === NO_TEAM,
+      department_id: departmentId === NO_TEAM ? undefined : Number(departmentId),
+      clear_department_id: departmentId === NO_TEAM,
+      supervisor_id: supervisorId === NO_TEAM ? undefined : Number(supervisorId),
+      clear_supervisor_id: supervisorId === NO_TEAM,
+      approval_delegate_id: delegateId === NO_TEAM ? undefined : Number(delegateId),
+      clear_approval_delegate_id: delegateId === NO_TEAM,
+      position: position.trim(),
       ...(password ? { password } : {}),
       ...(pin ? { pin } : resetPin ? { pin: '' } : {}),
       ...(isEditMode && locationChanged ? { location_valid_from: locationValidFrom } : {}),
@@ -199,7 +261,15 @@ export function EmployeeFormDialog({
       } else {
         await createEmployee.mutateAsync({ ...payload, ...modelPayload() })
       }
-      onOpenChange(false)
+      if (onDone) {
+        onDone()
+      } else {
+        // Im Reiter bleibt das Formular stehen; Einmal-Eingaben leeren.
+        setPassword('')
+        setPin('')
+        setResetPin(false)
+        setSaved(true)
+      }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMPLOYEE_NUMBER_TAKEN') {
         setError('Diese Personalnummer wird bereits verwendet.')
@@ -272,12 +342,9 @@ export function EmployeeFormDialog({
 
   return (
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Mitarbeiter bearbeiten' : 'Neuer Mitarbeiter'}</DialogTitle>
-        </DialogHeader>
-        <form className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2" onSubmit={handleSubmit}>
+      {/* Zwei Spalten nach verfügbarer Breite (Dialog bzw. Reiter), nicht nach Bildschirm */}
+      <div className="@container">
+        <form className="grid grid-cols-1 gap-x-6 gap-y-4 @2xl:grid-cols-2" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -310,7 +377,7 @@ export function EmployeeFormDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Standort</Label>
-            <Select value={locationId} onValueChange={setLocationId}>
+            <Select value={locationId} onValueChange={ifChosen(setLocationId)}>
               <SelectTrigger>
                 <SelectValue placeholder="Standort wählen" />
               </SelectTrigger>
@@ -343,6 +410,11 @@ export function EmployeeFormDialog({
                 }}
               >
                 {defaultModel && <option value="DEFAULT">Standard aus den Einstellungen ({defaultModel})</option>}
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={`PROFILE-${profile.id}`}>
+                    Arbeitszeitmodell „{profile.name}“
+                  </option>
+                ))}
                 <option value="DAYS">Stunden je Wochentag</option>
                 <option value="ON_DEMAND">Nach Aufwand (Aushilfe, ohne Soll)</option>
                 <option value="NONE">Kein Arbeitszeitmodell (ohne Soll, z. B. reines HR-Konto)</option>
@@ -366,14 +438,15 @@ export function EmployeeFormDialog({
               <p className="text-xs text-slate-500">
                 {modelChoice === 'DAYS' && 'Z. B. Vollzeit 8 an Mo–Fr, Teilzeit Mo 8 / Di 8 / Mi 4. '}
                 {modelChoice === 'NONE' && 'Ohne Soll – Tage ohne Stempelung sind dann nicht „zu klären“. '}
-                Gilt ab Eintrittsdatum (sonst ab heute); Wochen- oder Monatsstunden, Pausen und Kernzeit im Reiter
+                {modelChoice.startsWith('PROFILE-') && 'Folgt automatisch den Änderungen des Modells. '}
+                Gilt ab Anstelldatum (sonst ab heute); Wochen- oder Monatsstunden, Pausen und Kernzeit im Reiter
                 „Arbeitszeit“.
               </p>
             </div>
           )}
           <div className="flex flex-col gap-1.5">
             <Label>Team</Label>
-            <Select value={teamId} onValueChange={setTeamId}>
+            <Select value={teamId} onValueChange={ifChosen(setTeamId)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -387,11 +460,70 @@ export function EmployeeFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-slate-500">
-              Bestimmt, welche Teamleiter/innen diesen Mitarbeiter sehen dürfen (siehe Einstellungen → „Teams“).
+              Bestimmt, welche Führungskräfte diesen Mitarbeiter sehen dürfen (siehe Einstellungen → „Teams“).
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>Abteilung</Label>
+              <Select value={departmentId} onValueChange={ifChosen(setDepartmentId)}>
+                <SelectTrigger aria-label="Abteilung">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_TEAM}>Keine Abteilung</SelectItem>
+                  {departments.map(({ department, depth }) => (
+                    <SelectItem key={department.id} value={String(department.id)}>
+                      {'\u00a0'.repeat(depth * 3)}
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="position">Position</Label>
+              <Input id="position" maxLength={150} value={position} onChange={(event) => setPosition(event.target.value)} />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Führungskraft</Label>
+            <Select value={supervisorId} onValueChange={ifChosen(setSupervisorId)}>
+              <SelectTrigger aria-label="Führungskraft">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TEAM}>Keine Führungskraft</SelectItem>
+                {colleagues.map((colleague) => (
+                  <SelectItem key={colleague.id} value={String(colleague.id)}>
+                    {colleague.last_name}, {colleague.first_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">Für Organigramm und Genehmigungen (je Abwesenheitsart einstellbar).</p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Vertretung bei Genehmigungen</Label>
+            <Select value={delegateId} onValueChange={ifChosen(setDelegateId)}>
+              <SelectTrigger aria-label="Vertretung bei Genehmigungen">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TEAM}>Keine Vertretung</SelectItem>
+                {colleagues.map((colleague) => (
+                  <SelectItem key={colleague.id} value={String(colleague.id)}>
+                    {colleague.last_name}, {colleague.first_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">
+              Ist diese Person als Führungskraft abwesend, genehmigt die Vertretung die Anträge ihrer Mitarbeiter.
             </p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="hire_date">Eintrittsdatum</Label>
+            <Label htmlFor="hire_date">Anstelldatum</Label>
             <Input id="hire_date" type="date" value={hireDate} onChange={(event) => setHireDate(event.target.value)} />
           </div>
           <details className="rounded-md border border-slate-200 p-3" open={isEditMode}>
@@ -500,6 +632,28 @@ export function EmployeeFormDialog({
                   </p>
                 </div>
               )}
+              {isEditMode && isAdmin && employee?.two_factor_enabled && (
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-slate-600">Zwei-Faktor-Anmeldung ist eingerichtet.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    disabled={resetTwoFactor.isPending}
+                    onClick={() => employee && resetTwoFactor.mutate(employee.id)}
+                  >
+                    Zwei-Faktor-Anmeldung zurücksetzen
+                  </Button>
+                  <p className="text-xs text-slate-500">
+                    Z. B. wenn das Handy verloren ist. Danach meldet sich die Person nur mit Passwort an bzw. richtet sie neu
+                    ein, wenn sie Pflicht ist.
+                  </p>
+                </div>
+              )}
+              {isEditMode && isAdmin && resetTwoFactor.isSuccess && !employee?.two_factor_enabled && (
+                <p className="text-xs text-emerald-700">Zwei-Faktor-Anmeldung zurückgesetzt.</p>
+              )}
             </div>
           </div>
 
@@ -559,6 +713,28 @@ export function EmployeeFormDialog({
                 Chip oder Karte des Mitarbeiters: am Tablet direkt erkannt (ersetzt den PIN, bei „Nur Chip“ notwendig).
                 Unbekannte Chips zeigt das Tablet mit ihrer UID an. Feld leeren, um den Chip zu entfernen.
               </p>
+              {!showQr && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="self-start"
+                  onClick={() => {
+                    if (!nfcUid.trim()) setNfcUid(randomCardUid())
+                    setShowQr(true)
+                  }}
+                >
+                  QR-Code fürs Tablet
+                </Button>
+              )}
+              {showQr && nfcUid.trim() && (
+                <>
+                  <CardQrCode uid={nfcUid.trim()} name={`${firstName} ${lastName}`.trim()} />
+                  {nfcUid.trim() !== (employee?.nfc_uid ?? '') && (
+                    <p className="text-xs text-amber-700">Neue Chip-UID – bitte unten speichern, sonst gilt der QR-Code nicht.</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
             </div>
@@ -567,14 +743,14 @@ export function EmployeeFormDialog({
           {isEditMode && isAdmin && (
             <div className="flex flex-col gap-1.5">
               <Label>HR-Berechtigung</Label>
-              <Select value={hrRole} onValueChange={handleHrRoleChange}>
+              <Select value={hrRole} onValueChange={ifChosen((value) => void handleHrRoleChange(value))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={NO_HR_ROLE}>Keine (nur Mein Bereich)</SelectItem>
                   <SelectItem value="HR">HR</SelectItem>
-                  <SelectItem value="SUPERVISOR">Teamleiter/in</SelectItem>
+                  <SelectItem value="SUPERVISOR">Führungskraft</SelectItem>
                   <SelectItem value="ADMIN">Admin</SelectItem>
                 </SelectContent>
               </Select>
@@ -597,19 +773,30 @@ export function EmployeeFormDialog({
           )}
           </div>
 
-          {resetNotice && <p className="text-sm text-emerald-600 md:col-span-2">{resetNotice}</p>}
-          {error && <p className="text-sm text-red-600 md:col-span-2">{error}</p>}
-          <DialogFooter className="md:col-span-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Abbrechen
-            </Button>
-            <Button type="submit" disabled={isSubmitting || !locationId}>
-              {isSubmitting ? 'Speichern…' : 'Speichern'}
-            </Button>
-          </DialogFooter>
+          {resetNotice && <p className="text-sm text-emerald-600 @2xl:col-span-2">{resetNotice}</p>}
+          {error && <p className="text-sm text-red-600 @2xl:col-span-2">{error}</p>}
+          {onDone ? (
+            <DialogFooter className="@2xl:col-span-2">
+              <Button type="button" variant="outline" onClick={onDone}>
+                Abbrechen
+              </Button>
+              <Button type="submit" disabled={isSubmitting || !locationId}>
+                {isSubmitting ? 'Speichern…' : 'Speichern'}
+              </Button>
+            </DialogFooter>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4 @2xl:col-span-2">
+              <Button type="submit" disabled={isSubmitting || !locationId}>
+                {isSubmitting ? 'Speichern…' : 'Speichern'}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setResetKey((key) => key + 1)}>
+                Änderungen verwerfen
+              </Button>
+              {saved && <span className="text-sm text-emerald-700">Gespeichert.</span>}
+            </div>
+          )}
         </form>
-      </DialogContent>
-    </Dialog>
+      </div>
 
     <ResetPasswordDialog
       open={resetOpen}

@@ -1,37 +1,19 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import {
-  KeyRound,
-  LogOut,
-  Users,
-  AlertCircle,
-  CalendarDays,
-  CalendarRange,
-  Settings,
-  FileSpreadsheet,
-  LayoutGrid,
-  ClipboardCheck,
-  ListChecks,
-  BarChart3,
-  UserCircle,
-  Menu,
-  X,
-  PanelLeftClose,
-  PanelLeftOpen,
-  House,
-  type LucideIcon,
-} from 'lucide-react'
+import { AlertCircle, BarChart3, CalendarDays, CalendarRange, ClipboardCheck, FileSpreadsheet, House, KeyRound, LayoutGrid, ListChecks, LogOut, Menu, Network, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, UserCircle, Users, X, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
 import { cn } from '../../lib/utils'
 import { allows, PAGE_ACCESS } from '../../lib/access'
 import { useFeaturesQuery } from '../../api/queries/workTimeModel'
 import { useCorrectionRequestsQuery } from '../../api/queries/correctionRequests'
 import { usePendingAbsencesQuery } from '../../api/queries/absences'
-import { useMonthlyCapsQuery, useOpenDaysCount } from '../../api/queries/timesheets'
+import { useChangeRequestsQuery } from '../../api/queries/changeRequests'
+import { useBalanceLimitsQuery, useMonthlyCapsQuery, useOpenDaysCount } from '../../api/queries/timesheets'
 import { BrandLogo } from './BrandLogo'
 import { NotificationBell } from './NotificationBell'
 import { ThemeToggle } from './ThemeToggle'
 import { ChangePasswordButton } from '../account/ChangePasswordDialog'
+import { TwoFactorButton } from '../account/TwoFactorDialog'
 import { CancellationBanner } from '../account/AccountCancellation'
 
 interface NavItem {
@@ -43,7 +25,7 @@ interface NavItem {
 
 // Rechte je Seite stehen in lib/access.ts (PAGE_ACCESS) – dieselbe Quelle wie der Seitenschutz.
 // Konfiguration (Standorte, Teams, Feiertage, Tablets, Pausenregeln, Schichtvorlagen, Zuschläge,
-// Lohnarten, Audit-Log) liegt unter „Einstellungen“.
+// Lohnarten, Audit-Protokoll) liegt unter „Einstellungen“.
 const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Tagesgeschäft',
@@ -52,6 +34,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { to: '/mitarbeiter', label: 'Mitarbeiter', icon: Users },
       { to: '/uebersicht', label: 'Anwesenheit', icon: CalendarDays },
       { to: '/team-kalender', label: 'Kalender', icon: LayoutGrid },
+      { to: '/organigramm', label: 'Organigramm', icon: Network },
       { to: '/zu-klaeren', label: 'Zu klären', icon: AlertCircle },
     ],
   },
@@ -60,9 +43,9 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { to: '/schichtplan-kalender', label: 'Schichtplan-Kalender', icon: CalendarRange, shiftPlanning: true },
       { to: '/monatsabschluss', label: 'Monatsabschluss', icon: ClipboardCheck },
-      { to: '/auswertungen', label: 'Auswertungen', icon: BarChart3 },
+      { to: '/auswertungen', label: 'Analysen', icon: BarChart3 },
       { to: '/lohn-export', label: 'Lohn-Export', icon: FileSpreadsheet },
-      { to: '/checklisten', label: 'Checklisten', icon: ListChecks },
+      { to: '/checklisten', label: 'On- & Offboarding', icon: ListChecks },
     ],
   },
 ]
@@ -81,9 +64,12 @@ export function AppLayout() {
   // Admin/HR entscheidet diese).
   const openDays = useOpenDaysCount()
   const pendingCorrections = useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0
-  const capsExceeded = (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length
+  const capsExceeded =
+    (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length +
+    (useBalanceLimitsQuery().data ?? []).filter((row) => row.exceeded).length
   const pendingAbsences = usePendingAbsencesQuery().data?.length ?? 0
-  const openCount = openDays + capsExceeded + pendingAbsences + (isFullHr ? pendingCorrections : 0)
+  const pendingChanges = useChangeRequestsQuery(isFullHr).data?.length ?? 0
+  const openCount = openDays + capsExceeded + pendingAbsences + (isFullHr ? pendingCorrections + pendingChanges : 0)
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
 
@@ -225,6 +211,16 @@ export function AppLayout() {
             <KeyRound className="h-4 w-4 shrink-0" />
             <span className={label}>Passwort ändern</span>
           </ChangePasswordButton>
+          <TwoFactorButton
+            title="Zwei-Faktor-Anmeldung"
+            className={cn(
+              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900',
+              collapsed && 'md:justify-center',
+            )}
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            <span className={label}>Zwei-Faktor</span>
+          </TwoFactorButton>
           <button
             type="button"
             onClick={logout}

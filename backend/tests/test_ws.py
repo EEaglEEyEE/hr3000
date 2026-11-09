@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.ws import location_ws
 from app.models import Device, Location
 from app.services.auth_service import create_token
+from app.services.pairing_service import token_hash
 
 
 class FakeWebSocket:
@@ -32,7 +33,7 @@ async def _create_device(db_session: AsyncSession, token: str = "device-1") -> D
     await db_session.commit()
     await db_session.refresh(location)
 
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)

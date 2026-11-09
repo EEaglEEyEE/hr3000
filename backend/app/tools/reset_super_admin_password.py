@@ -16,14 +16,14 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import HrRole, HrUser
+from app.models import Account, HrRole
 from app.services.auth_service import hash_password
 
 
 async def reset_super_admin_password(db: AsyncSession) -> tuple[str, str]:
     """Setzt ein zufälliges Passwort für den (einzigen) Super-Admin; gibt (E-Mail, Passwort) zurück."""
     admins = (
-        await db.execute(select(HrUser).where(HrUser.role == HrRole.SUPER_ADMIN, HrUser.tenant_id.is_(None)))
+        await db.execute(select(Account).where(Account.role == HrRole.SUPER_ADMIN, Account.tenant_id.is_(None)))
     ).scalars().all()
     if len(admins) != 1:
         raise RuntimeError(f"Erwartet genau einen Super-Admin, gefunden: {len(admins)}.")

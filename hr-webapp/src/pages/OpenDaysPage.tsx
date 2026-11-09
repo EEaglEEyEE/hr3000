@@ -5,7 +5,7 @@ import { useCorrectionRequestsQuery } from '../api/queries/correctionRequests'
 import { useLocationsQuery } from '../api/queries/locations'
 import {
   useMarkDayReviewedMutation,
-  useMonthlyCapsQuery,
+  useBalanceLimitsQuery, useMonthlyCapsQuery,
   useOpenDaysCount,
   useOpenDaysQuery,
   useUnmarkDayReviewedMutation,
@@ -13,12 +13,14 @@ import {
 import { useAuth } from '../auth/AuthContext'
 import { PendingAbsencesPanel } from '../components/absences/PendingAbsencesPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { useChangeRequestsQuery } from '../api/queries/changeRequests'
+import { PendingChangeRequests } from '../components/employees/ChangeRequests'
 import { Button } from '../components/ui/button'
 import { DAY_FLAG_LABELS } from '../lib/labels'
 import { formatDate, formatMinutesAsHours } from '../lib/format'
 import { DayStatusBadge } from '../components/shared/DayStatusBadge'
 import { PendingCorrectionRequests } from '../components/punches/CorrectionRequests'
-import { MonthlyCapsNotice } from '../components/timesheet/MonthlyCapsNotice'
+import { BalanceLimitsNotice, MonthlyCapsNotice } from '../components/timesheet/MonthlyCapsNotice'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 
@@ -29,7 +31,8 @@ const TABS = [
   { key: 'tage', label: 'Tage' },
   { key: 'korrekturen', label: 'Korrekturanträge', fullHrOnly: true },
   { key: 'urlaubsantraege', label: 'Urlaubsanträge' },
-  { key: 'monatsgrenzen', label: 'Monatsgrenzen' },
+  { key: 'monatsgrenzen', label: 'Grenzen' },
+  { key: 'datenaenderungen', label: 'Datenänderungen', fullHrOnly: true },
 ] as const
 
 /** Posteingang: offene Tage, Korrekturanträge, Urlaubsanträge und Monatsgrenzen an einer Stelle. */
@@ -41,7 +44,8 @@ export function OpenDaysPage() {
     tage: useOpenDaysCount(),
     korrekturen: useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0,
     urlaubsantraege: usePendingAbsencesQuery().data?.length ?? 0,
-    monatsgrenzen: useMonthlyCapsQuery().data?.length ?? 0,
+    monatsgrenzen: (useMonthlyCapsQuery().data?.length ?? 0) + (useBalanceLimitsQuery().data?.length ?? 0),
+    datenaenderungen: useChangeRequestsQuery(isFullHr).data?.length ?? 0,
   }
   const tabs = TABS.filter((tab) => !('fullHrOnly' in tab) || isFullHr)
   const current = tabs.find((tab) => tab.key === reiter)?.key ?? 'tage'
@@ -73,8 +77,16 @@ export function OpenDaysPage() {
         <TabsContent value="urlaubsantraege">
           <PendingAbsencesPanel />
         </TabsContent>
+        {isFullHr && (
+          <TabsContent value="datenaenderungen">
+            <PendingChangeRequests />
+          </TabsContent>
+        )}
         <TabsContent value="monatsgrenzen">
-          <MonthlyCapsNotice />
+          <div className="flex flex-col gap-6">
+            <MonthlyCapsNotice />
+            <BalanceLimitsNotice />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

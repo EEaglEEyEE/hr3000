@@ -43,6 +43,10 @@ class ChecklistTemplateItem(Base):
     responsible: Mapped[ChecklistRole] = mapped_column(Enum(ChecklistRole), default=ChecklistRole.HR)
     # Fälligkeit relativ zum Stichtag (Eintritts-/Austrittsdatum): negativ = davor.
     due_offset_days: Mapped[int] = mapped_column(Integer, default=0)
+    # Aktion (app/api/checklists.py): TASK abhaken, UPLOAD_DOCUMENT (Person lädt in action_category_id
+    # hoch), FILL_DATA (Person schlägt ihre Daten vor), SEND_EMAIL (beim Start an die Zuständigen)
+    action: Mapped[str] = mapped_column(String(20), default="TASK", server_default="TASK")
+    action_category_id: Mapped[int | None] = mapped_column(ForeignKey("document_categories.id"), nullable=True)
 
 
 class EmployeeChecklist(Base):
@@ -72,6 +76,7 @@ class EmployeeChecklistItem(Base):
     due_date: Mapped[date] = mapped_column(Date)
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    done_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    done_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    done_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    action: Mapped[str] = mapped_column(String(20), default="TASK", server_default="TASK")
+    action_category_id: Mapped[int | None] = mapped_column(ForeignKey("document_categories.id"), nullable=True)

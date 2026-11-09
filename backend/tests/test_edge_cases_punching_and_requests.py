@@ -9,11 +9,12 @@ from datetime import UTC, datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BreakRule, Device, Employee, HrRole, HrUser, Location, Tenant
+from app.models import BreakRule, Device, Employee, HrRole, Account, Location, Tenant
 from absence_helpers import require_vacation_approval
 from app.models.period_closure import PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
+from app.services.pairing_service import token_hash
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -32,15 +33,15 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, *, errands: bool
         login_email="dora@example.com",
         password_hash=hash_password("pw123456"),
     )
-    device = Device(name="Tablet", location_id=location.id, device_token="tok-edge")
-    db_session.add_all([employee, device, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    device = Device(name="Tablet", location_id=location.id, token_hash=token_hash("tok-edge"))
+    db_session.add_all([employee, device, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     settings_row.kiosk_errand_buttons = errands
     settings_row.portal_punching_enabled = portal
     await db_session.commit()
-    admin = _bearer((await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"])
+    admin = _bearer((await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"])
     me = _bearer(
-        (await client.post("/auth/employee/login", json={"email": "dora@example.com", "password": "pw123456"})).json()["access_token"]
+        (await client.post("/auth/login", json={"email": "dora@example.com", "password": "pw123456"})).json()["access_token"]
     )
     device_headers = _bearer((await client.post("/auth/device/login", json={"device_token": "tok-edge"})).json()["access_token"])
     return employee, admin, me, device_headers
@@ -275,10 +276,10 @@ async def test_portal_switch_of_another_tenant_has_no_effect(client: AsyncClient
     employee, _, me, _ = await _setup(db_session, client, portal=False)
     db_session.add(Tenant(id=2, subdomain="acme", name="Acme GmbH"))
     await db_session.commit()
-    db_session.add(HrUser(tenant_id=2, email="admin@acme.example.com", password_hash=hash_password("pw2"), role=HrRole.ADMIN))
+    db_session.add(Account(tenant_id=2, email="admin@acme.example.com", password_hash=hash_password("pw2"), role=HrRole.ADMIN))
     await db_session.commit()
     login = await client.post(
-        "/auth/hr/login", headers={"X-Tenant-Subdomain": "acme"}, json={"email": "admin@acme.example.com", "password": "pw2"}
+        "/auth/login", headers={"X-Tenant-Subdomain": "acme"}, json={"email": "admin@acme.example.com", "password": "pw2"}
     )
     other_admin = {**_bearer(login.json()["access_token"]), "X-Tenant-Subdomain": "acme"}
     r = await client.patch(

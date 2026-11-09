@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.errors import AppError
-from app.models import AccountTokenPurpose, HrUser, Tenant, TenantPlan, TenantStatus
+from app.models import Account, AccountTokenPurpose, Tenant, TenantPlan, TenantStatus
 from app.schemas.tenant import (
     RESERVED_SUBDOMAINS,
     SUBDOMAIN_PATTERN,
@@ -125,7 +125,7 @@ async def signup(payload: SignupRequest, request: Request, db: AsyncSession = De
 
     url = f"https://{tenant.subdomain}.{base}/"
     if verification:
-        admin = await db.scalar(select(HrUser).where(HrUser.tenant_id == tenant.id))
+        admin = await db.scalar(select(Account).where(Account.tenant_id == tenant.id))
         await send_verification_mail(db, tenant, admin, payload.contact_name)
         return SignupResponse(subdomain=tenant.subdomain, login_url=url, verification_required=True)
     await send_email(
@@ -152,7 +152,7 @@ async def verify_email(
     ip_key = f"verify-email:{_client_ip(request)}"
     rate_limiter.check_rate_limit(ip_key, 30, _DAY_SECONDS // 24)
     token = await consume_token(db, payload.token, AccountTokenPurpose.EMAIL_VERIFY)
-    user = await db.get(HrUser, token.hr_user_id) if token and token.hr_user_id else None
+    user = await db.get(Account, token.account_id) if token else None
     tenant = await db.get(Tenant, token.tenant_id) if token else None
     base = base_domain()
     if token is None or user is None or tenant is None or base is None:

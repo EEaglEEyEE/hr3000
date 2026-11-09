@@ -60,7 +60,7 @@ export function useCompensationQuery(employeeId: number, enabled: boolean) {
   return useQuery({
     queryKey: ['employees', employeeId, 'compensation'],
     enabled,
-    // Jeder Abruf wird im Audit-Log protokolliert – nicht bei jedem Fensterwechsel neu laden.
+    // Jeder Abruf wird im Audit-Protokoll protokolliert – nicht bei jedem Fensterwechsel neu laden.
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     queryFn: async () =>
@@ -107,7 +107,7 @@ export function usePayComponentsQuery(employeeId: number, enabled: boolean) {
   return useQuery({
     queryKey: ['employees', employeeId, 'pay-components'],
     enabled,
-    // Jeder Abruf wird im Audit-Log protokolliert – nicht bei jedem Fensterwechsel neu laden.
+    // Jeder Abruf wird im Audit-Protokoll protokolliert – nicht bei jedem Fensterwechsel neu laden.
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     queryFn: async () =>

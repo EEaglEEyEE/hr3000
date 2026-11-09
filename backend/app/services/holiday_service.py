@@ -19,12 +19,29 @@ def applies_to_location(location_id: int | ColumnElement) -> ColumnElement:
 
 
 async def is_holiday_for_location(db: AsyncSession, tenant_id: int, work_date: date, location_id: int) -> bool:
+    """Ganzer Feiertag. Halbe Feiertage zählen hier nicht (siehe half_holiday_for_location)."""
     result = await db.execute(
         select(Holiday.id).where(
-            Holiday.tenant_id == tenant_id, Holiday.date == work_date, applies_to_location(location_id)
+            Holiday.tenant_id == tenant_id,
+            Holiday.date == work_date,
+            Holiday.half_day.is_(False),
+            applies_to_location(location_id),
         )
     )
     return result.first() is not None
+
+
+async def half_holiday_for_location(db: AsyncSession, tenant_id: int, work_date: date, location_id: int) -> str | None:
+    """Name des halben Feiertags an diesem Tag und Standort, sonst None."""
+    result = await db.execute(
+        select(Holiday.name).where(
+            Holiday.tenant_id == tenant_id,
+            Holiday.date == work_date,
+            Holiday.half_day.is_(True),
+            applies_to_location(location_id),
+        )
+    )
+    return result.scalars().first()
 
 
 def location_scope(holiday: Holiday) -> set[int] | None:

@@ -8,7 +8,7 @@ from datetime import datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, PeriodClosure, PeriodStatus
+from app.models import Employee, HrRole, Account, Location, PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 
 
@@ -17,10 +17,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[int, di
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Nina", last_name="Nacht", employee_number="N1", auto_break_enabled=False)
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     employee_id = employee.id
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     for day in ("2026-10-05", "2026-10-12"):  # je 2 Std. in der Nacht (22–24 Uhr)
         for punch_type, clock in (("COME", "18:00"), ("GO", "23:59")):

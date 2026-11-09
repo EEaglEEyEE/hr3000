@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useAbsenceTypeMap, type AbsenceTypeDef } from '../../api/queries/absenceTypes'
-import { useDeleteAbsenceMutation, useEmployeeAbsencesQuery, type Absence } from '../../api/queries/absences'
+import {
+  useDeleteAbsenceMutation,
+  useEmployeeAbsencesQuery,
+  useUploadAbsenceCertificateMutation,
+  type Absence,
+} from '../../api/queries/absences'
+import { ApiError } from '../../api/client'
 import { formatDate, formatHoursMinutes } from '../../lib/format'
 import { ABSENCE_TYPE_LABELS } from '../../lib/labels'
 import { Badge, type BadgeProps } from '../ui/badge'
@@ -40,6 +46,8 @@ export function AbsencesTab({
   const absencesQuery = useEmployeeAbsencesQuery(employeeId)
   const absenceTypes = useAbsenceTypeMap()
   const deleteAbsence = useDeleteAbsenceMutation(employeeId)
+  const uploadCertificate = useUploadAbsenceCertificateMutation(employeeId)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAbsence, setEditingAbsence] = useState<Absence | undefined>(undefined)
 
@@ -93,6 +101,18 @@ export function AbsencesTab({
             >
               <TableCell>
                 <AbsenceTypeLabel absence={absence} type={absenceTypes.get(absence.absence_type_id ?? -1)} />
+                <CertificateCell
+                  absence={absence}
+                  type={absenceTypes.get(absence.absence_type_id ?? -1)}
+                  uploading={uploadCertificate.isPending}
+                  onUpload={(file) => {
+                    setUploadError(null)
+                    uploadCertificate.mutate(
+                      { absenceId: absence.id, file },
+                      { onError: (err) => setUploadError(err instanceof ApiError ? err.message : 'Upload fehlgeschlagen.') },
+                    )
+                  }}
+                />
               </TableCell>
               <TableCell>{formatDate(absence.date_from)}</TableCell>
               <TableCell>{formatDate(absence.date_to)}</TableCell>
@@ -100,8 +120,14 @@ export function AbsencesTab({
                 <Badge variant={APPROVAL_STATUS_VARIANT[absence.approval_status]}>
                   {APPROVAL_STATUS_LABELS[absence.approval_status]}
                 </Badge>
+                {absence.waiting_for && <span className="block text-xs text-slate-500">bei {absence.waiting_for}</span>}
               </TableCell>
-              <TableCell>{absence.note ?? '–'}</TableCell>
+              <TableCell>
+                {absence.note ?? (absence.substitute_name ? '' : '–')}
+                {absence.substitute_name && (
+                  <span className="block text-xs text-slate-500">Vertretung: {absence.substitute_name}</span>
+                )}
+              </TableCell>
               {canEditOrDelete && (
                 <TableCell>
                   <Button
@@ -127,6 +153,7 @@ export function AbsencesTab({
           )}
         </TableBody>
       </Table>
+      {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
       {canCreate && (
         <AbsenceFormDialog
@@ -138,6 +165,41 @@ export function AbsencesTab({
         />
       )}
     </div>
+  )
+}
+
+/** Nachweis: vorhanden (liegt unter „Dokumente“) oder hochladen – bei Arten mit „Nachweis ab Tag“. */
+function CertificateCell({
+  absence,
+  type,
+  uploading,
+  onUpload,
+}: {
+  absence: Absence
+  type?: AbsenceTypeDef
+  uploading: boolean
+  onUpload: (file: File) => void
+}) {
+  if (absence.certificate_document_id != null) {
+    return <span className="mt-1 block text-xs text-emerald-700">Nachweis hochgeladen (siehe „Dokumente“)</span>
+  }
+  if (type?.certificate_from_day == null) return null
+  return (
+    <label className="mt-1 block cursor-pointer text-xs text-sky-700 underline" onClick={(event) => event.stopPropagation()}>
+      {uploading ? 'Lädt hoch…' : 'Nachweis hochladen'}
+      <input
+        type="file"
+        accept="application/pdf,image/png,image/jpeg"
+        className="sr-only"
+        aria-label={`Nachweis hochladen für ${type.name} ab ${formatDate(absence.date_from)}`}
+        disabled={uploading}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) onUpload(file)
+          event.target.value = ''
+        }}
+      />
+    </label>
   )
 }
 

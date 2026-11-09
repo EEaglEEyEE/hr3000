@@ -22,6 +22,7 @@ function entitlement(overrides: Partial<LeaveEntitlement> = {}): LeaveEntitlemen
     entitled_manual: false,
     annual_vacation_days: 30,
     workdays_per_week: 4,
+    adjustment_days: 0,
     ...overrides,
   }
 }
@@ -35,6 +36,7 @@ describe('Urlaubsanspruch', () => {
     loginAs({ kind: 'hr', role: 'HR' })
     const calls = mockApi({
       'GET /employees/{employee_id}/leave-entitlement': entitlement(),
+      'GET /employees/{employee_id}/leave-adjustments': [],
       'PATCH /employees/{employee_id}/leave-entitlement': (init: ApiInit) => entitlement(init.body as object),
     })
     renderWithProviders(<LeaveEntitlementCard employeeId={7} />)
@@ -54,6 +56,7 @@ describe('Urlaubsanspruch', () => {
     loginAs({ kind: 'hr', role: 'HR' })
     const calls = mockApi({
       'GET /employees/{employee_id}/leave-entitlement': entitlement({ entitled_days: 26, entitled_manual: true, remaining_days: 22 }),
+      'GET /employees/{employee_id}/leave-adjustments': [],
       'PATCH /employees/{employee_id}/leave-entitlement': () => entitlement(),
     })
     renderWithProviders(<LeaveEntitlementCard employeeId={7} />)

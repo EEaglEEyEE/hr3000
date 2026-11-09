@@ -10,9 +10,10 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['teams'] })
 }
 
-export function useTeamsQuery() {
+export function useTeamsQuery(enabled = true) {
   return useQuery({
     queryKey: ['teams'],
+    enabled,
     queryFn: async () => unwrap(await apiClient.GET('/teams')),
   })
 }

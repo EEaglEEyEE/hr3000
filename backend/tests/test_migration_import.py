@@ -1,5 +1,5 @@
 """Migration aus einem Altsystem: Werte bestehender Mitarbeiter per CSV (Personalnummer) zu einem
-Stichtag übernehmen – Gleitzeit-Übertrag, Urlaubskonto, Arbeitszeitmodell. Erst Vorschau, dann
+Stichtag übernehmen – Überstunden-Übertrag, Urlaubskonto, Arbeitszeitmodell. Erst Vorschau, dann
 übernehmen; fehlerhafte Zeilen werden gemeldet, gesperrte Monate und Doppelübernahmen abgelehnt."""
 from datetime import date
 
@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BalanceAdjustment, Employee, HrRole, HrUser, LeaveEntitlement, Location, PeriodClosure, PeriodStatus
+from app.models import BalanceAdjustment, Employee, HrRole, Account, LeaveEntitlement, Location, PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 
 HEADER = "personalnummer;saldo_stunden;urlaubsanspruch_tage;uebertrag_vorjahr_tage;wochenstunden;arbeitstage;monatsstunden;pause_minuten"
@@ -21,11 +21,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[dict[st
         number: Employee(location_id=location.id, first_name=first, last_name="Alt", employee_number=number)
         for number, first in (("100", "Anna"), ("101", "Ben"), ("102", "Cem"))
     }
-    db_session.add_all([*employees.values(), HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([*employees.values(), Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     for employee in employees.values():
         await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return employees, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
@@ -58,12 +58,12 @@ async def test_preview_then_apply(client: AsyncClient, db_session: AsyncSession)
     assert body["applied"] is False
     assert [row["employee_number"] for row in body["rows"]] == ["100", "101"]
     assert body["rows"][0]["changes"] == [
-        "Gleitzeit-Übertrag +12,5 h",
+        "Überstunden-Übertrag +12,5 h",
         "Urlaubsanspruch 30 Tage",
         "Übertrag Vorjahr 4,5 Tage",
         "Arbeitszeitmodell: 40 h/Woche, Pause 30 Min.",
     ]
-    assert body["rows"][1]["changes"][0] == "Gleitzeit-Übertrag −3 h"
+    assert body["rows"][1]["changes"][0] == "Überstunden-Übertrag −3 h"
     assert body["rows"][1]["changes"][-1] == "Arbeitszeitmodell: 108,5 h/Monat"
     assert [(e["row"], e["message"]) for e in body["errors"]] == [
         (4, "Arbeitstage ohne Wochenstunden – bitte wochenstunden ergänzen."),
@@ -134,7 +134,7 @@ async def test_locked_month_and_future_cutover(client: AsyncClient, db_session: 
     assert [row["employee_number"] for row in body["rows"]] == ["101"]
     assert "abgeschlossen" in body["errors"][0]["message"] or "gesperrt" in body["errors"][0]["message"].lower()
     r = await _upload(client, admin, "personalnummer;saldo_stunden\n102;5\n", apply=False, cutover="2099-01-01")
-    assert r.json()["errors"][0]["message"] == "Ein Gleitzeit-Übertrag ist nur bis heute möglich."
+    assert r.json()["errors"][0]["message"] == "Ein Überstunden-Übertrag ist nur bis heute möglich."
 
 
 async def test_balance_start_before_cutover_is_rejected(client: AsyncClient, db_session: AsyncSession) -> None:

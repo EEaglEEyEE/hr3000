@@ -194,6 +194,11 @@ async def build_datev_export(db: AsyncSession, tenant_id: int, employees: list[E
                 f"{name}: {', '.join(unmapped)} ohne Lohnart nicht übertragen – Lohnart unter „Lohnarten“ hinterlegen "
                 "oder im Lohnprogramm als Fehlzeiten erfassen."
             )
+        if summary.payout_has_factor:
+            export.warnings.append(
+                f"{name}: Auszahlung mit Faktor – übertragen werden die Stunden ({_hours_text(summary.payout_minutes)}), "
+                f"gewichtet {_hours_text(summary.weighted_payout_minutes)} Std.; den Zuschlag im Lohnprogramm erfassen."
+            )
         if summary.payout_minutes:
             if WageTypeItem.OVERTIME_PAYOUT in mapping:
                 add(mapping[WageTypeItem.OVERTIME_PAYOUT], HOURS, _hours(summary.payout_minutes), WAGE_TYPE_LABELS[WageTypeItem.OVERTIME_PAYOUT])

@@ -21,7 +21,7 @@ class EmploymentContract(Base):
     """Vertragsdaten eines Mitarbeiters, effektiv-datiert (z.B. befristet →
     unbefristet): zu jedem Zeitpunkt höchstens ein gültiger Vertrag, siehe
     app/services/effective_dating.py. Speist u.a. die Warnung "Befristung /
-    Probezeit läuft aus" (siehe Auswertungen). Sichtbar für Admin/HR."""
+    Probezeit läuft aus" (siehe Analysen). Sichtbar für Admin/HR."""
 
     __tablename__ = "employment_contracts"
 
@@ -49,8 +49,8 @@ class PayType(str, enum.Enum):
 class Compensation(Base):
     """Vergütung (Stundenlohn oder Monatsgehalt), effektiv-datiert und
     unveränderlich (Korrektur = Löschen + neu anlegen). Besonders schützens-
-    wert: nur Admins dürfen sie lesen/ändern, jeder Zugriff wird im Audit-Log
-    vermerkt – dort bewusst OHNE Beträge, da der Audit-Log auch HR sieht."""
+    wert: nur Admins dürfen sie lesen/ändern, jeder Zugriff wird im Audit-Protokoll
+    vermerkt – dort bewusst OHNE Beträge, da der Audit-Protokoll auch HR sieht."""
 
     __tablename__ = "compensations"
 

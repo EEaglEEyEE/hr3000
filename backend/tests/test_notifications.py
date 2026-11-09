@@ -1,7 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, SupervisorTeamAssignment, Team
+from app.models import Employee, HrRole, Account, Location, SupervisorTeamAssignment, Team
 from absence_helpers import require_vacation_approval
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
@@ -34,16 +34,16 @@ async def _create_self_service_employee(
     return employee
 
 
-async def _create_admin_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
     return user
 
 
-async def _create_supervisor_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
+async def _create_supervisor_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="supervisor@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -52,13 +52,13 @@ async def _create_supervisor_hr_user(db_session: AsyncSession) -> HrUser:
 
 async def _employee_token(client: AsyncClient) -> str:
     response = await client.post(
-        "/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"}
+        "/auth/login", json={"email": "erika@example.com", "password": "pw123456"}
     )
     return response.json()["access_token"]
 
 
 async def _hr_token(client: AsyncClient, email: str) -> str:
-    response = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", json={"email": email, "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -81,7 +81,7 @@ async def test_absence_request_notifies_teams_supervisor(
     await db_session.refresh(team)
 
     supervisor = await _create_supervisor_hr_user(db_session)
-    db_session.add(SupervisorTeamAssignment(team_id=team.id, hr_user_id=supervisor.id))
+    db_session.add(SupervisorTeamAssignment(team_id=team.id, account_id=supervisor.id))
     employee = await _create_self_service_employee(db_session, location, team_id=team.id)
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     await require_vacation_approval(db_session)

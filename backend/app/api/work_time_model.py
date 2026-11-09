@@ -8,12 +8,15 @@ from app.api.deps import Actor, get_current_full_hr_principal, get_current_hr_or
 from app.db import get_db
 from app.errors import AppError
 from app.models import (
+    PROFILE_START,
     AuditAction,
     BreakMode,
     Employee,
     EmployeeDefaultShift,
     ShiftTemplate,
     TargetPeriod,
+    WorkTimeProfile,
+    WorkTimeProfileVersion,
 )
 from app.schemas.core_time import serialize_core_time_days
 from app.schemas.work_time_model import (
@@ -21,7 +24,9 @@ from app.schemas.work_time_model import (
     WorkTimeModelResponse,
     WorkTimeModelSetRequest,
     WorkTimeModelVersion,
+    WorkTimeProfileAssignRequest,
 )
+from app.services.work_time_profile_service import get_profile_in_tenant, materialize, sync_employee
 from app.services.audit_service import log_action
 from app.services.shift_planning_service import (
     check_max_daily_working_time,
@@ -55,7 +60,7 @@ async def _get_employee_in_tenant(db: AsyncSession, employee_id: int, tenant_id:
 
 def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
     """Soll, Arbeitstage und Pause einer Fassung aus der Eingabe – und die Soll-Angabe fürs
-    Audit-Log (z.B. "40 h/Woche", "108.5 h/Monat")."""
+    Audit-Protokoll (z.B. "40 h/Woche", "108.5 h/Monat")."""
     if payload.exceeds_daily_maximum:
         raise AppError(
             400,
@@ -86,6 +91,11 @@ def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
         fixed_break_end=payload.break_end if window else None,
         min_break_minutes=payload.break_minutes,
         min_break_after_minutes=payload.break_after_minutes if payload.break_minutes else 0,
+        # Gleitzeit-Rahmen/Toleranz: eigene Werte nur im Arbeitszeitmodell, individuell wie Einstellungen
+        flex_frame_mode=getattr(payload, "flex_frame_mode", None),
+        flex_frame_start=getattr(payload, "flex_frame_start", None),
+        flex_frame_end=getattr(payload, "flex_frame_end", None),
+        late_tolerance_minutes=getattr(payload, "late_tolerance_minutes", None),
     )
     return fields, label
 
@@ -155,9 +165,16 @@ async def _build_response(db: AsyncSession, employee_id: int) -> WorkTimeModelRe
     )
 
 
-async def _describe(db: AsyncSession, version: EmployeeDefaultShift) -> dict:
-    """Soll, Pause, Uhrzeiten und Kernzeit einer Fassung."""
+async def _describe(db: AsyncSession, version: EmployeeDefaultShift | WorkTimeProfileVersion) -> dict:
+    """Soll, Pause, Uhrzeiten, Kernzeit, Gleitzeit-Rahmen und Modell einer Fassung (auch einer
+    Modell-Fassung)."""
     template = await db.get(ShiftTemplate, version.shift_template_id) if version.shift_template_id is not None else None
+    profile = (
+        await db.get(WorkTimeProfile, version.profile_id)
+        if isinstance(version, EmployeeDefaultShift) and version.profile_id is not None
+        else None
+    )
+    frame = version.flex_frame_mode == "CUSTOM"
     own_break = version.break_mode is not None
     source = version if own_break else template
     fixed = source is not None and source.break_mode == BreakMode.FIXED and source.fixed_break_start is not None
@@ -179,6 +196,12 @@ async def _describe(db: AsyncSession, version: EmployeeDefaultShift) -> dict:
         "core_time_start": version.core_time_start if custom else None,
         "core_time_end": version.core_time_end if custom else None,
         "core_time_days": version.core_time_days if custom else None,
+        "flex_frame_mode": version.flex_frame_mode or "TENANT",
+        "flex_frame_start": version.flex_frame_start if frame else None,
+        "flex_frame_end": version.flex_frame_end if frame else None,
+        "late_tolerance_minutes": version.late_tolerance_minutes,
+        "profile_id": profile.id if profile else None,
+        "profile_name": profile.name if profile else None,
     }
 
 
@@ -292,16 +315,61 @@ async def set_work_time_model(
             **fields,
         )
     )
+    await db.flush()
+    await sync_employee(db, employee_id)  # eine vorher laufende Modell-Zuweisung endet am Vortag
     await invalidate_balance(db, employee_id, payload.valid_from)
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
         detail=f"{soll_label} an {_days_label(payload, template)} ab {payload.valid_from.isoformat()}",
+    )
+    await db.commit()
+    return await _build_response(db, employee_id)
+
+
+@router.put("/employees/{employee_id}/work-time-profile", response_model=WorkTimeModelResponse)
+async def assign_work_time_profile(
+    employee_id: int,
+    payload: WorkTimeProfileAssignRequest,
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> WorkTimeModelResponse:
+    """Weist ein Arbeitszeitmodell ab Stichtag zu. Wie ein neues Arbeitszeitmodell ersetzt das alles
+    ab diesem Tag; die Angaben kommen aus dem Modell und folgen dessen Änderungen."""
+    await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
+    profile = await get_profile_in_tenant(db, payload.profile_id, actor.tenant_id)
+    if profile.archived:
+        raise AppError(409, "WORK_TIME_PROFILE_ARCHIVED", "Das Arbeitszeitmodell ist archiviert und kann nicht neu zugewiesen werden.")
+    if payload.valid_from < PROFILE_START:
+        raise AppError(400, "INVALID_RANGE", f"Ein Modell gilt frühestens ab {PROFILE_START:%d.%m.%Y}.")
+    await ensure_open_from(db, employee_id, payload.valid_from)
+
+    for row in await _versions(db, employee_id):
+        if row.valid_from >= payload.valid_from:
+            await db.delete(row)
+        elif row.valid_to is None or row.valid_to >= payload.valid_from:
+            row.valid_to = payload.valid_from - timedelta(days=1)
+    await db.flush()
+    new_rows = await materialize(db, employee_id, profile.id, payload.valid_from, None)
+    for row in new_rows:
+        template = await db.get(ShiftTemplate, row.shift_template_id) if row.shift_template_id is not None else None
+        await _check_shift_times(db, employee_id, template, row.weekdays_mask, row.valid_from, row.valid_to)
+    db.add_all(new_rows)
+    await db.flush()
+    changed = await sync_employee(db, employee_id)  # z.B. mit einer direkt vorher laufenden Zuweisung zusammenfassen
+    await invalidate_balance(db, employee_id, min(payload.valid_from, changed or payload.valid_from))
+    log_action(
+        db,
+        tenant_id=actor.tenant_id,
+        actor_account_id=actor.account_id,
+        action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
+        entity_type="employee",
+        entity_id=employee_id,
+        detail=f"Arbeitszeitmodell „{profile.name}“ ab {payload.valid_from.isoformat()}",
     )
     await db.commit()
     return await _build_response(db, employee_id)
@@ -356,7 +424,9 @@ async def update_work_time_model_version(
 ) -> list[WorkTimeModelVersion]:
     """Ändert eine bestehende Fassung nachträglich (Stunden, Tage, Pause, Schicht, Kernzeit, Beginn).
     Ein verschobener Beginn passt das Ende der vorherigen Fassung an; das Ende bleibt (Beginn der
-    nächsten). Eine ältere Standard-Schicht bekommt dabei ihr Soll fest übernommen."""
+    nächsten). Eine ältere Standard-Schicht bekommt dabei ihr Soll fest übernommen. Gehörte die
+    Fassung zu einem Arbeitszeitmodell, ist sie danach individuell (entweder Modell oder eigene
+    Angaben)."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     versions = await _versions(db, employee_id)
     version = next((v for v in versions if v.id == version_id), None)
@@ -377,17 +447,19 @@ async def update_work_time_model_version(
     for key, value in fields.items():
         setattr(version, key, value)
     version.shift_template_id = template.id if template else None
+    version.profile_id = None
     version.valid_from = payload.valid_from
     if previous is not None:
         previous.valid_to = payload.valid_from - timedelta(days=1)
     await db.flush()
     await _check_shift_times(db, employee_id, template, version.weekdays_mask, version.valid_from, version.valid_to)
-    await invalidate_balance(db, employee_id, start)
+    # Eine vorherige Modell-Zuweisung mit verschobenem Ende an ihr Modell angleichen.
+    changed = await sync_employee(db, employee_id)
+    await invalidate_balance(db, employee_id, min(start, changed or start))
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
@@ -417,16 +489,19 @@ async def delete_work_time_model_version(
     previous = next((v for v in reversed(versions) if v.valid_from < version.valid_from), None)
     if previous is not None:
         previous.valid_to = version.valid_to
-    await invalidate_balance(db, employee_id, version.valid_from)
+    removed_from = version.valid_from
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.EMPLOYEE_WORK_TIME_MODEL_SET,
         entity_type="employee",
         entity_id=employee_id,
-        detail=f"Fassung ab {version.valid_from.isoformat()} gelöscht",
+        detail=f"Fassung ab {removed_from.isoformat()} gelöscht",
     )
     await db.delete(version)
+    await db.flush()
+    # Verlängert sich dadurch eine Modell-Zuweisung, gelten im neuen Zeitraum die Modell-Fassungen.
+    changed = await sync_employee(db, employee_id)
+    await invalidate_balance(db, employee_id, min(removed_from, changed or removed_from))
     await db.commit()

@@ -2,12 +2,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import HrRole, HrUser
+from app.models import HrRole, Account
 from app.services.auth_service import hash_password
 
 
-async def _create_super_admin(db_session: AsyncSession, email: str, password: str) -> HrUser:
-    user = HrUser(tenant_id=None, email=email, password_hash=hash_password(password), role=HrRole.SUPER_ADMIN)
+async def _create_super_admin(db_session: AsyncSession, email: str, password: str) -> Account:
+    user = Account(tenant_id=None, email=email, password_hash=hash_password(password), role=HrRole.SUPER_ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -17,7 +17,7 @@ async def _create_super_admin(db_session: AsyncSession, email: str, password: st
 async def _super_admin_token(client: AsyncClient, db_session: AsyncSession) -> str:
     await _create_super_admin(db_session, "super@example.com", "super-pw")
     login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"Host": settings.super_admin_hostname},
         json={"email": "super@example.com", "password": "super-pw"},
     )
@@ -41,7 +41,7 @@ async def test_create_tenant_bootstraps_admin_with_working_login(
     assert isinstance(body["initial_admin_password"], str) and len(body["initial_admin_password"]) > 0
 
     login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "admin@acme.example", "password": body["initial_admin_password"]},
     )
@@ -92,14 +92,14 @@ async def test_reset_admin_password_issues_new_working_password(
     assert new_password != old_password
 
     old_login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "admin@acme.example", "password": old_password},
     )
     assert old_login.status_code == 401
 
     new_login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "admin@acme.example", "password": new_password},
     )
@@ -139,14 +139,14 @@ async def test_update_admin_email_changes_login(client: AsyncClient, db_session:
     assert update.json()["admin_email"] == "new-admin@acme.example"
 
     old_login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "admin@acme.example", "password": password},
     )
     assert old_login.status_code == 401
 
     new_login = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "new-admin@acme.example", "password": password},
     )
@@ -167,7 +167,7 @@ async def test_update_admin_email_conflicts_with_existing_email_in_same_tenant(
     tenant_id = create.json()["id"]
 
     db_session.add(
-        HrUser(
+        Account(
             tenant_id=tenant_id,
             email="hr@acme.example",
             password_hash=hash_password("pw"),
@@ -199,8 +199,8 @@ async def test_update_admin_email_unknown_tenant_404(client: AsyncClient, db_ses
 async def test_reset_admin_password_tenant_without_admin_404(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    # Tenant 1 (Musterfirma, per conftest-Seed) hat keinen HrUser-Admin –
-    # Erikas Admin-Zugang läuft über Employee.hr_role, nicht über HrUser.
+    # Tenant 1 (Musterfirma, per conftest-Seed) hat keinen Account-Admin –
+    # Erikas Admin-Zugang läuft über Employee.hr_role, nicht über Account.
     token = await _super_admin_token(client, db_session)
     response = await client.post(
         "/tenants/1/reset-admin-password",

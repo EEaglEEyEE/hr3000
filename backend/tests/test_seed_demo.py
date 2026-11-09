@@ -11,7 +11,7 @@ from app.tools.seed_demo import SUBDOMAIN, seed_demo
 
 
 async def test_seed_demo_creates_consistent_tenant(db_session: AsyncSession) -> None:
-    assert await seed_demo(db_session, "admin@demo.invalid", "geheim-123", today=date(2026, 11, 5)) is True
+    assert await seed_demo(db_session, "admin@example.com", "geheim-123", today=date(2026, 11, 5)) is True
     tenant_id = (await db_session.execute(select(Tenant.id).where(Tenant.subdomain == SUBDOMAIN))).scalar_one()
     assert tenant_id != 1
     for model in (Employee, Location, Team, Punch):
@@ -22,4 +22,4 @@ async def test_seed_demo_creates_consistent_tenant(db_session: AsyncSession) -> 
     day = await calculate_day(db_session, erika, date(2026, 10, 6), await employee_timezone(db_session, erika))
     assert day.target_minutes == 480
     # zweiter Aufruf ändert nichts
-    assert await seed_demo(db_session, "admin@demo.invalid", "geheim-123", today=date(2026, 11, 5)) is False
+    assert await seed_demo(db_session, "admin@example.com", "geheim-123", today=date(2026, 11, 5)) is False

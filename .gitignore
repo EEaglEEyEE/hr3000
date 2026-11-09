@@ -15,3 +15,6 @@ node_modules
 *.sqlite3
 openapi.json
 build
+
+# Laufzeitdaten des Backends (verschlüsselte Dokumente, lokal und in Tests) – nie einchecken
+backend/data/

@@ -3,7 +3,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, Holiday, HrRole, HrUser, Location, SummaryStatus, Tenant
+from app.models import Employee, Holiday, HrRole, Account, Location, SummaryStatus, Tenant
 from app.services.auth_service import hash_password
 from app.services.timesheet_service import calculate_day, employee_timezone
 
@@ -14,11 +14,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
         location = Location(name=name, timezone="UTC")
         db_session.add(location)
         locations.append(location)
-    db_session.add(HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR))
+    db_session.add(Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR))
     await db_session.commit()
     for location in locations:
         await db_session.refresh(location)
-    login = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return locations, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 

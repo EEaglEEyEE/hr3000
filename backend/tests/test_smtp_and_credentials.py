@@ -14,7 +14,7 @@ from app.models import (
     AppSettings,
     Employee,
     HrRole,
-    HrUser,
+    Account,
     Location,
 )
 from app.services import email_service
@@ -80,10 +80,10 @@ def allow_hosts(monkeypatch):
 async def _admin(db_session: AsyncSession, client: AsyncClient, role: HrRole = HrRole.ADMIN):
     location = Location(name="Standort A", timezone="UTC")
     db_session.add(location)
-    db_session.add(HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=role))
+    db_session.add(Account(email="admin@example.com", password_hash=hash_password("pw"), role=role))
     await db_session.commit()
     await db_session.refresh(location)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return location, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
@@ -230,7 +230,7 @@ async def test_employee_password_reset_shown_once(client: AsyncClient, db_sessio
     assert response.status_code == 200
     new_password = response.json()["new_password"]
     assert response.json()["emailed"] is False and new_password
-    login = await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": new_password})
+    login = await client.post("/auth/login", json={"email": "erika@example.com", "password": new_password})
     assert login.status_code == 200
     assert not _Recorder.messages
 
@@ -253,7 +253,7 @@ async def test_employee_password_reset_by_email(
     assert mail["To"] == "erika@example.com"
     body = mail.get_payload(decode=True).decode("utf-8")
     password = next(line.split(":", 1)[1].strip() for line in body.splitlines() if line.startswith("Einmalpasswort"))
-    login = await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": password})
+    login = await client.post("/auth/login", json={"email": "erika@example.com", "password": password})
     assert login.status_code == 200
     entries = (await client.get("/audit-log", headers=headers)).json()
     assert any(e["action"] == "EMPLOYEE_PASSWORD_RESET" and "per E-Mail" in e["detail"] for e in entries)
@@ -274,7 +274,7 @@ async def test_employee_password_reset_email_failure_keeps_old_password(
 
     assert response.status_code == 400
     assert response.json()["code"] == "EMAIL_SEND_FAILED"
-    still_old = await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": "alt"})
+    still_old = await client.post("/auth/login", json={"email": "erika@example.com", "password": "alt"})
     assert still_old.status_code == 200
 
 
@@ -293,9 +293,9 @@ async def test_employee_password_reset_requires_smtp_login_and_admin(
     missing_login = await client.post(f"/employees/{no_login.id}/reset-password", headers=headers, json={})
     assert missing_login.json()["code"] == "NO_LOGIN"
 
-    db_session.add(HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR))
+    db_session.add(Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR))
     await db_session.commit()
-    hr_login = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    hr_login = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     hr_headers = {"Authorization": f"Bearer {hr_login.json()['access_token']}"}
     forbidden = await client.post(f"/employees/{employee.id}/reset-password", headers=hr_headers, json={})
     assert forbidden.status_code == 403
@@ -306,11 +306,11 @@ async def test_tenant_credentials_sent_by_email_via_platform_smtp(
 ) -> None:
     app_settings.smtp_host = "smtp.platform.example"
     db_session.add(
-        HrUser(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN)
+        Account(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN)
     )
     await db_session.commit()
     host = {"Host": app_settings.super_admin_hostname}
-    login = await client.post("/auth/hr/login", headers=host, json={"email": "super@example.com", "password": "sp"})
+    login = await client.post("/auth/login", headers=host, json={"email": "super@example.com", "password": "sp"})
     headers = {**host, "Authorization": f"Bearer {login.json()['access_token']}"}
 
     created = await client.post(
@@ -340,11 +340,11 @@ async def test_tenant_credentials_sent_by_email_via_platform_smtp(
 
 async def test_tenant_credentials_not_emailed_without_smtp(client: AsyncClient, db_session: AsyncSession) -> None:
     db_session.add(
-        HrUser(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN)
+        Account(tenant_id=None, email="super@example.com", password_hash=hash_password("sp"), role=HrRole.SUPER_ADMIN)
     )
     await db_session.commit()
     host = {"Host": app_settings.super_admin_hostname}
-    login = await client.post("/auth/hr/login", headers=host, json={"email": "super@example.com", "password": "sp"})
+    login = await client.post("/auth/login", headers=host, json={"email": "super@example.com", "password": "sp"})
     headers = {**host, "Authorization": f"Bearer {login.json()['access_token']}"}
 
     created = await client.post(

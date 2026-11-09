@@ -15,7 +15,7 @@ from app.models import (
     BreakRuleKind,
     Employee,
     HrRole,
-    HrUser,
+    Account,
     Location,
     Punch,
     PunchSource,
@@ -40,7 +40,7 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, auto_break: bool
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
             # gesetzliche Staffel
             BreakRule(min_work_minutes=360, deduct_minutes=30),
             BreakRule(min_work_minutes=540, deduct_minutes=45),
@@ -48,7 +48,7 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, auto_break: bool
     )
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return employee, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 

@@ -4,7 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditAction, AuditLogEntry, Employee, HrRole, HrUser, Location
+from app.models import AuditAction, AuditLogEntry, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -16,15 +16,15 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     employee = Employee(location_id=location.id, first_name="Erika", last_name="Muster", employee_number="E1", hire_date=date(2030, 5, 1), login_email="e@example.com", password_hash=hash_password("pw"))
     db_session.add_all([
         employee,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="sup@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR),
     ])
     await db_session.commit()
     await db_session.refresh(employee)
     headers = {}
-    for name, path in (("hr", "/auth/hr/login"), ("sup", "/auth/hr/login")):
+    for name, path in (("hr", "/auth/login"), ("sup", "/auth/login")):
         headers[name] = {"Authorization": "Bearer " + (await client.post(path, json={"email": f"{name}@example.com", "password": "pw"})).json()["access_token"]}
-    headers["self"] = {"Authorization": "Bearer " + (await client.post("/auth/employee/login", json={"email": "e@example.com", "password": "pw"})).json()["access_token"]}
+    headers["self"] = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "e@example.com", "password": "pw"})).json()["access_token"]}
     return employee, headers
 
 
@@ -39,7 +39,7 @@ async def test_default_templates_start_checklist_and_tick_items(client: AsyncCli
     started = await client.post(f"/employees/{employee.id}/checklists", headers=headers["hr"], json={"template_id": onboarding["id"]})
     assert started.status_code == 201
     checklist = started.json()
-    assert checklist["anchor_date"] == "2030-05-01"  # Eintrittsdatum
+    assert checklist["anchor_date"] == "2030-05-01"  # Anstelldatum
     assert checklist["items"][0]["due_date"] == "2030-04-24"  # 7 Tage davor
     assert len(checklist["items"]) == len(onboarding["items"])
 

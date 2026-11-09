@@ -3,7 +3,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import HrRole, HrUser, Location, Tenant
+from app.models import HrRole, Account, Location, Tenant
 from app.services.auth_service import hash_password
 
 
@@ -21,8 +21,8 @@ async def _create_hr_user(
     email: str,
     password: str,
     role: HrRole = HrRole.ADMIN,
-) -> HrUser:
-    user = HrUser(tenant_id=tenant_id, email=email, password_hash=hash_password(password), role=role)
+) -> Account:
+    user = Account(tenant_id=tenant_id, email=email, password_hash=hash_password(password), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -47,12 +47,12 @@ async def test_hr_user_email_unique_per_tenant_not_globally(
     await _create_hr_user(db_session, 2, "hr@example.com", "pw-tenant-2")
 
     response_1 = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "pw-tenant-1"}
+        "/auth/login", json={"email": "hr@example.com", "password": "pw-tenant-1"}
     )
     assert response_1.status_code == 200
 
     response_2 = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "hr@example.com", "password": "pw-tenant-2"},
     )
@@ -60,7 +60,7 @@ async def test_hr_user_email_unique_per_tenant_not_globally(
 
     # Passwort aus dem falschen Mandanten darf nicht funktionieren.
     response_wrong = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"X-Tenant-Subdomain": "acme"},
         json={"email": "hr@example.com", "password": "pw-tenant-1"},
     )
@@ -74,7 +74,7 @@ async def test_cross_tenant_token_rejected_with_401_not_403(
     await _create_hr_user(db_session, 1, "hr@example.com", "pw-tenant-1")
 
     login = await client.post(
-        "/auth/hr/login", json={"email": "hr@example.com", "password": "pw-tenant-1"}
+        "/auth/login", json={"email": "hr@example.com", "password": "pw-tenant-1"}
     )
     token = login.json()["access_token"]
 
@@ -119,7 +119,7 @@ async def test_locations_are_isolated_between_tenants(
     await _create_location(db_session, 2, "Standort Acme")
 
     login = await client.post(
-        "/auth/hr/login", json={"email": "admin1@example.com", "password": "pw1"}
+        "/auth/login", json={"email": "admin1@example.com", "password": "pw1"}
     )
     token = login.json()["access_token"]
 
@@ -137,12 +137,12 @@ async def test_super_admin_login_requires_super_admin_host(
     # Normaler Mandanten-Host (hier via Dev-Fallback "musterfirma") darf den
     # Super-Admin nicht einloggen – er ist keinem Tenant zugeordnet.
     on_tenant_host = await client.post(
-        "/auth/hr/login", json={"email": "super@example.com", "password": "super-pw"}
+        "/auth/login", json={"email": "super@example.com", "password": "super-pw"}
     )
     assert on_tenant_host.status_code == 401
 
     on_super_admin_host = await client.post(
-        "/auth/hr/login",
+        "/auth/login",
         headers={"Host": settings.super_admin_hostname},
         json={"email": "super@example.com", "password": "super-pw"},
     )

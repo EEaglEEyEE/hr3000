@@ -21,7 +21,7 @@ export function PendingAbsencesPanel() {
     <div className="flex flex-col gap-4">
       <p className="text-sm text-slate-500">
         Offene Anträge, die auf Genehmigung warten (je Abwesenheitsart unter Einstellungen → „Abwesenheitsarten“ mit
-        „Genehmigung nötig“). Als Teamleiter/in sieht man hier nur Anträge aus den eigenen Teams.
+        „Genehmigung nötig“). Als Führungskraft sieht man hier nur Anträge aus den eigenen Teams.
       </p>
 
       {pendingQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
@@ -53,9 +53,30 @@ export function PendingAbsencesPanel() {
                     {absence.half_day && '½ '}
                     {absenceTypes.get(absence.absence_type_id ?? -1)?.name ?? ABSENCE_TYPE_LABELS[absence.type]}
                     {absence.duration_minutes != null && ` (${formatHoursMinutes(absence.duration_minutes)} Std.)`}
+                    {absence.substitute_name && (
+                      <span className="block text-xs text-slate-500">Vertretung: {absence.substitute_name}</span>
+                    )}
+                    {absence.waiting_for && (
+                      <span className="block text-xs text-slate-500">Wartet auf: {absence.waiting_for}</span>
+                    )}
                   </TableCell>
                   <TableCell>{formatDate(absence.date_from)}</TableCell>
-                  <TableCell>{formatDate(absence.date_to)}</TableCell>
+                  <TableCell>
+                    {formatDate(absence.date_to)}
+                    {absence.remaining_vacation_days != null && (
+                      <span className="block text-xs text-slate-500">
+                        Resturlaub {absence.date_from.slice(0, 4)}: {String(absence.remaining_vacation_days).replace('.', ',')} Tage
+                      </span>
+                    )}
+                    {(absence.team_overlaps ?? []).length > 0 && (
+                      <span className="block text-xs text-amber-700">
+                        Gleichzeitig abwesend:{' '}
+                        {(absence.team_overlaps ?? [])
+                          .map((overlap) => `${overlap.name} (${formatDate(overlap.date_from)}–${formatDate(overlap.date_to)}${overlap.pending ? ', beantragt' : ''})`)
+                          .join(', ')}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="flex justify-end gap-2">
                     <Button
                       size="sm"

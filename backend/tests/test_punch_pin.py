@@ -1,8 +1,9 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, Employee, HrRole, HrUser, Location
+from app.models import Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _create_location(db_session: AsyncSession) -> Location:
@@ -29,15 +30,15 @@ async def _create_employee(db_session: AsyncSession, location: Location, pin: st
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
     return device
 
 
-async def _create_admin(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
+async def _create_admin(db_session: AsyncSession) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -46,7 +47,7 @@ async def _create_admin(db_session: AsyncSession) -> HrUser:
 
 async def _admin_token(client: AsyncClient) -> str:
     response = await client.post(
-        "/auth/hr/login", json={"email": "admin@example.com", "password": "pw"}
+        "/auth/login", json={"email": "admin@example.com", "password": "pw"}
     )
     return response.json()["access_token"]
 

@@ -22,8 +22,15 @@ const KIND_LABELS = {
   PROBATION_ENDING: 'Probezeit endet',
   FIXED_TERM_ENDING: 'Befristung endet',
   TERMINATION: 'Austritt',
+  RETENTION_DUE: 'Aufbewahrung abgelaufen',
 } as const
-const KIND_VARIANT = { BEM: 'danger', PROBATION_ENDING: 'warning', FIXED_TERM_ENDING: 'warning', TERMINATION: 'info' } as const
+const KIND_VARIANT = {
+  BEM: 'danger',
+  PROBATION_ENDING: 'warning',
+  FIXED_TERM_ENDING: 'warning',
+  TERMINATION: 'info',
+  RETENTION_DUE: 'info',
+} as const
 
 const money = (value: number | null | undefined) =>
   value === null || value === undefined ? '–' : value.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
@@ -40,7 +47,7 @@ export function ReportsPage() {
   const { canPayroll } = useAuth()
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-slate-900">Auswertungen</h1>
+      <h1 className="text-lg font-semibold text-slate-900">Analysen</h1>
       <Tabs defaultValue="attention">
         <TabsList>
           <TabsTrigger value="attention">Handlungsbedarf</TabsTrigger>
@@ -285,7 +292,7 @@ function OvertimeTab() {
         <TableHeader>
           <TableRow>
             <TableHead>Mitarbeiter</TableHead>
-            <TableHead>Gleitzeitsaldo</TableHead>
+            <TableHead>Überstundenkonto</TableHead>
             <TableHead>Stand</TableHead>
           </TableRow>
         </TableHeader>
@@ -330,9 +337,9 @@ function CostsTab() {
         )}
       </div>
       <p className="text-sm text-slate-500">
-        Brutto ohne Arbeitgeberanteile. Jeder Abruf wird im Audit-Log protokolliert. Stundenlohn: bezahlte Stunden (inkl. Feiertag/Urlaub/Krank) × Satz plus Zuschläge; dazu Zulagen und Einmalzahlungen im Zeitraum.
+        Brutto ohne Arbeitgeberanteile. Jeder Abruf wird im Audit-Protokoll protokolliert. Stundenlohn: bezahlte Stunden (inkl. Feiertag/Urlaub/Krank) × Satz plus Zuschläge; dazu Zulagen und Einmalzahlungen im Zeitraum.
       </p>
-      {query.isError && <p className="text-red-600">Auswertung konnte nicht geladen werden.</p>}
+      {query.isError && <p className="text-red-600">Bericht konnte nicht geladen werden.</p>}
       {report && (
         <Table>
           <TableHeader>

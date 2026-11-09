@@ -8,26 +8,38 @@ from app.config import settings
 from app.db import get_db
 from app.errors import AppError
 from app.api.deps import Actor, get_current_actor
-from app.models import AccountTokenPurpose, Device, Employee, HrRole, HrUser, Tenant
-from app.schemas.device import DevicePairRequest, DevicePairResponse
+from app.models import Account, AccountTokenPurpose, AuditAction, Device, HrRole, Tenant
+from app.services.audit_service import log_action
+from app.schemas.device import DeviceEnrollRequest, DeviceEnrollResponse, DevicePairRequest, DevicePairResponse
 from app.schemas.auth import (
     ChangePasswordRequest,
     DeviceLoginRequest,
     DeviceLoginResponse,
-    EmployeeLoginRequest,
-    HrLoginRequest,
+    LoginRequest,
+    LoginResponse,
+    TwoFactorLoginRequest,
     PasswordResetConfirm,
     PasswordResetRequest,
     RefreshRequest,
     TokenResponse,
 )
 from app.services.account_tokens import PASSWORD_RESET_TTL, consume_token, issue_token
-from app.services.auth_service import create_token, decode_token, hash_password, password_fingerprint, verify_password
+from app.services.auth_service import (
+    account_can_sign_in,
+    create_token,
+    decode_token,
+    hash_password,
+    session_fingerprint,
+    verify_password,
+)
 from app.services.email_service import resolve_smtp_config, send_email
 from app.services.signup_mail import send_verification_mail
 from app.services import rate_limiter
-from app.services.pairing_service import pairing_code_hash
+from app.services.pairing_service import card_salt, new_device_token, pairing_code_hash, token_hash
+from app.services.notification_service import notify_device_rejected
+from app.services.device_enrollment import enroll_device, pending_enrollment_for_token
 from app.services.settings_service import device_kiosk_config
+from app.services import two_factor_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -67,17 +79,57 @@ def _require_tenant_id(request: Request) -> int:
     return tenant.id
 
 
+async def reject_second_device(db: AsyncSession, device: Device) -> None:
+    """Weiteres Gerät mit dem Zugang eines gebundenen Tablets: höchstens einmal pro Stunde Warnung an
+    Admin/HR und Eintrag im Audit-Protokoll (sonst würde ein dauernd probierendes Gerät fluten)."""
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if device.rejected_at is None or now - device.rejected_at > timedelta(hours=1):
+        log_action(
+            db, tenant_id=device.tenant_id, actor_account_id=None,
+            action=AuditAction.DEVICE_LOGIN_REJECTED, entity_type="device", entity_id=device.id,
+            detail=f"Weiteres Gerät mit dem Zugang von Tablet „{device.name}“ abgewiesen",
+        )
+        await notify_device_rejected(db, device)
+    device.rejected_at = now
+    await db.commit()
+
+
 @router.post("/device/login", response_model=DeviceLoginResponse)
 async def device_login(
     request: Request, payload: DeviceLoginRequest, db: AsyncSession = Depends(get_db)
 ) -> DeviceLoginResponse:
     tenant_id = _require_tenant_id(request)
     result = await db.execute(
-        select(Device).where(Device.tenant_id == tenant_id, Device.device_token == payload.device_token)
+        select(Device).where(Device.tenant_id == tenant_id, Device.token_hash == token_hash(payload.device_token))
     )
     device = result.scalar_one_or_none()
     if device is None:
+        # Per MDM registriert, aber noch nicht freigegeben: Gerät zeigt den Prüfcode und versucht es weiter.
+        pending = await pending_enrollment_for_token(db, tenant_id, payload.device_token)
+        if pending is not None and payload.installation_id and token_hash(payload.installation_id) == pending.installation_hash:
+            raise AppError(
+                403,
+                "DEVICE_PENDING",
+                f"Dieses Gerät wartet auf Freigabe in der HR-Webapp unter „Tablets“. Prüfcode: {pending.verify_code}",
+            )
         raise AppError(401, "INVALID_DEVICE_TOKEN", "Unbekanntes Gerät.")
+
+    # Ein Zugang = ein Tablet: Das erste Tablet mit Installations-ID bindet den Zugang; jedes andere
+    # Gerät wird abgewiesen (Warnung an Admin/HR). Ältere Tablet-Versionen ohne ID dürfen nur, solange
+    # noch nichts gebunden ist.
+    installation = token_hash(payload.installation_id) if payload.installation_id else None
+    if device.installation_hash is None:
+        if installation is not None:
+            device.installation_hash = installation
+            device.bound_at = datetime.now(UTC).replace(tzinfo=None)
+    elif installation != device.installation_hash:
+        await reject_second_device(db, device)
+        raise AppError(
+            401,
+            "DEVICE_IN_USE",
+            "Dieser Tablet-Zugang ist bereits auf einem anderen Gerät angemeldet. Zum Wechseln das Tablet in der "
+            "HR-Webapp unter „Tablets“ neu koppeln.",
+        )
 
     device.last_seen = datetime.now(UTC)
     await db.commit()
@@ -86,14 +138,34 @@ async def device_login(
         subject=str(device.id),
         token_type="device",
         expires_delta=timedelta(hours=settings.jwt_device_token_expire_hours),
-        extra_claims={"location_id": device.location_id, "tenant_id": device.tenant_id},
+        # tv: Teil des Token-Hashes – nach neuem Koppeln/„Kopplung aufheben“ sind alte Sitzungen ungültig
+        extra_claims={"location_id": device.location_id, "tenant_id": device.tenant_id, "tv": device.token_hash[:16]},
     )
     return DeviceLoginResponse(
         access_token=token,
         location_id=device.location_id,
         device_name=device.name,
+        card_salt=card_salt(device.tenant_id),
         **(await device_kiosk_config(db, device)).model_dump(),
     )
+
+
+@router.post("/device/enroll", response_model=DeviceEnrollResponse)
+async def device_enroll(
+    request: Request, payload: DeviceEnrollRequest, db: AsyncSession = Depends(get_db)
+) -> DeviceEnrollResponse:
+    """Selbstregistrierung per Registrierungsschlüssel aus der MDM-Start-URL (``#enroll=…``): bindet an
+    einen vorbereiteten, noch nie benutzten Eintrag mit gleichem Gerätenamen oder legt eine Anfrage an,
+    die Admin/HR freigeben. Ablauf und Regeln: app/services/device_enrollment.py."""
+    tenant_id = _require_tenant_id(request)
+    key = f"enroll:{_client_ip(request)}"
+    rate_limiter.check_rate_limit(key, 10, 300, code="ENROLLMENT_LOCKED")
+    try:
+        return await enroll_device(db, tenant_id, payload.key, payload.installation_id, payload.name)
+    except AppError as exc:
+        if exc.code in ("ENROLLMENT_KEY_INVALID", "ENROLLMENT_KEY_EXPIRED"):
+            rate_limiter.record_failure(key)
+        raise
 
 
 @router.post("/device/pair", response_model=DevicePairResponse)
@@ -116,100 +188,91 @@ async def device_pair(
     if device is None or device.pairing_code_expires_at is None or device.pairing_code_expires_at < now:
         rate_limiter.record_failure(key)
         raise AppError(401, "PAIRING_CODE_INVALID", "Kopplungscode ungültig oder abgelaufen.")
+    # Koppeln = neues Token für genau dieses Tablet: das alte Token und ein bisher gebundenes Gerät
+    # sind danach ungültig (Tablet-Tausch).
+    new_token = new_device_token()
+    device.token_hash = token_hash(new_token)
+    device.installation_hash = token_hash(payload.installation_id)
+    device.bound_at = datetime.now(UTC).replace(tzinfo=None)
+    device.rejected_at = None
     device.pairing_code_hash = None
     device.pairing_code_expires_at = None
     await db.commit()
-    return DevicePairResponse(device_token=device.device_token)
+    return DevicePairResponse(device_token=new_token)
 
 
-@router.post("/hr/login", response_model=TokenResponse)
-async def hr_login(
-    request: Request, payload: HrLoginRequest, db: AsyncSession = Depends(get_db)
-) -> TokenResponse:
+@router.post("/login", response_model=LoginResponse)
+async def login(request: Request, payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+    """Ein Login für alle Konten (Verwaltung, Mitarbeiter, auf dem admin.-Host der Super-Admin)."""
+    email = payload.email.lower()
     if getattr(request.state, "is_super_admin_host", False):
-        stmt = select(HrUser).where(HrUser.role == HrRole.SUPER_ADMIN, HrUser.email == payload.email)
+        stmt = select(Account).where(
+            Account.tenant_id.is_(None), Account.role == HrRole.SUPER_ADMIN, func.lower(Account.email) == email
+        )
     else:
         tenant_id = _require_tenant_id(request)
-        stmt = select(HrUser).where(HrUser.tenant_id == tenant_id, HrUser.email == payload.email)
+        stmt = select(Account).where(Account.tenant_id == tenant_id, func.lower(Account.email) == email)
 
     _check_login_allowed(request, payload.email)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    account = (await db.execute(stmt)).scalar_one_or_none()
+    if account is None or not account_can_sign_in(account) or not verify_password(payload.password, account.password_hash):
         raise _login_failed(request, payload.email)
 
     rate_limiter.reset(_login_keys(request, payload.email)[0])
-    if user.email_verification_pending:
+    if account.email_verification_pending:
         # Erst nach richtigem Passwort verraten; den Bestätigungslink gibt es dabei erneut.
-        tenant = await db.get(Tenant, user.tenant_id)
-        await send_verification_mail(db, tenant, user)
+        tenant = await db.get(Tenant, account.tenant_id)
+        await send_verification_mail(db, tenant, account)
         raise AppError(
             403,
             "EMAIL_NOT_VERIFIED",
             "Bitte bestätige zuerst deine E-Mail-Adresse – wir haben dir den Link (erneut) geschickt.",
         )
-    return _issue_token_pair(user)
+    if account.totp_enabled_at is not None:
+        return LoginResponse(two_factor="required", challenge_token=two_factor_service.create_challenge(account, "verify"))
+    if await two_factor_service.two_factor_required(db, account):
+        return LoginResponse(two_factor="setup", challenge_token=two_factor_service.create_challenge(account, "setup"))
+    return LoginResponse(**(await complete_login(db, account)).model_dump())
 
 
-@router.post("/hr/refresh", response_model=TokenResponse)
-async def hr_refresh(
-    request: Request, payload: RefreshRequest, db: AsyncSession = Depends(get_db)
+@router.post("/login/2fa", response_model=TokenResponse)
+async def login_two_factor(
+    request: Request, payload: TwoFactorLoginRequest, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
+    """Zweiter Schritt: Code aus der Authenticator-App oder ein Wiederherstellungscode."""
+    account = await two_factor_service.read_challenge(db, request, payload.challenge_token, "verify")
+    used_recovery = two_factor_service.verify_code(account, payload.code)
+    detail = "Anmeldung mit Wiederherstellungscode" if used_recovery else "Anmeldung (Zwei-Faktor)"
+    return await complete_login(db, account, detail)
+
+
+async def complete_login(db: AsyncSession, account: Account, detail: str = "Anmeldung") -> TokenResponse:
+    """Anmeldung im Audit-Protokoll festhalten (nicht beim Super-Admin) und Tokens ausgeben. Committet."""
+    if account.tenant_id is not None:
+        log_action(
+            db, tenant_id=account.tenant_id, actor_account_id=account.id,
+            action=AuditAction.LOGIN, entity_type="account", entity_id=account.id, detail=detail,
+        )
+    await db.commit()
+    return _issue_token_pair(account)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(request: Request, payload: RefreshRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     claims = decode_token(payload.refresh_token)
-    if claims.get("type") != "refresh":
+    if claims.get("type") != "account_refresh":
         raise AppError(401, "TOKEN_INVALID", "Ungültiges Refresh-Token.")
 
-    user = await db.get(HrUser, int(claims["sub"]))
+    account = await db.get(Account, int(claims["sub"]))
     if (
-        user is None
-        or not _matches_request_tenant(request, user.tenant_id, user.role == HrRole.SUPER_ADMIN)
-        or claims.get("pwv") != password_fingerprint(user.password_hash)
+        account is None
+        or not account_can_sign_in(account)
+        or not _matches_request_tenant(request, account.tenant_id, account.role == HrRole.SUPER_ADMIN)
+        or claims.get("pwv") != session_fingerprint(account)
     ):
         raise AppError(401, "TOKEN_INVALID", "Ungültiges Refresh-Token.")
 
-    return _issue_token_pair(user)
-
-
-@router.post("/employee/login", response_model=TokenResponse)
-async def employee_login(
-    request: Request, payload: EmployeeLoginRequest, db: AsyncSession = Depends(get_db)
-) -> TokenResponse:
-    tenant_id = _require_tenant_id(request)
-    _check_login_allowed(request, payload.email)
-    result = await db.execute(
-        select(Employee).where(Employee.tenant_id == tenant_id, Employee.login_email == payload.email)
-    )
-    employee = result.scalar_one_or_none()
-    if (
-        employee is None
-        or not employee.active  # deaktivierte/ausgeschiedene/anonymisierte Mitarbeiter dürfen sich nicht mehr anmelden
-        or employee.password_hash is None
-        or not verify_password(payload.password, employee.password_hash)
-    ):
-        raise _login_failed(request, payload.email)
-
-    rate_limiter.reset(_login_keys(request, payload.email)[0])
-    return _issue_employee_token_pair(employee)
-
-
-@router.post("/employee/refresh", response_model=TokenResponse)
-async def employee_refresh(
-    request: Request, payload: RefreshRequest, db: AsyncSession = Depends(get_db)
-) -> TokenResponse:
-    claims = decode_token(payload.refresh_token)
-    if claims.get("type") != "employee_refresh":
-        raise AppError(401, "TOKEN_INVALID", "Ungültiges Refresh-Token.")
-
-    employee = await db.get(Employee, int(claims["sub"]))
-    if (
-        employee is None
-        or not employee.active
-        or not _matches_request_tenant(request, employee.tenant_id, False)
-        or claims.get("pwv") != password_fingerprint(employee.password_hash)
-    ):
-        raise AppError(401, "TOKEN_INVALID", "Ungültiges Refresh-Token.")
-
-    return _issue_employee_token_pair(employee)
+    return _issue_token_pair(account)
 
 
 def _matches_request_tenant(request: Request, row_tenant_id: int | None, is_super_admin: bool) -> bool:
@@ -219,46 +282,27 @@ def _matches_request_tenant(request: Request, row_tenant_id: int | None, is_supe
     return tenant is not None and row_tenant_id == tenant.id
 
 
-def _issue_employee_token_pair(employee: Employee) -> TokenResponse:
+def _issue_token_pair(account: Account) -> TokenResponse:
+    """Claims für die Anzeige in der Webapp (role, emp, payroll) – geprüft wird immer im Backend."""
     access = create_token(
-        subject=str(employee.id),
-        token_type="employee_access",
+        subject=str(account.id),
+        token_type="account_access",
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
         extra_claims={
-            "hr_role": employee.hr_role.value if employee.hr_role else None,
-            # Berechtigung „Vergütung & Lohn-Export“ (nur Anzeige; geprüft wird im Backend)
-            "payroll": employee.hr_role == HrRole.ADMIN or (employee.hr_role == HrRole.HR and employee.hr_payroll_access),
-            "pwv": password_fingerprint(employee.password_hash),
+            "role": account.role.value if account.role else None,
+            "emp": account.employee_id,
+            "payroll": account.role == HrRole.ADMIN or (account.role == HrRole.HR and account.payroll_access),
+            "tenant_id": account.tenant_id,
+            "pwv": session_fingerprint(account),
         },
     )
-    refresh = create_token(
-        subject=str(employee.id),
-        token_type="employee_refresh",
+    refresh_token = create_token(
+        subject=str(account.id),
+        token_type="account_refresh",
         expires_delta=timedelta(days=settings.jwt_refresh_token_expire_days),
-        extra_claims={"pwv": password_fingerprint(employee.password_hash)},
+        extra_claims={"pwv": session_fingerprint(account)},
     )
-    return TokenResponse(access_token=access, refresh_token=refresh)
-
-
-def _issue_token_pair(user: HrUser) -> TokenResponse:
-    access = create_token(
-        subject=str(user.id),
-        token_type="access",
-        expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
-        extra_claims={
-            "role": user.role.value,
-            "payroll": user.role == HrRole.ADMIN or (user.role == HrRole.HR and user.payroll_access),
-            "tenant_id": user.tenant_id,
-            "pwv": password_fingerprint(user.password_hash),
-        },
-    )
-    refresh = create_token(
-        subject=str(user.id),
-        token_type="refresh",
-        expires_delta=timedelta(days=settings.jwt_refresh_token_expire_days),
-        extra_claims={"pwv": password_fingerprint(user.password_hash)},
-    )
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return TokenResponse(access_token=access, refresh_token=refresh_token)
 
 
 # --- Passwort selbst ändern / vergessen ----------------------------------------------------
@@ -275,12 +319,12 @@ async def change_password(
     actor: Actor = Depends(get_current_actor),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    """Eigenes Passwort ändern (HR-Nutzer, Mitarbeiter mit Login, Super-Admin). Alle anderen
-    Sitzungen enden (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar."""
-    principal = actor.hr_user or actor.employee
+    """Eigenes Passwort ändern (jedes Konto inkl. Super-Admin). Alle anderen Sitzungen enden
+    (Passwort-Fingerabdruck im Token); diese bekommt ein neues Token-Paar."""
+    principal = actor.account
     if principal is None:
         raise AppError(403, "ACCOUNT_REQUIRED", "Nur für angemeldete Personen.")
-    key = f"pwchange:{'hr' if actor.hr_user else 'employee'}:{principal.id}"
+    key = f"pwchange:{principal.id}"
     rate_limiter.check_rate_limit(key, _PW_CHANGE_LIMIT, _LOGIN_WINDOW)
     if principal.password_hash is None or not verify_password(payload.current_password, principal.password_hash):
         rate_limiter.record_failure(key)
@@ -290,7 +334,7 @@ async def change_password(
     principal.password_hash = hash_password(payload.new_password)
     await db.commit()
     rate_limiter.reset(key)
-    return _issue_token_pair(actor.hr_user) if actor.hr_user else _issue_employee_token_pair(actor.employee)
+    return _issue_token_pair(principal)
 
 
 _RESET_ANSWER = {"detail": "Wenn es ein Konto mit dieser E-Mail-Adresse gibt, haben wir dir einen Link geschickt."}
@@ -317,30 +361,19 @@ async def request_password_reset(
     if config is None:
         return _RESET_ANSWER
 
-    user = await db.scalar(select(HrUser).where(HrUser.tenant_id == tenant_id, func.lower(HrUser.email) == email))
-    employee = None
-    if user is None:
-        employee = await db.scalar(
-            select(Employee).where(
-                Employee.tenant_id == tenant_id,
-                func.lower(Employee.login_email) == email,
-                Employee.active.is_(True),
-                Employee.password_hash.is_not(None),
-            )
-        )
-    if user is None and employee is None:
+    account = await db.scalar(select(Account).where(Account.tenant_id == tenant_id, func.lower(Account.email) == email))
+    if account is None or not account_can_sign_in(account):
         return _RESET_ANSWER
 
     raw = await issue_token(
-        db, tenant_id=tenant_id, purpose=AccountTokenPurpose.PASSWORD_RESET, ttl=PASSWORD_RESET_TTL,
-        hr_user=user, employee=employee,
+        db, tenant_id=tenant_id, purpose=AccountTokenPurpose.PASSWORD_RESET, ttl=PASSWORD_RESET_TTL, account=account
     )
     await db.commit()
     rate_limiter.record_failure(mail_key)
     host = request.headers.get("host") or request.url.netloc
     link = f"{request.url.scheme}://{host}/passwort-zuruecksetzen#token={raw}"
     await send_email(
-        user.email if user else employee.login_email,
+        account.email,
         "HR3000 – Passwort zurücksetzen",
         (
             "Hallo,\n\nfür dein HR3000-Konto wurde ein neues Passwort angefordert.\n"
@@ -362,16 +395,12 @@ async def confirm_password_reset(
     ip_key = f"pwreset-confirm:{_client_ip(request)}"
     rate_limiter.check_rate_limit(ip_key, 20, _HOUR)
     token = await consume_token(db, payload.token, AccountTokenPurpose.PASSWORD_RESET)
-    user = await db.get(HrUser, token.hr_user_id) if token and token.hr_user_id else None
-    employee = await db.get(Employee, token.employee_id) if token and token.employee_id else None
-    if token is None or token.tenant_id != tenant_id or (user is None and (employee is None or not employee.active)):
+    account = await db.get(Account, token.account_id) if token else None
+    if token is None or token.tenant_id != tenant_id or account is None or not account_can_sign_in(account):
         await db.rollback()
         rate_limiter.record_failure(ip_key)
         raise AppError(400, "TOKEN_INVALID", "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen an.")
-    if user is not None:
-        user.password_hash = hash_password(payload.new_password)
-        # Wer den Link aus seinem Postfach nutzt, hat die Adresse damit auch bestätigt.
-        user.email_verification_pending = False
-    else:
-        employee.password_hash = hash_password(payload.new_password)
+    account.password_hash = hash_password(payload.new_password)
+    # Wer den Link aus seinem Postfach nutzt, hat die Adresse damit auch bestätigt.
+    account.email_verification_pending = False
     await db.commit()

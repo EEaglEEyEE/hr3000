@@ -3,8 +3,155 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 09.11.2026
+
+- **Einstellungen am Tablet:** Die Einstellungsseiten lassen sich bei Tablet-Breite nicht mehr seitlich
+  verschieben (betraf u. a. Felder der Personalakte, Feiertagskalender, Pausenregeln, Lohnarten und API &
+  Webhooks). Eingabefelder werden schmaler, lange Knöpfe brechen um. Zu lange Werte in Auswahlfeldern
+  enden überall mit „…“, statt aus dem Feld zu laufen; geöffnet zeigt die Auswahl den vollen Text.
+
+## 08.11.2026
+
+- **Zwei-Faktor-Pflicht je Gruppe:** Unter „Einstellungen“ → „Allgemein“ → „Zwei-Faktor-Anmeldung
+  verpflichtend für“ lassen sich Admin, HR, Führungskräfte und Mitarbeiter ohne Rolle einzeln
+  ankreuzen, „Alle“ kreuzt alle an. War die Pflicht bisher eingeschaltet, gilt sie weiter für
+  Admin, HR und Führungskräfte. Das Stempeln am Tablet ist nicht betroffen.
+- **Tablets per MDM verteilen:** Unter „Tablets“ → „Verteilung per MDM“ gibt es je Standort einen
+  Registrierungsschlüssel. Eine Geräteverwaltung (Intune, Endpoint Central, Jamf …) startet die
+  Kiosk-App mit dieser Adresse, die Geräte richten sich ohne QR-Code selbst ein. Vorbereitete Einträge
+  mit „Gerätename im MDM“ werden direkt verbunden, alle anderen Geräte warten mit Prüfcode auf
+  Freigabe. Anleitung im Admin-Handbuch, Abschnitt 10.
+- **Mitarbeiter bearbeiten im Reiter „Einstellungen“:** Auf der Mitarbeiterseite gibt es statt des
+  Knopfs „Bearbeiten“ den Reiter „Einstellungen“ mit Grunddaten, Login, PIN, Chip und
+  HR-Berechtigung. „Bearbeiten“ in der Mitarbeiterliste führt direkt dorthin; neue Mitarbeiter legt
+  man weiter mit „Neuer Mitarbeiter“ an.
+
 ## 07.11.2026
 
+- **API und Webhooks:** Unter „Einstellungen“ → „API & Webhooks“ legen Admins API-Zugänge mit
+  Leserechten an (Mitarbeiter, Abwesenheiten, Stempelungen) und Webhooks für Änderungen an
+  Mitarbeitern und Abwesenheiten (signiert, mit Wiederholung). Beschreibung im Admin-Handbuch.
+- **Onboarding mit Aufgaben für die neue Person:** On-/Offboarding-Aufgaben können jetzt eine Aktion
+  haben: Dokument hochladen oder Daten eintragen (erledigt die Person selbst unter „Meine Aufgaben“)
+  und E-Mail beim Start senden.
+- **Dokumentvorlagen:** Admins legen unter „Einstellungen“ → „Dokumentvorlagen“ Texte mit Platzhaltern
+  an (z. B. Arbeitsbescheinigung). Am Mitarbeiter entsteht daraus mit „Aus Vorlage erstellen“ ein PDF in
+  der Personalakte.
+- **Eigene Dokumentkategorien:** Unter „Einstellungen“ → „Dokumentkategorien“ legen Admins eigene
+  Kategorien mit Rechten an. In freigegebene Kategorien laden Mitarbeiter in „Mein Bereich“ →
+  „Dokumente“ selbst hoch.
+- **Änderungen vorschlagen:** Mitarbeiter schlagen in „Mein Bereich“ → „Meine Daten“ neue Angaben vor
+  (Adresse, Bank, Steuer, freigegebene eigene Felder). Admin und HR übernehmen sie unter „Zu klären“ →
+  „Datenänderungen“.
+- **Eigene Felder und Verlauf in der Personalakte:** Admins legen unter „Einstellungen“ → „Felder der
+  Personalakte“ eigene Abschnitte und Felder an (Text, Zahl, Datum, Auswahl, Ja/Nein, Person), auf
+  Wunsch mit Verlauf und „Gültig ab“. Gepflegt wird am Mitarbeiter unter „Weitere Angaben“; der neue
+  Unterreiter „Verlauf“ zeigt alle Änderungen am Mitarbeiter.
+- **Genehmigung über die Führungskraft:** Je Abwesenheitsart lässt sich wählen, wer genehmigt:
+  Teamleitung oder Admin/HR (wie bisher), die Führungskraft, erst Führungskraft dann Admin/HR oder
+  nur Admin/HR. Ist die Führungskraft abwesend, entscheidet ihre „Vertretung bei Genehmigungen“.
+  Anträge zeigen, bei wem sie gerade liegen.
+- **Stammdaten in der Personalakte:** Neuer Unterreiter „Stammdaten“ mit Status (Onboarding, Aktiv,
+  Auszeit, Inaktiv), Kostenstellen (auch anteilig), Adresse, Familie und – mit „Vergütung &
+  Lohn-Export“ – Bank, Steuer und Sozialversicherung. Kostenstellen pflegt ihr unter „Einstellungen“
+  → „Kostenstellen“. Mitarbeiter sehen ihre Angaben in „Mein Bereich“ → „Meine Daten“.
+- **Abteilungen, Position, Führungskraft und Organigramm:** Unter „Einstellungen“ → „Abteilungen“
+  lassen sich Abteilungen verschachtelt anlegen. Am Mitarbeiter gibt es „Abteilung“, „Position“ und
+  „Führungskraft“. Daraus entsteht das neue „Organigramm“ im Menü; Mitarbeiter sehen es in „Mein
+  Bereich“, wenn die Firma es freigibt (Standard aus).
+- **Zwei-Faktor-Anmeldung:** Jedes Konto kann sie unter „Zwei-Faktor-Anmeldung“ mit einer
+  Authenticator-App einrichten; danach fragt die Anmeldung zusätzlich nach einem Code. Dazu gibt es
+  10 Wiederherstellungscodes. Admins können sie unter „Einstellungen“ → „Allgemein“ für Admin, HR und
+  Führungskräfte verpflichtend machen und im Mitarbeiter-Dialog zurücksetzen.
+- **Ein Konto je Person:** Admins, HR, Führungskräfte und Mitarbeiter melden sich über dasselbe
+  Konto an; jede E-Mail-Adresse gibt es in der Firma nur einmal. War eine Adresse bisher als
+  Verwaltungskonto und als Mitarbeiter-Login vorhanden, ist daraus ein Konto mit Rolle und
+  „Mein Bereich“ geworden (Rolle und Passwort des Verwaltungskontos gelten). **Nach dem Update
+  meldet sich jeder einmal neu an**; Passwörter bleiben, Tablets sind nicht betroffen.
+- **Ein Tablet je Zugang:** Ein Tablet-Eintrag gilt jetzt für genau ein Gerät. Meldet sich ein
+  weiteres Gerät mit demselben Zugang an, wird es abgewiesen; Admins und HR bekommen eine Warnung
+  (Glocke und E-Mail), die Tablet-Liste zeigt den Versuch, das Audit-Protokoll ebenso. Der QR-Code
+  enthält nur noch einen einmaligen Kopplungscode (15 Minuten), „Token kopieren“ entfällt.
+  „Kopplung aufheben“ meldet ein verlorenes Tablet sofort ab. Bestehende Tablets laufen weiter und
+  werden bei der nächsten Anmeldung an ihr Gerät gebunden. Teilen sich bisher mehrere Tablets einen
+  Eintrag, braucht jedes weitere einen eigenen.
+- **Kalender abonnieren (iCal):** Im „Kalender“ (und in „Mein Bereich“) erzeugt „Kalender abonnieren
+  (iCal)“ einen privaten Abo-Link für Outlook, Google oder Apple Kalender – mit denselben Abwesenheiten,
+  die man in HR3000 sieht, und den Feiertagen.
+- **Teamkalender für Mitarbeiter:** Mit der neuen Einstellung sehen Mitarbeiter in „Mein Bereich“
+  den Reiter „Teamkalender“ ihres Teams. Je Abwesenheitsart lässt sich festlegen, ob Kollegen die Art
+  sehen („farbig“) oder nur, dass jemand fehlt („ausgegraut“, Standard). Standard aus.
+- **Urlaubskonto korrigieren:** Am „Urlaubsanspruch“ lassen sich Tage gutschreiben oder abziehen
+  („Urlaubskonto korrigieren (± Tage)“, mit Begründung), auf Wunsch mit Verfallsdatum – z. B. 2 Tage,
+  die bis 31.03. genommen werden müssen. Verbraucht wird zuerst, was am frühesten verfällt.
+- **Zusatzurlaub nach Betriebszugehörigkeit:** Unter „Urlaub & Anträge“ lassen sich Stufen anlegen
+  (z. B. ab 5 Jahren + 1 Tag, ab 10 Jahren + 2 Tage). Sie zählen ab dem Kalenderjahr, in dem die Jahre
+  vollendet werden, und fließen in den berechneten Urlaubsanspruch ein.
+- **Urlaub bei Elternzeit kürzen:** Neue Einstellung unter „Urlaub & Anträge“: Je vollem
+  Kalendermonat Elternzeit (Kategorie „Mutterschutz/Elternzeit“) wird der Jahresurlaub um 1/12
+  gekürzt (§ 17 BEEG). Standard aus.
+- **Sonderzahlungen:** Einmalzahlungen lassen sich „in % des Monatsgehalts“ anlegen (z. B. Urlaubsgeld
+  50 %, 13. Monatsgehalt 100 %) und „jährlich wiederholen“ – bis sie beendet werden. Lohn-Export, DATEV
+  und Lohnkosten rechnen sie zum jeweiligen Zahltag.
+- **QR-Code statt Chip:** Am Mitarbeiter erzeugt „QR-Code fürs Tablet“ einen QR-Code (zum Ausdrucken
+  oder fürs Handy). Am Tablet steht dafür „QR-Code scannen“ (Frontkamera, Chrome/Android); der Code
+  gilt wie der Chip. Ohne Chip vergibt HR3000 eine zufällige Chip-UID.
+- **Aufbewahrungsfristen:** Dokumente, deren „Aufbewahren bis“ abgelaufen ist, stehen unter
+  „Analysen“ → „Handlungsbedarf“ zur Prüfung. Gelöscht wird weiterhin nichts automatisch.
+- **E-Mails selbst abbestellen:** In der Glocke legt jede Person fest, ob sie Benachrichtigungen
+  auch per E-Mail bekommt („Benachrichtigungen auch per E-Mail“, Standard an). In der Glocke bleiben
+  sie immer.
+- **Mein Bereich als App:** Die HR-Webapp lässt sich auf dem Handy mit „Zum Startbildschirm
+  hinzufügen“ wie eine App ablegen (eigenes Symbol, ohne Browserleiste).
+- **Erinnerungen:** Unter „Einstellungen“ → „Allgemein“ lassen sich „Erinnerungen an Admin und HR“
+  einschalten: Probezeitende, Befristungsende, bevorstehender Austritt und verfallender Resturlaub
+  (den bekommt auch die Person selbst) – als Benachrichtigung und mit Mailversand per E-Mail.
+  Standard aus.
+- **Audit-Protokoll:** Erfolgreiche Anmeldungen in der Webapp werden protokolliert (ohne
+  IP-Adresse), und die angezeigten Einträge lassen sich mit „CSV exportieren“ speichern.
+- **Grenzen fürs Überstundenkonto:** Unter „Einstellungen“ → „Arbeitszeit“ lassen sich eine
+  Ober- und eine Untergrenze einstellen. Wer ab 90 % der Obergrenze steht oder unter der Untergrenze
+  liegt, erscheint unter „Zu klären“ im Reiter „Grenzen“ (früher „Monatsgrenzen“). Ohne Einstellung
+  ändert sich nichts.
+- **Überstundenkonto buchen:** Unter „Korrekturbuchungen Überstundenkonto“ gibt es
+  die Aktionen „Kontostand anpassen“, „Neuen Kontostand festlegen“ (bucht die Differenz),
+  „Überstunden auszahlen“ mit „Faktor“ (z. B. 1,5) und „Anfangskontostand“. Auszahlungen mit Faktor
+  erscheinen im Lohn-Export zusätzlich gewichtet in einer eigenen Spalte.
+- **Kommentar und Nachweis bei Abwesenheiten:** Je Abwesenheitsart lässt sich „Kommentar
+  erforderlich“ einschalten (nicht bei Krankheit). Bei Arten mit „Nachweis ab Tag“ können Mitarbeiter
+  und HR den Nachweis direkt am Eintrag hochladen („Nachweis hochladen“); er landet verschlüsselt in
+  der Personalakte unter „Dokumente“.
+- **Überschneidungen im Team:** Beim Eintragen einer Abwesenheit und unter „Zu klären“ →
+  „Urlaubsanträge“ steht, wer aus demselben Team im Zeitraum ebenfalls fehlt (oder es beantragt hat);
+  bei Urlaubsanträgen zusätzlich der Resturlaub. Mitarbeiter sehen den Hinweis im eigenen Antrag nur
+  mit der neuen Einstellung (Standard aus) und ohne Art der Abwesenheit.
+- **Vertretung bei Abwesenheiten:** Je Abwesenheitsart lässt sich einstellen, ob eine
+  „Vertretung“ abgefragt wird („optional“ oder „Pflicht beim Antrag“). Die Vertretung wird
+  benachrichtigt, sobald die Abwesenheit gilt, und steht in der Liste und bei den Urlaubsanträgen.
+  Standard: nicht abfragen – für bestehende Arten ändert sich nichts.
+- **Halbe Feiertage:** Im „Feiertagskalender“ lässt sich ein eigener Feiertag als „Halber Tag“
+  anlegen (z. B. Heiligabend, Silvester). An dem Tag gilt das halbe Soll, ein Urlaubstag zählt halb.
+  Ganze Feiertage bleiben, wie sie sind.
+- **Neue Abwesenheitskategorien:** „Mutterschutz/Elternzeit“, „Kurzarbeit“, „Unentschuldigt“ und
+  „Pflege von Angehörigen“ (unter „Einstellungen“ → „Abwesenheitsarten“ als Kategorie wählbar). Sie
+  rechnen wie „Unbezahlt“ – das Soll entfällt –, erscheinen im „Lohn-Export“ aber als eigene Spalte
+  (z. B. „Kurzarbeit-Tage“), sobald sie im Monat vorkommen. Ohne solche Einträge bleibt der Export
+  wie bisher.
+- **Neue Begriffe:** Die Oberfläche nutzt jetzt durchgehend dieselben Begriffe wie andere verbreitete
+  HR-Programme: „Überstundenkonto“ statt „Gleitzeitkonto“/„Gleitzeitsaldo“ (Reiter „Überstundenkonto“
+  statt „Saldenübersicht“, „Überstundenkonten führen ab“), „Führungskraft“ statt „Teamleiter/in“,
+  „Anstelldatum“ statt „Eintrittsdatum“, „Analysen“ statt „Auswertungen“, „Audit-Protokoll“ statt
+  „Audit-Log“, „On- & Offboarding“ statt „Checklisten“ (eine Vorlage wird am Mitarbeiter
+  „zugewiesen“) und „Feiertagskalender“ statt „Feiertage“. Berechnungen, Rechte und Einstellungen
+  bleiben unverändert; Spalten und Werte der Exporte (Lohn-Export, CSV, DATEV) ebenso.
+- **Arbeitszeitmodelle:** Unter „Einstellungen“ → „Arbeitszeitmodelle“ lassen sich Modelle wie
+  „Vollzeit Büro“ anlegen – mit Soll, Arbeitstagen, Pause, Kernzeit und neu je Modell eigenem
+  **Gleitzeit-Rahmen** und eigener **Toleranz der Pünktlichkeitsprüfung**. Zugewiesen wird am
+  Mitarbeiter (Reiter „Arbeitszeit“ → „Arbeitszeitmodell zuweisen“) oder schon beim Anlegen. Ändert
+  sich ein Modell ab einem Stichtag („Ändern ab Stichtag“), gilt das für alle zugewiesenen
+  Mitarbeiter; die Zeit davor bleibt, abgeschlossene Monate werden nicht angetastet. Je Mitarbeiter
+  gilt entweder ein Modell oder wie bisher die individuelle Eingabe – bestehende Mitarbeiter bleiben
+  individuell.
 - **Betrieb:** Stempelungen eines Mitarbeiters werden über einen zusätzlichen Datenbank-Index
   schneller gefunden, und das Firmenlogo wird nur noch geladen, wo es angezeigt wird (Anmeldeseite,
   Tablet, Monatsbericht) – nicht mehr bei jedem Abruf der Einstellungen. Für Nutzer ändert sich

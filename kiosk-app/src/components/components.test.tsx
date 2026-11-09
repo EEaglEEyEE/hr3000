@@ -59,7 +59,7 @@ describe('PunchPad', () => {
       error: 'PIN falsch.',
       identifiedViaCard: true,
     })
-    expect(screen.getByText('Gleitzeitsaldo: -1:15 Std.')).toBeInTheDocument()
+    expect(screen.getByText('Überstundenkonto: -1:15 Std.')).toBeInTheDocument()
     expect(screen.getByText('Resturlaub: 12,5 Tage')).toBeInTheDocument()
     expect(screen.getByText('PIN falsch.')).toBeInTheDocument()
     expect(screen.getByText('Per Chip erkannt')).toBeInTheDocument()
@@ -285,5 +285,14 @@ describe('Mitarbeiterraster', () => {
     expect(onReset).toHaveBeenCalledWith('1234')
     expect(await screen.findByText('Admin-PIN falsch.')).toBeInTheDocument()
     expect(input).toHaveValue('') // PIN wird nach dem Versuch geleert
+  })
+})
+
+describe('QR-Code statt Chip', () => {
+  it('liest die Chip-UID aus dem HR3000-QR-Code', async () => {
+    const { cardUidFromQr } = await import('./QrScanner')
+    expect(cardUidFromQr('HR3000-CARD:04A1B2C3D4E5F601')).toBe('04A1B2C3D4E5F601')
+    expect(cardUidFromQr(' HR3000-CARD:0a:1b:2c:3d ')).toBe('0a:1b:2c:3d')
+    expect(cardUidFromQr('https://kiosk.demo.hr3000.de/#token=abc')).toBeNull()
   })
 })

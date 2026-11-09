@@ -27,6 +27,8 @@ export function useUpdateSettingsMutation() {
           clear_kiosk_screen_hours: false,
           clear_break_precise: false,
           clear_break_capped: false,
+          clear_overtime_limit_max: false,
+          clear_overtime_limit_min: false,
           ...payload,
         } })),
     onSuccess: () => {
@@ -34,7 +36,7 @@ export function useUpdateSettingsMutation() {
       // Feature-Schalter (z.B. Schichtplanung) steuern Navigation und Reiter.
       void queryClient.invalidateQueries({ queryKey: ['features'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      // Saldo-Beginn/Schichtplanung wirken auf alle Gleitzeitkonten.
+      // Saldo-Beginn/Schichtplanung wirken auf alle Überstundenkonten.
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       void queryClient.invalidateQueries({ queryKey: ['reports'] })
     },

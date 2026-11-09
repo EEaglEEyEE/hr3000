@@ -3,7 +3,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Absence, AbsenceApprovalStatus, AbsenceType, HrRole, HrUser, Location
+from app.models import Absence, AbsenceApprovalStatus, AbsenceType, HrRole, Account, Location
 from app.services import email_service
 from app.services.auth_service import hash_password
 
@@ -23,8 +23,8 @@ async def _create_location(db_session: AsyncSession) -> Location:
     return location
 
 
-async def _create_hr_user(db_session: AsyncSession) -> HrUser:
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+async def _create_hr_user(db_session: AsyncSession) -> Account:
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -32,7 +32,7 @@ async def _create_hr_user(db_session: AsyncSession) -> HrUser:
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -89,7 +89,7 @@ async def test_absence_decision_sends_email_when_smtp_configured(
             date_from=date(2026, 8, 10),
             date_to=date(2026, 8, 10),
             approval_status=AbsenceApprovalStatus.PENDING,
-            created_by=hr_user.id,
+            created_by_account_id=hr_user.id,
         )
     )
     await db_session.commit()
@@ -146,7 +146,7 @@ async def test_absence_decision_no_email_attempt_without_smtp_configured(
             date_from=date(2026, 8, 10),
             date_to=date(2026, 8, 10),
             approval_status=AbsenceApprovalStatus.PENDING,
-            created_by=hr_user.id,
+            created_by_account_id=hr_user.id,
         )
     )
     await db_session.commit()

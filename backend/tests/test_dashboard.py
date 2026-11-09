@@ -5,9 +5,10 @@ from datetime import UTC, date, datetime, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Device, Employee, Holiday, HrRole, HrUser, Location
+from app.models import Absence, AbsenceApprovalStatus, AbsenceType, Device, Employee, Holiday, HrRole, Account, Location
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
+from app.services.pairing_service import token_hash
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
@@ -33,9 +34,9 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
         birth_date=date(1985, (today + timedelta(days=5)).month, (today + timedelta(days=5)).day),
     )
     db_session.add_all(
-        [me, colleague, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)]
+        [me, colleague, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)]
     )
-    db_session.add(Device(name="Tablet", location_id=location.id, device_token="tok-dashboard"))
+    db_session.add(Device(name="Tablet", location_id=location.id, token_hash=token_hash("tok-dashboard")))
     await db_session.commit()
     db_session.add_all(
         [
@@ -60,8 +61,8 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     settings_row = await get_or_create_settings(db_session, tenant_id=1)
     settings_row.show_birthdays_in_calendar = True
     await db_session.commit()
-    hr = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
-    mine = (await client.post("/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"})).json()[
+    hr = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    mine = (await client.post("/auth/login", json={"email": "erika@example.com", "password": "pw123456"})).json()[
         "access_token"
     ]
     return me, colleague, {"Authorization": f"Bearer {hr}"}, {"Authorization": f"Bearer {mine}"}

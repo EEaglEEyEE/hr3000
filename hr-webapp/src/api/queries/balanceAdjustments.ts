@@ -35,6 +35,21 @@ export function useCreateBalanceAdjustmentMutation(employeeId: number) {
   })
 }
 
+/** „Neuen Kontostand festlegen“: bucht die Differenz zum Stand am Ende des Tages. */
+export function useSetBalanceMutation(employeeId: number) {
+  const invalidate = useInvalidate(employeeId)
+  return useMutation({
+    mutationFn: async (payload: components['schemas']['SetBalanceRequest']) =>
+      unwrap(
+        await apiClient.POST('/employees/{employee_id}/balance-adjustments/set-balance', {
+          params: { path: { employee_id: employeeId } },
+          body: payload,
+        }),
+      ),
+    onSuccess: invalidate,
+  })
+}
+
 export function useDeleteBalanceAdjustmentMutation(employeeId: number) {
   const invalidate = useInvalidate(employeeId)
   return useMutation({

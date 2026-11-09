@@ -20,8 +20,7 @@ class DayReview(Base):
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"))
     work_date: Mapped[date] = mapped_column(Date)
     note: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    reviewed_by_hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    reviewed_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    reviewed_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     reviewed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     # Stand des Tages beim Abhaken (siehe timesheet_service.day_fingerprint); ändert sich der Tag,
     # gilt "Erledigt" nicht mehr. Leer = älterer Eintrag, gilt weiter.

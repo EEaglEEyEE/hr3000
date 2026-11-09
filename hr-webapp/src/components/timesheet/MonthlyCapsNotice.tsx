@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useMonthlyCapsQuery } from '../../api/queries/timesheets'
+import { useBalanceLimitsQuery, useMonthlyCapsQuery } from '../../api/queries/timesheets'
 import { formatMinutesAsHours } from '../../lib/format'
 import { cn } from '../../lib/utils'
 
@@ -39,6 +39,34 @@ export function MonthlyCapsNotice() {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/** Zu klären → „Grenzen“: Überstundenkonten an den Grenzen aus den Einstellungen („Arbeitszeit“). */
+export function BalanceLimitsNotice() {
+  const limitsQuery = useBalanceLimitsQuery()
+  const rows = limitsQuery.data ?? []
+  if (limitsQuery.isLoading || rows.length === 0) return null
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-slate-500">
+        Überstundenkonten ab 90 % der Obergrenze oder unter der Untergrenze (Einstellungen → „Arbeitszeit“).
+      </p>
+      <div className="flex flex-col gap-1.5">
+        {rows.map((row) => (
+          <div key={row.employee_id} className="flex flex-wrap items-center gap-3 text-sm">
+            <Link to={`/employees/${row.employee_id}`} className="w-48 text-sky-700 hover:underline">
+              {row.last_name}, {row.first_name}
+            </Link>
+            <span className={row.exceeded ? 'font-semibold text-red-600' : 'text-amber-700'}>
+              {formatMinutesAsHours(row.balance_minutes)} Std. –{' '}
+              {row.kind === 'MAX' ? 'Obergrenze' : 'Untergrenze'} {formatMinutesAsHours(row.limit_minutes)} Std.
+              {row.exceeded ? (row.kind === 'MAX' ? ' überschritten' : ' unterschritten') : ' fast erreicht'}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )

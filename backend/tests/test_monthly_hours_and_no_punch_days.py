@@ -6,7 +6,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, Holiday, HrRole, HrUser, Location
+from app.models import Employee, Holiday, HrRole, Account, Location
 from app.services.auth_service import hash_password
 from app.services.payroll_export_service import summarize_payroll
 from app.services.period_service import build_month_report
@@ -22,10 +22,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[Employe
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Lena", last_name="Teilzeit", employee_number="T1")
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return employee, _bearer(login.json()["access_token"])
 
 

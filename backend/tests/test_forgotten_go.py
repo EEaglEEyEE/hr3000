@@ -8,7 +8,7 @@ from datetime import datetime
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 from app.services.settings_service import get_or_create_settings
 
@@ -18,12 +18,12 @@ async def _setup(db_session: AsyncSession, client: AsyncClient, max_span_hours: 
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Max", last_name="Vergesslich", employee_number="V1")
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     if max_span_hours is not None:
         settings_row = await get_or_create_settings(db_session, tenant_id=1)
         settings_row.max_shift_span_hours = max_span_hours
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return employee, {"Authorization": f"Bearer {token}"}
 
 

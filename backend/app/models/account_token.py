@@ -20,8 +20,7 @@ class AccountToken(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
-    hr_user_id: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
     purpose: Mapped[str] = mapped_column(String(20))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)

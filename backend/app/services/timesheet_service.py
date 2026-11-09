@@ -1,5 +1,5 @@
 import calendar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    UNPAID_CATEGORIES,
     Absence,
     AbsenceTypeDefinition,
     AppSettings,
@@ -31,8 +32,8 @@ from app.models import (
 )
 from app.schemas.core_time import parse_core_time_days
 from app.services.absence_type_service import CATEGORY_LABELS, absence_day_values
-from app.services.holiday_service import is_holiday_for_location
-from app.services.shift_planning_service import MAX_DAILY_WORKING_MINUTES, resolve_effective_shift
+from app.services.holiday_service import half_holiday_for_location, is_holiday_for_location
+from app.services.shift_planning_service import MAX_DAILY_WORKING_MINUTES, EffectiveDayPlan, resolve_effective_shift
 
 
 @dataclass
@@ -52,7 +53,7 @@ class DayCalculation:
     flags: list[str] = field(default_factory=list)
     has_punches: bool = False
     # Flexibles Modell: Anteil des Wochensolls an diesem Kalendertag (Wochensoll / 7) –
-    # das Gleitzeitkonto rechnet für solche Tage wochenweise ab (siehe rebuild_balance).
+    # das Überstundenkonto rechnet für solche Tage wochenweise ab (siehe rebuild_balance).
     flexible_share: float = 0.0
     # Eigene Abwesenheitsart des Mandanten (Name/Farbe), None = Standardart der Kategorie
     absence_type_id: int | None = None
@@ -66,6 +67,8 @@ class DayCalculation:
     # Gutschrift im Ist je Zeitart (Kategorie, Minuten) – Feiertage als PUBLIC_HOLIDAY. Für den
     # Lohn-Export (Lohnarten je Zeitart); gestempelte Zeit steht nicht darin.
     credit_parts: list[tuple[AbsenceType, int]] = field(default_factory=list)
+    # Halber Feiertag (z. B. Heiligabend): Abwesenheitstage zählen an diesem Tag nur halb.
+    leave_weight: float = 1.0
 
 
 class DayFlag:
@@ -107,7 +110,7 @@ async def employee_timezone(db: AsyncSession, employee: Employee) -> ZoneInfo:
 
 
 def today_in(tz: ZoneInfo) -> date:
-    """Heutiges Datum in der Zeitzone des Standorts – Auswertungen gehen nie über heute hinaus.
+    """Heutiges Datum in der Zeitzone des Standorts – Analysen gehen nie über heute hinaus.
     Dieselbe Uhr wie die Tagesberechnung (_utcnow), damit "heute" überall gleich ist."""
     return _utcnow().replace(tzinfo=UTC).astimezone(tz).date()
 
@@ -170,7 +173,8 @@ async def _calculate_day_core(db: AsyncSession, employee: Employee, work_date: d
 async def _punctuality_flags(
     db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, calculation: DayCalculation, day_punches: list[Punch]
 ) -> list[str]:
-    """Kernarbeitszeit/Gleitzeit (Einstellungen, je Fassung der Arbeitszeit änderbar): zu spät
+    """Kernarbeitszeit/Gleitzeit (Einstellungen, je Fassung der Arbeitszeit bzw. Arbeitszeitmodell
+    änderbar – Kernzeit, Gleitzeit-Rahmen, Toleranz): zu spät
     gekommen, zu früh gegangen, außerhalb des Gleitzeit-Rahmens gestempelt. Nur an normalen
     Arbeitstagen mit Soll – nicht bei Abwesenheit (auch halbtags), Feiertag, außerplanmäßiger Arbeit
     oder widersprüchlichen Buchungen. Reine Hinweise für "Zu klären": an den Stunden ändert sich nichts."""
@@ -207,6 +211,14 @@ async def _punctuality_flags(
         return []  # Regeln erst ab ihrer letzten Änderung prüfen (sonst wäre die ganze Vergangenheit offen)
     if core_mode == "CUSTOM":
         core_start, core_end, core_days = version.core_time_start, version.core_time_end, version.core_time_days
+    # Gleitzeit-Rahmen und Toleranz eines Arbeitszeitmodells (leer = wie in den Einstellungen).
+    if version is not None and version.late_tolerance_minutes is not None:
+        tolerance = version.late_tolerance_minutes
+    frame_mode = (version.flex_frame_mode if version is not None else None) or "TENANT"
+    if frame_mode == "NONE":
+        frame_start = frame_end = None
+    elif frame_mode == "CUSTOM":
+        frame_start, frame_end = version.flex_frame_start, version.flex_frame_end
     by_weekday = parse_core_time_days(core_days)
     if by_weekday is not None:
         # Kernzeit je Wochentag: an Tagen ohne Eintrag gibt es keine Kernzeit.
@@ -247,12 +259,14 @@ async def _punctuality_flags(
 
 
 async def _resolve_flexible_day(
-    db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, day_punches: list[Punch], weekly_minutes: int
+    db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, day_punches: list[Punch], weekly_minutes: int,
+    credit_factor: float = 1.0,
 ) -> DayCalculation:
     """Aushilfe ohne feste Tage: kein Tagessoll, nie "fehlt"/"außerplanmäßig". Feiertage und
     genehmigte Abwesenheiten an Mo–Fr werden mit Wochensoll / 5 gutgeschrieben (6 Wochen Urlaub
     = 6 Wochensolls)."""
-    credit = round(weekly_minutes / 5) if work_date.weekday() < 5 else 0
+    # credit_factor 0,5 an einem halben Feiertag (Abwesenheiten zählen dann halb).
+    credit = round(weekly_minutes / 5 * credit_factor) if work_date.weekday() < 5 else 0
     worked, status = (await _pair_punches(db, employee, work_date, tz, day_punches)) if day_punches else (None, SummaryStatus.OPEN_MISSING_PUNCH)
     if await _is_holiday(db, employee, work_date):
         flags = [DayFlag.HOLIDAY_WORK] if day_punches else []
@@ -288,13 +302,34 @@ async def _resolve_day(
     db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, day_punches: list[Punch]
 ) -> DayCalculation:
     plan = await resolve_effective_shift(db, employee.id, work_date)
+    half_holiday = await _half_holiday(db, employee, work_date) is not None
+    calculation = await _resolve_planned_day(db, employee, work_date, tz, day_punches, plan, half_holiday)
+    if half_holiday:
+        calculation.leave_weight = 0.5
+    return calculation
+
+
+async def _resolve_planned_day(
+    db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo, day_punches: list[Punch],
+    plan: EffectiveDayPlan, half_holiday: bool,
+) -> DayCalculation:
+    # Halber Feiertag: ein normaler Arbeitstag mit halbem Soll (Abwesenheiten schreiben dann auch
+    # nur die Hälfte gut). Ganze Feiertage behandelt _is_holiday.
+    if half_holiday and plan.target_minutes:
+        plan = replace(plan, target_minutes=round(plan.target_minutes / 2))
 
     if plan.flexible_weekly_minutes is not None:
-        calculation = await _resolve_flexible_day(db, employee, work_date, tz, day_punches, plan.flexible_weekly_minutes)
+        factor = 0.5 if half_holiday else 1.0
+        calculation = await _resolve_flexible_day(
+            db, employee, work_date, tz, day_punches, plan.flexible_weekly_minutes, credit_factor=factor
+        )
         calculation.flexible_share = plan.flexible_weekly_minutes / 7
-        if calculation.unpaid_portion and work_date.weekday() < 5:
-            # Unbezahlte Abwesenheit senkt das Wochensoll um einen Tagesanteil (Wochensoll / 5, halber Tag: die Hälfte).
-            calculation.flexible_share -= plan.flexible_weekly_minutes / 5 * calculation.unpaid_portion
+        if work_date.weekday() < 5:
+            if calculation.unpaid_portion:
+                # Unbezahlte Abwesenheit senkt das Wochensoll um einen Tagesanteil (Wochensoll / 5, halber Tag: die Hälfte).
+                calculation.flexible_share -= plan.flexible_weekly_minutes / 5 * factor * calculation.unpaid_portion
+            if half_holiday:
+                calculation.flexible_share -= plan.flexible_weekly_minutes / 10
         return calculation
 
     if plan.plan_exists and not plan.is_workday:
@@ -361,7 +396,7 @@ async def _resolve_day(
         # Halber Tag: die andere Hälfte wird ganz normal gestempelt (Gutschrift + gearbeitete Zeit).
         # Ohne Stempelung fehlt die andere Hälfte -> wie jeder Arbeitstag ohne Stempelung "zu klären".
         # Nur Stundenangaben (z.B. 3 Std. Homeoffice): HR hat genau erfasst, was war -> der Tag ist
-        # damit erledigt (Rest des Solls belastet das Gleitzeitkonto).
+        # damit erledigt (Rest des Solls belastet das Überstundenkonto).
         if not day_punches:
             status = SummaryStatus.ABSENCE if absence_day.portion == 0 else SummaryStatus.OPEN_MISSING_PUNCH
             return DayCalculation(work_date, credited, target, status, credit_parts=parts, **common)
@@ -391,6 +426,11 @@ async def location_on(db: AsyncSession, employee: Employee, work_date: date) -> 
         )
     ).scalar_one_or_none()
     return location_id or employee.location_id
+
+
+async def _half_holiday(db: AsyncSession, employee: Employee, work_date: date) -> str | None:
+    """Name des halben Feiertags (z. B. Heiligabend) am Standort des Mitarbeiters, sonst None."""
+    return await half_holiday_for_location(db, employee.tenant_id, work_date, await location_on(db, employee, work_date))
 
 
 async def _is_holiday(db: AsyncSession, employee: Employee, work_date: date) -> bool:
@@ -466,7 +506,7 @@ class AbsenceDay:
             if target_minutes is not None and target is not None:
                 reduction += (target_minutes - target) * fraction
         for absence, minutes in self.durations:
-            if absence.type == AbsenceType.UNPAID:
+            if absence.type in UNPAID_CATEGORIES:
                 reduction += minutes if target_minutes is not None else 0
             elif absence.type != AbsenceType.TIME_OFF_IN_LIEU:
                 credited += minutes
@@ -481,7 +521,7 @@ class AbsenceDay:
             if credit:
                 raw[absence.type] = raw.get(absence.type, 0.0) + credit * fraction
         for absence, minutes in self.durations:
-            if absence.type not in (AbsenceType.UNPAID, AbsenceType.TIME_OFF_IN_LIEU) and minutes:
+            if absence.type not in UNPAID_CATEGORIES and absence.type != AbsenceType.TIME_OFF_IN_LIEU and minutes:
                 raw[absence.type] = raw.get(absence.type, 0.0) + minutes
         return _rounded_parts(raw)
 
@@ -489,13 +529,13 @@ class AbsenceDay:
         """Bezahlte Stundenangaben je Kategorie (Gegenstück zu duration_credit)."""
         raw: dict[AbsenceType, float] = {}
         for absence, minutes in self.durations:
-            if absence.type not in (AbsenceType.UNPAID, AbsenceType.TIME_OFF_IN_LIEU) and minutes:
+            if absence.type not in UNPAID_CATEGORIES and absence.type != AbsenceType.TIME_OFF_IN_LIEU and minutes:
                 raw[absence.type] = raw.get(absence.type, 0.0) + minutes
         return _rounded_parts(raw)
 
     def duration_credit(self) -> int:
         """Gutschrift aus bezahlten Stundenangaben (z.B. "Feiertag (GfB)" an einem Feiertag)."""
-        return sum(m for a, m in self.durations if a.type not in (AbsenceType.UNPAID, AbsenceType.TIME_OFF_IN_LIEU))
+        return sum(m for a, m in self.durations if a.type not in UNPAID_CATEGORIES and a.type != AbsenceType.TIME_OFF_IN_LIEU)
 
     def fields(self) -> dict:
         first = (self.parts or self.durations)[0][0]
@@ -504,7 +544,7 @@ class AbsenceDay:
             absence_type_id=first.absence_type_id,
             absence_parts=[(absence.type, fraction) for absence, fraction in self.parts],
             absence_label=self.label,
-            unpaid_portion=sum(f for a, f in self.parts if a.type == AbsenceType.UNPAID),
+            unpaid_portion=sum(f for a, f in self.parts if a.type in UNPAID_CATEGORIES),
         )
 
 
@@ -561,7 +601,7 @@ def absence_day_counts(calculation: DayCalculation) -> dict[AbsenceType, float]:
             continue  # Arbeitszeit (z.B. Homeoffice) ist kein Abwesenheitstag
         if fraction >= 1 and calculation.status != SummaryStatus.ABSENCE:
             continue
-        counts[category] = counts.get(category, 0.0) + fraction
+        counts[category] = counts.get(category, 0.0) + fraction * calculation.leave_weight
     return counts
 
 
@@ -1111,7 +1151,7 @@ async def refresh_auto_breaks(db: AsyncSession, employee: Employee, work_date: d
 
 
 async def recalculate_day(db: AsyncSession, employee: Employee, work_date: date) -> DayCalculation:
-    """Nach einer Stempel-Änderung: Tages-Cache und Gleitzeitkonto ab diesem Tag neu berechnen.
+    """Nach einer Stempel-Änderung: Tages-Cache und Überstundenkonto ab diesem Tag neu berechnen.
     Liegt noch ein als PRESENT/ON_BREAK zwischengespeicherter früherer Tag vor, wird ab dort
     neu gerechnet (er ist durch die neue Buchung ggf. zum vergessenen "Gehen" geworden)."""
     stale = (
@@ -1153,7 +1193,7 @@ async def _upsert_daily_summary(db: AsyncSession, employee_id: int, calculation:
     summary.flags = ",".join(calculation.flags) or None
 
 
-# --- Gleitzeitkonto ------------------------------------------------------------------------------
+# --- Überstundenkonto ------------------------------------------------------------------------------
 #
 # Das Konto zählt JEDEN Tag mit Soll ab dem Saldo-Beginn bis heute: Ist (Gutschrift bei Urlaub/
 # Krank/Feiertag, sonst gestempelte Zeit, 0 ohne Stempelung) minus Soll. Der heutige Tag zählt erst,
@@ -1191,7 +1231,7 @@ async def invalidate_tenant_balances(db: AsyncSession, tenant_id: int, from_date
 async def balance_start(db: AsyncSession, employee: Employee) -> date | None:
     """Erster Kontotag, nie vor dem Eintritt.
 
-    Mit Stichtag in den Einstellungen ("Gleitzeitkonten führen ab") beginnt das Konto für alle an
+    Mit Stichtag in den Einstellungen ("Überstundenkonten führen ab") beginnt das Konto für alle an
     diesem Tag – auch ohne Stempelung, fehlende Stunden zählen dann ins Minus. Ohne Stichtag
     beginnt es mit der ersten Stempelung (davor wurde das System noch nicht genutzt)."""
     setting = (

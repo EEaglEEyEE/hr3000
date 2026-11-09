@@ -4,11 +4,12 @@ import { useCreatePairingCodeMutation, type Device } from '../../api/queries/dev
 import { formatDateTime } from '../../lib/format'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog'
 
-/** QR-Code zum Einrichten eines Tablets: Link mit Token im Fragment (#token=…, wird nie an
- * den Server geschickt). Kamera-App des Tablets öffnet den Kiosk direkt eingerichtet;
- * alternativ in der Kiosk-App „QR-Code scannen“. Die Kiosk-Adresse liefert der Server mit dem
- * Kopplungscode (kiosk.firma.hr3000.de bzw. firma.kiosk.… bei fest eingetragenen Hosts);
- * ohne Adresse (z.B. localhost oder Fehler) wird nur das Token kodiert. */
+/** QR-Code zum Einrichten eines Tablets: Link mit dem einmaligen Kopplungscode im Fragment (#pair=…,
+ * wird nie an den Server geschickt). Kamera-App des Tablets öffnet den Kiosk, der den Code einlöst
+ * und dabei ein neues, an dieses Tablet gebundenes Token bekommt; alternativ in der Kiosk-App
+ * „QR-Code scannen“ oder den Code eintippen. Die Kiosk-Adresse liefert der Server mit dem Code
+ * (kiosk.firma.hr3000.de bzw. firma.kiosk.… bei fest eingetragenen Hosts); ohne Adresse (z.B.
+ * localhost) wird nur der Code kodiert. Das dauerhafte Token zeigt die Webapp nie. */
 export function DeviceQrDialog({ device, onClose }: { device: Device | undefined; onClose: () => void }) {
   const [svg, setSvg] = useState<string | null>(null)
   const pairing = useCreatePairingCodeMutation()
@@ -24,11 +25,10 @@ export function DeviceQrDialog({ device, onClose }: { device: Device | undefined
     pairing.mutate(deviceId, { onSuccess: setPairingCode })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
-  // QR erst, wenn die Antwort da ist (sonst kurz die falsche Adresse) – bei Fehler nur das Token.
-  const ready = pairingCode !== null || pairing.isError
+  // Der QR-Code enthält nur den einmaligen Kopplungscode (15 Min.), nie das dauerhafte Token: Koppeln
+  // erzeugt ein neues Token für genau dieses Tablet, ein anderes wird damit abgekoppelt.
   const base = pairingCode?.kiosk_url ?? null
-  const content =
-    device && ready ? (base ? `${base}#token=${encodeURIComponent(device.device_token)}` : device.device_token) : ''
+  const content = pairingCode ? (base ? `${base}#pair=${encodeURIComponent(pairingCode.code)}` : pairingCode.code) : ''
 
   useEffect(() => {
     if (!content) return
@@ -52,6 +52,10 @@ export function DeviceQrDialog({ device, onClose }: { device: Device | undefined
           {svg ? (
             // Von der qrcode-Bibliothek erzeugtes SVG (nur Pfade, kein Fremdinhalt)
             <div className="h-64 w-64 rounded-md bg-white p-2" dangerouslySetInnerHTML={{ __html: svg }} />
+          ) : pairing.isError ? (
+            <div className="flex h-64 w-64 items-center justify-center rounded-md bg-red-50 p-4 text-center text-sm text-red-700">
+              Kopplungscode konnte nicht erzeugt werden. Bitte Fenster schließen und erneut öffnen.
+            </div>
           ) : (
             <div className="h-64 w-64 animate-pulse rounded-md bg-slate-100" />
           )}
@@ -71,7 +75,8 @@ export function DeviceQrDialog({ device, onClose }: { device: Device | undefined
             )}
           </div>
           <p className="text-center text-xs text-slate-400">
-            Der Code enthält das Geräte-Token: nur am Tablet zeigen, nicht weitergeben.
+            Jeder Zugang gilt für genau ein Tablet. Wird mit dem Code ein anderes Tablet gekoppelt, ist das bisherige
+            abgemeldet.
           </p>
         </div>
       </DialogContent>

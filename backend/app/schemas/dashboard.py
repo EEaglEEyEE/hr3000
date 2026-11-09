@@ -67,5 +67,8 @@ class DashboardResponse(BaseModel):
     # Mandanten-Schalter, die die Startseite auch ohne verknüpften Mitarbeiter braucht
     portal_punching_enabled: bool = False
     absence_requests_enabled: bool = True
+    # Reiter „Teamkalender“ in „Mein Bereich“
+    team_calendar_for_employees: bool = False
+    org_chart_for_employees: bool = False
     # "Mein Bereich": Reiter Schichtplanung nur, wenn die Firma Schichtplanung nutzt
     shift_planning_enabled: bool = False

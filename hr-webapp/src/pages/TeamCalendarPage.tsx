@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useLocationsQuery } from '../api/queries/locations'
 import { useTeamsQuery } from '../api/queries/teams'
 import { useTeamCalendarQuery, type TeamCalendarDay } from '../api/queries/teamCalendar'
+import { CalendarSubscribe } from '../components/calendar/CalendarSubscribe'
 import { ABSENCE_TYPE_LABELS } from '../lib/labels'
 import { useAbsenceTypeMap } from '../api/queries/absenceTypes'
 import { absenceColorStyle, dayCellStyle } from '../lib/dayCellStyle'
@@ -49,7 +50,8 @@ function cellTooltip(day: TeamCalendarDay | undefined): string | undefined {
   return undefined
 }
 
-export function TeamCalendarPage() {
+/** own = „Mein Bereich“: nur das eigene Team, ohne Filter (siehe GET /me/team-calendar). */
+export function TeamCalendarPage({ own = false }: { own?: boolean }) {
   const absenceTypes = useAbsenceTypeMap()
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
@@ -57,15 +59,16 @@ export function TeamCalendarPage() {
   const [locationFilter, setLocationFilter] = useState(ALL_LOCATIONS)
   // Leer = alle Teams; sonst die ausgewählten (0 = ohne Team).
   const [selectedTeams, setSelectedTeams] = useState<number[]>([])
-  const teamsQuery = useTeamsQuery()
+  const teamsQuery = useTeamsQuery(!own)
 
-  const locationsQuery = useLocationsQuery()
+  const locationsQuery = useLocationsQuery(!own)
   const { daysInMonth, from, to } = monthRange(year, month)
   const teamCalendarQuery = useTeamCalendarQuery(
     from,
     to,
     locationFilter === ALL_LOCATIONS ? undefined : Number(locationFilter),
     selectedTeams,
+    own,
   )
 
   function goToPreviousMonth() {
@@ -97,8 +100,8 @@ export function TeamCalendarPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold text-slate-900">Kalender</h1>
-        <div className="w-56">
+        {!own && <h1 className="text-lg font-semibold text-slate-900">Kalender</h1>}
+        {!own && <div className="w-56">
           <Select value={locationFilter} onValueChange={setLocationFilter}>
             <SelectTrigger>
               <SelectValue placeholder="Alle Standorte" />
@@ -112,13 +115,16 @@ export function TeamCalendarPage() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </div>}
       </div>
+      <CalendarSubscribe />
       <p className="text-sm text-slate-500">
-        Monatsübersicht über Urlaub, Krankheit und Feiertage aller sichtbaren Mitarbeiter.
+        {own
+          ? 'Abwesenheiten in deinem Team – bei manchen Arten nur, dass jemand fehlt.'
+          : 'Monatsübersicht über Urlaub, Krankheit und Feiertage aller sichtbaren Mitarbeiter.'}
       </p>
 
-      {(teamsQuery.data?.length ?? 0) > 0 && (
+      {!own && (teamsQuery.data?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-slate-500">Teams:</span>
           <button

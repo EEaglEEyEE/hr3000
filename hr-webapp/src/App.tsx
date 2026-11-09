@@ -20,6 +20,7 @@ import { SelfServicePage } from './pages/SelfServicePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { ShiftPlanCalendarPage } from './pages/ShiftPlanCalendarPage'
 import { TeamCalendarPage } from './pages/TeamCalendarPage'
+import { OrgChartPage } from './pages/OrgChartPage'
 import { PeriodClosuresPage } from './pages/PeriodClosuresPage'
 import { ChecklistsPage } from './pages/ChecklistsPage'
 import { ReportsPage } from './pages/ReportsPage'
@@ -92,6 +93,7 @@ function App() {
               <Route path="employees/:employeeId" element={<EmployeeDetailPage />} />
               <Route path="uebersicht" element={<AttendanceOverviewPage />} />
               <Route path="team-kalender" element={<TeamCalendarPage />} />
+              <Route path="organigramm" element={<OrgChartPage />} />
               <Route path="zu-klaeren/:reiter?" element={<OpenDaysPage />} />
               {/* Früher eigener Menüpunkt, jetzt Reiter im Posteingang „Zu klären“ */}
               <Route path="urlaubsantraege" element={<Navigate to="/zu-klaeren/urlaubsantraege" replace />} />

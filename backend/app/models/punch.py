@@ -40,10 +40,7 @@ class Punch(Base):
     timestamp_utc: Mapped[datetime] = mapped_column(DateTime)
     source: Mapped[PunchSource] = mapped_column(Enum(PunchSource))
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
-    created_by: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    # Gesetzt statt created_by, wenn ein Mitarbeiter mit hr_role (statt eines
-    # separaten HrUser-Accounts) die Aktion ausgeführt hat.
-    created_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     corrected: Mapped[bool] = mapped_column(Boolean, default=False)
     correction_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Client-generierte UUID zur Duplikat-Vermeidung bei der Offline-Queue, siehe Konzept Abschnitt 5.

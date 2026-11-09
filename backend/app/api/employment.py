@@ -35,8 +35,7 @@ def _audit(db: AsyncSession, actor: Actor, action: AuditAction, employee: Employ
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=action,
         entity_type="employee",
         entity_id=employee.id,
@@ -192,7 +191,7 @@ async def create_compensation(
 
     compensation = Compensation(tenant_id=actor.tenant_id, employee_id=employee_id, **payload.model_dump())
     db.add(compensation)
-    # Bewusst ohne Betrag: der Audit-Log ist auch für HR lesbar.
+    # Bewusst ohne Betrag: der Audit-Protokoll ist auch für HR lesbar.
     _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"Vergütung angelegt ({payload.pay_type.value}) ab {payload.valid_from.isoformat()}")
     await db.commit()
     await db.refresh(compensation)
@@ -263,9 +262,9 @@ async def create_pay_component(
     db: AsyncSession = Depends(get_db),
 ) -> PayComponentResponse:
     employee = await _employee_in_tenant(db, employee_id, actor.tenant_id)
-    component = PayComponent(
-        tenant_id=actor.tenant_id, employee_id=employee_id, **payload.model_dump(exclude={"type_id", "type_name", "wage_type"})
-    )
+    data = payload.model_dump(exclude={"type_id", "type_name", "wage_type"})
+    data["amount"] = data["amount"] or 0  # Prozent-Einmalzahlung: Betrag ergibt sich am Zahltag
+    component = PayComponent(tenant_id=actor.tenant_id, employee_id=employee_id, **data)
     await _ensure_component_open(db, component)  # vor dem Anlegen einer neuen Art
     if payload.type_id is not None:
         kind_type = await component_type(db, actor.tenant_id, payload.type_id)
@@ -280,7 +279,7 @@ async def create_pay_component(
     when = (
         f"ab {payload.valid_from.isoformat()}" if payload.kind == PayComponentKind.ALLOWANCE else f"am {payload.pay_date.isoformat()}"
     )
-    # Bewusst ohne Betrag: der Audit-Log ist auch für HR lesbar.
+    # Bewusst ohne Betrag: der Audit-Protokoll ist auch für HR lesbar.
     _audit(db, actor, AuditAction.COMPENSATION_CHANGED, employee, f"{_label(component)} angelegt ({when})")
     await db.commit()
     await db.refresh(component)
@@ -299,10 +298,11 @@ async def update_pay_component(
     component = await _get_component(db, employee_id, component_id)
     changes: list[str] = []
     if payload.valid_to is not None or payload.clear_valid_to:
-        if component.kind != PayComponentKind.ALLOWANCE:
-            raise AppError(400, "NOT_AN_ALLOWANCE", "Nur Zulagen haben ein Ende.")
+        if component.kind != PayComponentKind.ALLOWANCE and not component.recurs_yearly:
+            raise AppError(400, "NOT_AN_ALLOWANCE", "Nur Zulagen und jährliche Einmalzahlungen haben ein Ende.")
         new_to = None if payload.clear_valid_to else payload.valid_to
-        if new_to is not None and new_to < component.valid_from:
+        start = component.valid_from or component.pay_date  # jährliche Einmalzahlung: ab erstem Zahltag
+        if new_to is not None and start is not None and new_to < start:
             raise AppError(400, "INVALID_RANGE", "„Gültig bis“ darf nicht vor „Gültig ab“ liegen.")
         if new_to != component.valid_to:
             # Betroffen sind die Tage zwischen altem und neuem Ende.

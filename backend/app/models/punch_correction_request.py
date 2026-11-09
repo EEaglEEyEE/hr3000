@@ -31,7 +31,6 @@ class PunchCorrectionRequest(Base):
         Enum(CorrectionRequestStatus), default=CorrectionRequestStatus.PENDING
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    decided_by: Mapped[int | None] = mapped_column(ForeignKey("hr_users.id"), nullable=True)
-    decided_by_employee_id: Mapped[int | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
+    decided_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     decision_note: Mapped[str | None] = mapped_column(String(500), nullable=True)

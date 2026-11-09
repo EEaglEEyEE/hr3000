@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
+  useCreateLeaveAdjustmentMutation,
+  useDeleteLeaveAdjustmentMutation,
+  useLeaveAdjustmentsQuery,
   useLeaveEntitlementQuery,
   useUpdateLeaveEntitlementMutation,
 } from '../../api/queries/leaveEntitlements'
+import { ApiError } from '../../api/client'
 import { formatDate, formatDays } from '../../lib/format'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
@@ -76,6 +80,15 @@ export function LeaveEntitlementCard({
                 Übertrag Vorjahr{entitlementQuery.data.carried_over_auto ? ' (automatisch)' : ''}
               </span>
               <span className="text-right">{formatDays(entitlementQuery.data.carried_over_days)} Tage</span>
+              {(entitlementQuery.data.adjustment_days ?? 0) !== 0 && (
+                <>
+                  <span className="text-slate-500">Korrekturen</span>
+                  <span className="text-right">
+                    {entitlementQuery.data.adjustment_days > 0 ? '+' : ''}
+                    {formatDays(entitlementQuery.data.adjustment_days)} Tage
+                  </span>
+                </>
+              )}
               {entitlementQuery.data.expired_days > 0 && (
                 <>
                   <span className="text-slate-500">
@@ -103,6 +116,7 @@ export function LeaveEntitlementCard({
                 {formatDate(entitlementQuery.data.expiry_date)} genommen werden.
               </p>
             )}
+            <LeaveAdjustments employeeId={employeeId} year={year} readOnly={readOnly} />
             {entitlementQuery.data.workdays_per_week !== null && (
               <p className="text-xs text-slate-500">
                 Gezählt werden nur Arbeitstage laut Arbeitszeitmodell ({entitlementQuery.data.workdays_per_week} pro Woche).
@@ -197,5 +211,89 @@ export function LeaveEntitlementCard({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/** Korrekturen am Urlaubskonto („Kontostand anpassen“): ± Tage mit Begründung, optional mit Verfall. */
+function LeaveAdjustments({ employeeId, year, readOnly }: { employeeId: number; year: number; readOnly: boolean }) {
+  const query = useLeaveAdjustmentsQuery(employeeId, year)
+  const create = useCreateLeaveAdjustmentMutation(employeeId)
+  const remove = useDeleteLeaveAdjustmentMutation(employeeId)
+  const [open, setOpen] = useState(false)
+  const [days, setDays] = useState('')
+  const [expiresOn, setExpiresOn] = useState('')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const adjustments = query.data ?? []
+  if (readOnly && adjustments.length === 0) return null
+
+  async function submit() {
+    setError(null)
+    const value = Number(days.replace(',', '.'))
+    if (!value || Math.round(value * 2) !== value * 2) {
+      setError('Bitte ganze oder halbe Tage angeben, z. B. 2 oder -0,5.')
+      return
+    }
+    try {
+      await create.mutateAsync({ year, days: value, expires_on: expiresOn || null, note: note.trim() })
+      setDays('')
+      setExpiresOn('')
+      setNote('')
+      setOpen(false)
+    } catch (err) {
+      setError(err instanceof ApiError && err.status !== 422 ? err.message : 'Bitte Angaben prüfen (Verfall nur bei Plus-Tagen).')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2 text-sm">
+      {adjustments.map((adjustment) => (
+        <div key={adjustment.id} className="flex items-center justify-between gap-2">
+          <span>
+            <span className={adjustment.days < 0 ? 'text-red-600' : 'text-emerald-700'}>
+              {adjustment.days > 0 ? '+' : ''}
+              {formatDays(adjustment.days)} Tage
+            </span>{' '}
+            {adjustment.note}
+            {adjustment.expires_on && <span className="text-slate-500"> (verfällt am {formatDate(adjustment.expires_on)})</span>}
+          </span>
+          {!readOnly && (
+            <Button variant="ghost" size="sm" onClick={() => window.confirm('Korrektur löschen?') && remove.mutate(adjustment.id)}>
+              Löschen
+            </Button>
+          )}
+        </div>
+      ))}
+      {!readOnly && !open && (
+        <button type="button" className="self-start text-xs text-sky-700 underline" onClick={() => setOpen(true)}>
+          Urlaubskonto korrigieren (± Tage)
+        </button>
+      )}
+      {!readOnly && open && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="adj_days">Tage (±)</Label>
+            <Input id="adj_days" inputMode="decimal" placeholder="z. B. 2 oder -1" value={days} onChange={(e) => setDays(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="adj_expires">Verfällt am (optional)</Label>
+            <Input id="adj_expires" type="date" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="adj_reason">Begründung</Label>
+            <Input id="adj_reason" value={note} onChange={(e) => setNote(e.target.value)} />
+          </div>
+          {error && <p className="text-xs text-red-600 sm:col-span-3">{error}</p>}
+          <div className="flex gap-2 sm:col-span-3">
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button size="sm" disabled={create.isPending || note.trim().length < 3} onClick={() => void submit()}>
+              Buchen
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

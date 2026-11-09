@@ -5,8 +5,9 @@ from datetime import UTC, datetime, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, Employee, HrRole, HrUser, Location
+from app.models import Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _setup(db_session: AsyncSession, client: AsyncClient):
@@ -21,11 +22,11 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
         login_email="dora@example.com",
         password_hash=hash_password("pw123456"),
     )
-    device = Device(name="Tablet", location_id=location.id, device_token="tok-errand")
-    db_session.add_all([employee, device, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    device = Device(name="Tablet", location_id=location.id, token_hash=token_hash("tok-errand"))
+    db_session.add_all([employee, device, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
-    admin = {"Authorization": "Bearer " + (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
-    me = {"Authorization": "Bearer " + (await client.post("/auth/employee/login", json={"email": "dora@example.com", "password": "pw123456"})).json()["access_token"]}
+    admin = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]}
+    me = {"Authorization": "Bearer " + (await client.post("/auth/login", json={"email": "dora@example.com", "password": "pw123456"})).json()["access_token"]}
     device_headers = {"Authorization": "Bearer " + (await client.post("/auth/device/login", json={"device_token": "tok-errand"})).json()["access_token"]}
     return employee, admin, me, device_headers
 

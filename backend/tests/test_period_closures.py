@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import AuditAction, AuditLogEntry, Employee, HrRole, HrUser, Location, Notification
+from app.models import AuditAction, AuditLogEntry, Employee, HrRole, Account, Location, Notification
 from app.services.auth_service import hash_password
 
 if sys.platform == "darwin":
@@ -41,17 +41,17 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     )
     db_session.add_all([
         employee, other,
-        HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
-        HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+        Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+        Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
     ])
     await db_session.commit()
     await db_session.refresh(employee)
     return {
         "employee": employee,
-        "hr": await _login(client, "/auth/hr/login", "hr@example.com"),
-        "admin": await _login(client, "/auth/hr/login", "admin@example.com"),
-        "self": await _login(client, "/auth/employee/login", "erika@example.com"),
-        "other": await _login(client, "/auth/employee/login", "max@example.com"),
+        "hr": await _login(client, "/auth/login", "hr@example.com"),
+        "admin": await _login(client, "/auth/login", "admin@example.com"),
+        "self": await _login(client, "/auth/login", "erika@example.com"),
+        "other": await _login(client, "/auth/login", "max@example.com"),
     }
 
 
@@ -93,7 +93,7 @@ async def test_submit_creates_visible_pdf_notifies_and_locks_the_month(
     download = await client.get(f"/employees/{employee.id}/documents/{docs[0]['id']}/download", headers=ctx["self"])
     assert download.status_code == 200 and download.content.startswith(b"%PDF")
 
-    notifications = (await db_session.execute(select(Notification).where(Notification.recipient_employee_id == employee.id))).scalars().all()
+    notifications = (await db_session.execute(select(Notification).where(Notification.recipient_account_id == employee.account.id))).scalars().all()
     assert [n.type.value for n in notifications] == ["PERIOD_SUBMITTED"]
 
     # Gesperrt: Stempelung, Korrektur, Abwesenheit, Arbeitszeitmodell im Monat.

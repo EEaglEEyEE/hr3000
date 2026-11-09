@@ -27,7 +27,7 @@ export function TimesheetTab({ employeeId, canAdjust = false }: { employeeId: nu
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <Card>
           <CardHeader>
-            <CardTitle>Aktueller Gleitzeitsaldo</CardTitle>
+            <CardTitle>Aktueller Kontostand</CardTitle>
           </CardHeader>
           <CardContent>
             {balanceQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
@@ -56,7 +56,7 @@ export function TimesheetTab({ employeeId, canAdjust = false }: { employeeId: nu
             )}
             <p className="mt-2 text-xs text-slate-400">
               {balanceQuery.data && !balanceQuery.data.balance_start
-                ? 'Noch kein Konto: es beginnt mit der ersten Stempelung oder ab dem Stichtag unter Einstellungen → „Arbeitszeit“ → „Gleitzeitkonten führen ab“.'
+                ? 'Noch kein Konto: es beginnt mit der ersten Stempelung oder ab dem Stichtag unter Einstellungen → „Arbeitszeit“ → „Überstundenkonten führen ab“.'
                 : `Konto seit ${balanceQuery.data?.balance_start ? formatDate(balanceQuery.data.balance_start) : '–'}. Zählt jeden Tag mit Soll; der heutige erst nach dem Ausstempeln.`}
             </p>
           </CardContent>

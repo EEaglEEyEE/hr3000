@@ -8,7 +8,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location, PeriodClosure, PeriodStatus
+from app.models import Employee, HrRole, Account, Location, PeriodClosure, PeriodStatus
 from app.services.auth_service import hash_password
 
 
@@ -20,15 +20,15 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[Employe
     db_session.add_all(
         [
             employee,
-            HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
-            HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
+            Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN),
+            Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR),
         ]
     )
     await db_session.commit()
     await db_session.refresh(employee)
     tokens = []
     for email in ("admin@example.com", "hr@example.com"):
-        login = await client.post("/auth/hr/login", json={"email": email, "password": "pw"})
+        login = await client.post("/auth/login", json={"email": email, "password": "pw"})
         tokens.append({"Authorization": f"Bearer {login.json()['access_token']}"})
     return employee, tokens[0], tokens[1]
 
@@ -71,7 +71,7 @@ async def test_admin_manages_pay_components_hr_cannot(client: AsyncClient, db_se
     details = [e["detail"] for e in entries if e["action"] in ("COMPENSATION_CHANGED", "COMPENSATION_VIEWED")]
     assert "Zulage „Fahrtkosten“ angelegt (ab 2026-08-16)" in details
     assert "Einmalzahlung „Weihnachtsgeld“ gelöscht" in details
-    assert not any("50" in d or "500" in d for d in details)  # keine Beträge im Audit-Log
+    assert not any("50" in d or "500" in d for d in details)  # keine Beträge im Audit-Protokoll
 
 
 async def test_pay_component_validation(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -146,3 +146,44 @@ async def test_closed_month_stays_unchanged(client: AsyncClient, db_session: Asy
     r = await client.patch(f"/pay-component-types/{allowance['type_id']}", headers=admin, json={"wage_type": "2100"})
     assert r.status_code == 200 and r.json()["wage_type"] == "2100"
     assert (await client.get(url, headers=admin)).json()[0]["wage_type"] == "2100"
+
+
+async def test_percent_and_yearly_one_time_payments(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Urlaubsgeld 50 % des Monatsgehalts, jedes Jahr am 30.06. – bis zum Beenden."""
+    from app.models import Compensation, PayType
+
+    employee, admin, _ = await _setup(db_session, client)
+    db_session.add(
+        Compensation(
+            tenant_id=employee.tenant_id, employee_id=employee.id, valid_from=date(2024, 1, 1),
+            pay_type=PayType.MONTHLY, amount=3000, currency="EUR",
+        )
+    )
+    await db_session.commit()
+
+    both = await client.post(
+        f"/employees/{employee.id}/pay-components", headers=admin,
+        json={"kind": "ONE_TIME", "type_name": "Urlaubsgeld", "amount": 100, "percent_of_salary": 50, "pay_date": "2024-06-30"},
+    )
+    assert both.status_code == 422
+    created = await _create(
+        client, admin, employee, kind="ONE_TIME", type_name="Urlaubsgeld", percent_of_salary=50,
+        recurs_yearly=True, pay_date="2024-06-30",
+    )
+    assert created["recurs_yearly"] and float(created["percent_of_salary"]) == 50
+
+    async def month(year: int) -> dict:
+        r = await client.get(
+            "/payroll-export", headers=admin,
+            params={"employee_ids": [employee.id], "from": f"{year}-06-01", "to": f"{year}-06-30"},
+        )
+        return _rows(r.text)[0]
+
+    assert (await month(2024))["Einmalzahlung Urlaubsgeld (€)"] == "1500,00"
+    assert (await month(2025))["Einmalzahlung Urlaubsgeld (€)"] == "1500,00"
+
+    ended = await client.patch(
+        f"/employees/{employee.id}/pay-components/{created['id']}", headers=admin, json={"valid_to": "2025-12-31"}
+    )
+    assert ended.status_code == 200, ended.text
+    assert "Einmalzahlung Urlaubsgeld (€)" not in await month(2026)

@@ -4,7 +4,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSettings, Employee, HrRole, HrUser, Location
+from app.models import AppSettings, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 
@@ -14,14 +14,14 @@ async def _setup(db_session: AsyncSession, client: AsyncClient):
     await db_session.commit()
     await db_session.refresh(location)
     employee = Employee(location_id=location.id, first_name="Tina", last_name="Teilzeit", employee_number="T1")
-    db_session.add_all([employee, HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
+    db_session.add_all([employee, Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)])
     await db_session.commit()
     await db_session.refresh(employee)
     from sqlalchemy import update
 
     await db_session.execute(update(AppSettings).where(AppSettings.tenant_id == 1).values(default_annual_vacation_days=30))
     await db_session.commit()
-    token = (await client.post("/auth/hr/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "hr@example.com", "password": "pw"})).json()["access_token"]
     return employee, location, {"Authorization": f"Bearer {token}"}
 
 

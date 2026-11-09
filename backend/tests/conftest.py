@@ -17,7 +17,7 @@ from app.models import (
     Device,
     Employee,
     Holiday,
-    HrUser,
+    Account,
     Location,
     Punch,
     ShiftTemplate,
@@ -47,8 +47,8 @@ def _autofill_tenant_id(mapper, connection, target) -> None:
         target.tenant_id = 1
 
 
-def _autofill_hr_user_tenant_id(mapper, connection, target) -> None:
-    # tenant_id=None ist bei HrUser ein gültiger, bewusst gesetzter Wert
+def _autofill_account_tenant_id(mapper, connection, target) -> None:
+    # tenant_id=None ist bei Account ein gültiger, bewusst gesetzter Wert
     # (Super-Admin) – nur auffüllen, wenn er beim Konstruieren nie berührt wurde.
     if "tenant_id" not in inspect(target).dict:
         target.tenant_id = 1
@@ -94,7 +94,7 @@ async def db_session(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncSes
         await seed_session.commit()
 
     listeners = [(model, _autofill_tenant_id) for model in _TENANT_SCOPED_MODELS]
-    listeners.append((HrUser, _autofill_hr_user_tenant_id))
+    listeners.append((Account, _autofill_account_tenant_id))
     for model, listener in listeners:
         event.listen(model, "before_insert", listener)
 

@@ -72,8 +72,7 @@ def _audit(db: AsyncSession, actor: Actor, action: AuditAction, employee_id: int
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=action,
         entity_type="employee",
         entity_id=employee_id,
@@ -89,7 +88,7 @@ async def _check_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
         await ensure_open_from(db, row.employee.id, cutover)
     if row.balance_minutes is not None:
         if cutover > date.today():
-            raise AppError(400, "FUTURE_DATE", "Ein Gleitzeit-Übertrag ist nur bis heute möglich.")
+            raise AppError(400, "FUTURE_DATE", "Ein Überstunden-Übertrag ist nur bis heute möglich.")
         await ensure_period_open(db, row.employee.id, cutover)
         duplicate = (
             await db.execute(
@@ -101,7 +100,7 @@ async def _check_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
             )
         ).first()
         if duplicate is not None:
-            raise AppError(409, "OPENING_BALANCE_EXISTS", "Zum Stichtag gibt es schon einen Gleitzeit-Übertrag (bereits übernommen?).")
+            raise AppError(409, "OPENING_BALANCE_EXISTS", "Zum Stichtag gibt es schon einen Überstunden-Übertrag (bereits übernommen?).")
         # Rechnet das Konto schon vor dem Stichtag (Kontobeginn in den Einstellungen oder frühere
         # Stempelungen), kämen diese Tage zum Übertrag aus dem Altsystem noch dazu.
         start = await balance_start(db, row.employee)
@@ -109,8 +108,8 @@ async def _check_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
             raise AppError(
                 409,
                 "BALANCE_STARTS_BEFORE_CUTOVER",
-                f"Das Gleitzeitkonto rechnet schon ab {start:%d.%m.%Y} – diese Tage kämen zum Übertrag dazu. "
-                "Bitte „Gleitzeitkonten führen ab“ auf den Stichtag setzen oder den Stichtag anpassen.",
+                f"Das Überstundenkonto rechnet schon ab {start:%d.%m.%Y} – diese Tage kämen zum Übertrag dazu. "
+                "Bitte „Überstundenkonten führen ab“ auf den Stichtag setzen oder den Stichtag anpassen.",
             )
 
 
@@ -125,8 +124,7 @@ async def _apply_row(db: AsyncSession, actor: Actor, row: MigrationRow, cutover:
                 minutes=row.balance_minutes,
                 kind=AdjustmentKind.OPENING_BALANCE,
                 note="Übertrag aus Altsystem (Migration)",
-                created_by_hr_user_id=actor.audit_hr_user_id,
-                created_by_employee_id=actor.audit_employee_id,
+                created_by_account_id=actor.account_id,
             )
         )
     if row.entitled_days is not None or row.carried_over_days is not None:
@@ -202,16 +200,17 @@ async def import_employee_values(
 # --- Einstellungen eines Mandanten übertragen (Datei exportieren / importieren, nur Admin) ----------
 
 # Übertragbar sind fachliche Einstellungen. Nicht übertragen werden firmenbezogene Werte: Mailserver
-# (inkl. Passwort), Tablet-Admin-PIN, "Gleitzeitkonten führen ab", DATEV-Berater-/Mandantennummer.
+# (inkl. Passwort), Tablet-Admin-PIN, "Überstundenkonten führen ab", DATEV-Berater-/Mandantennummer.
 PORTABLE_SETTINGS = (
     "require_pin_for_punch", "default_bundesland", "default_annual_vacation_days",
     "show_birthdays_in_calendar", "shift_planning_enabled", "default_auto_break", "default_show_birthday",
-    "default_day_minutes", "prorate_part_time_vacation", "prorate_partial_year_vacation", "vacation_carry_over_auto", "vacation_carry_over_max_days",
+    "default_day_minutes", "prorate_part_time_vacation", "prorate_partial_year_vacation", "reduce_vacation_parental_leave", "seniority_leave_rules", "team_calendar_for_employees", "vacation_carry_over_auto", "vacation_carry_over_max_days",
     "vacation_carry_over_expiry", "disabled_day_flags", "report_days_without_punches",
     "max_shift_span_hours", "core_time_start", "core_time_end", "core_time_days", "legal_break_minimum", "break_precise_from", "break_capped_from",
     "late_tolerance_minutes", "flex_frame_start", "flex_frame_end", "rfid_required", "kiosk_rfid_enabled",
     "kiosk_card_self_registration", "kiosk_pin_self_setup", "kiosk_show_balance", "kiosk_show_vacation",
     "kiosk_break_buttons", "kiosk_errand_buttons", "portal_punching_enabled", "absence_requests_enabled", "absence_four_eyes",
+    "absence_overlaps_for_employees", "overtime_limit_max_hours", "overtime_limit_min_hours", "reminders_enabled",
     "kiosk_greeting", "kiosk_sort", "kiosk_theme", "kiosk_screen_on_from", "kiosk_screen_on_until",
 )
 

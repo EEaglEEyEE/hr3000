@@ -10,6 +10,8 @@ class HolidayCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     # Leer = für alle Standorte gültig, sonst nur für die genannten.
     location_ids: list[int] = Field(default_factory=list, max_length=200)
+    # Halber Feiertag: halbes Soll, Abwesenheiten zählen halb.
+    half_day: bool = False
 
 
 class HolidayUpdateRequest(BaseModel):
@@ -17,6 +19,7 @@ class HolidayUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     # None = Standorte unverändert, [] = ab sofort für alle Standorte.
     location_ids: list[int] | None = Field(default=None, max_length=200)
+    half_day: bool | None = None
 
 
 class HolidayResponse(BaseModel):
@@ -27,6 +30,7 @@ class HolidayResponse(BaseModel):
     name: str
     # Leer = gilt für alle Standorte.
     location_ids: list[int]
+    half_day: bool = False
 
 
 class HolidayImportRequest(BaseModel):

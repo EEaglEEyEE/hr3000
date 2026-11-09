@@ -22,7 +22,12 @@ class PayComponentCreateRequest(BaseModel):
     type_name: str | None = Field(
         default=None, min_length=1, max_length=100, validation_alias=AliasChoices("type_name", "name")
     )
-    amount: float = Field(gt=0, le=1_000_000)
+    # Betrag in € – bei Einmalzahlung alternativ percent_of_salary
+    amount: float | None = Field(default=None, gt=0, le=1_000_000)
+    # Nur Einmalzahlung: % des Monatsgehalts am Zahltag (z. B. 50 = Urlaubsgeld, 100 = 13. Gehalt)
+    percent_of_salary: float | None = Field(default=None, gt=0, le=500)
+    # Nur Einmalzahlung: jedes Jahr am selben Tag wiederholen (bis „Beenden“)
+    recurs_yearly: bool = False
     unit: AllowanceUnit | None = None
     valid_from: date | None = None
     valid_to: date | None = None
@@ -33,8 +38,8 @@ class PayComponentCreateRequest(BaseModel):
 
     @field_validator("amount")
     @classmethod
-    def _amount_cents(cls, value: float) -> float:
-        return _cents(value)
+    def _amount_cents(cls, value: float | None) -> float | None:
+        return None if value is None else _cents(value)
 
     @field_validator("type_name")
     @classmethod
@@ -55,10 +60,14 @@ class PayComponentCreateRequest(BaseModel):
                 raise ValueError("Zulage: bitte Einheit und „Gültig ab“ angeben.")
             if self.valid_to is not None and self.valid_to < self.valid_from:
                 raise ValueError("„Gültig bis“ darf nicht vor „Gültig ab“ liegen.")
+            if self.amount is None or self.percent_of_salary is not None or self.recurs_yearly:
+                raise ValueError("Zulage: bitte einen Betrag angeben (Prozent und „jährlich“ nur bei Einmalzahlungen).")
             self.pay_date = None
         else:
             if self.pay_date is None:
                 raise ValueError("Einmalzahlung: bitte das Datum angeben.")
+            if (self.amount is None) == (self.percent_of_salary is None):
+                raise ValueError("Einmalzahlung: bitte entweder einen Betrag oder Prozent des Monatsgehalts angeben.")
             self.unit = self.valid_from = self.valid_to = None
         return self
 
@@ -87,5 +96,7 @@ class PayComponentResponse(BaseModel):
     valid_from: date | None
     valid_to: date | None
     pay_date: date | None
+    percent_of_salary: float | None = None
+    recurs_yearly: bool = False
     wage_type: str | None
     note: str | None

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ApiError } from '../../api/client'
 import { useCreateDeviceMutation, useUpdateDeviceMutation, type Device } from '../../api/queries/devices'
 import type { Location } from '../../api/queries/locations'
 import { Button } from '../ui/button'
@@ -20,6 +21,8 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
   const updateDevice = useUpdateDeviceMutation()
 
   const [name, setName] = useState('')
+  // Gerätename im MDM: Meldet sich ein Gerät mit diesem Namen per Registrierungsschlüssel, wird es ohne Freigabe verbunden
+  const [mdmName, setMdmName] = useState('')
   const [locationId, setLocationId] = useState('')
   const [regenerateToken, setRegenerateToken] = useState(false)
   const [theme, setTheme] = useState<'DEFAULT' | 'DARK' | 'LIGHT'>('DEFAULT')
@@ -32,6 +35,7 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
   useEffect(() => {
     if (!open) return
     setName(device?.name ?? '')
+    setMdmName(device?.mdm_name ?? '')
     setLocationId(device ? String(device.location_id) : locations[0] ? String(locations[0].id) : '')
     setRegenerateToken(false)
     setTheme(device?.theme === 'DARK' || device?.theme === 'LIGHT' ? device.theme : 'DEFAULT')
@@ -56,17 +60,18 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
             name,
             location_id: Number(locationId),
             regenerate_token: regenerateToken,
+            mdm_name: mdmName.trim(),
             theme,
             screen_hours_mode: screenMode,
             ...(screenMode === 'CUSTOM' ? { screen_on_from: screenFrom, screen_on_until: screenUntil } : {}),
           },
         })
       } else {
-        await createDevice.mutateAsync({ name, location_id: Number(locationId) })
+        await createDevice.mutateAsync({ name, location_id: Number(locationId), mdm_name: mdmName.trim() || null })
       }
       onOpenChange(false)
-    } catch {
-      setError('Speichern fehlgeschlagen.')
+    } catch (err) {
+      setError(err instanceof ApiError && err.code === 'MDM_NAME_TAKEN' ? err.message : 'Speichern fehlgeschlagen.')
     }
   }
 
@@ -90,8 +95,23 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
             />
           </div>
           <div className="flex flex-col gap-1.5">
+            <Label htmlFor="device_mdm_name">Gerätename im MDM (optional)</Label>
+            <Input
+              id="device_mdm_name"
+              placeholder="z. B. NB-FRA-01"
+              maxLength={100}
+              value={mdmName}
+              onChange={(event) => setMdmName(event.target.value)}
+            />
+            <p className="text-xs text-slate-500">
+              Für die Verteilung per MDM: Meldet sich ein Gerät mit diesem Namen per Registrierungsschlüssel, wird es
+              ohne Freigabe mit diesem Eintrag verbunden – nur solange der Eintrag noch nie benutzt wurde.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1.5">
             <Label>Standort</Label>
-            <Select value={locationId} onValueChange={setLocationId}>
+            {/* Leere Werte ignorieren: Radix meldet beim Vorbelegen sonst kurz '' (siehe docs/technik.md) */}
+            <Select value={locationId} onValueChange={(value) => value && setLocationId(value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Standort wählen" />
               </SelectTrigger>
@@ -163,7 +183,7 @@ export function DeviceFormDialog({ open, onOpenChange, device, locations }: Devi
                 onChange={(event) => setRegenerateToken(event.target.checked)}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              Token neu generieren (z.B. bei Verlust des Tablets)
+              Kopplung aufheben (z. B. bei Verlust des Tablets) – danach mit dem QR-Code neu koppeln
             </label>
           )}
           {error && <p className="text-sm text-red-600">{error}</p>}

@@ -15,7 +15,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AllowanceUnit, Employee, PayComponent, PayComponentKind, PayComponentType
+from app.models import AllowanceUnit, Compensation, Employee, PayComponent, PayComponentKind, PayComponentType, PayType
 from app.services.payroll_export_service import PayrollPeriod, payroll_period
 
 _CENT = Decimal("0.01")
@@ -46,6 +46,40 @@ def _month_share(start: date, end: date) -> Decimal:
     return share
 
 
+def _payment_days(component: PayComponent, date_from: date, date_to: date) -> list[date]:
+    """Zahltage einer Einmalzahlung im Zeitraum – bei „jährlich“ jedes Jahr am selben Tag (29.02. →
+    28.02.) ab dem ersten Zahltag bis valid_to."""
+    first = component.pay_date
+    if first is None:
+        return []
+    if not component.recurs_yearly:
+        return [first] if date_from <= first <= date_to else []
+    days = []
+    for year in range(max(first.year, date_from.year), date_to.year + 1):
+        day = first.replace(year=year, day=min(first.day, calendar.monthrange(year, first.month)[1]))
+        if date_from <= day <= date_to and (component.valid_to is None or day <= component.valid_to):
+            days.append(day)
+    return days
+
+
+async def _monthly_salary(db: AsyncSession, employee_id: int, day: date) -> Decimal:
+    """Monatsgehalt am Tag (0 ohne Monatsgehalt, z. B. bei Stundenlohn)."""
+    row = (
+        await db.execute(
+            select(Compensation.amount)
+            .where(
+                Compensation.employee_id == employee_id,
+                Compensation.pay_type == PayType.MONTHLY,
+                Compensation.valid_from <= day,
+                (Compensation.valid_to.is_(None)) | (Compensation.valid_to >= day),
+            )
+            .order_by(Compensation.valid_from.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return Decimal(str(row)) if row is not None else Decimal(0)
+
+
 async def pay_component_amounts(
     db: AsyncSession, employee: Employee, date_from: date, date_to: date, period: PayrollPeriod | None = None
 ) -> list[PayComponentAmount]:
@@ -62,8 +96,11 @@ async def pay_component_amounts(
     for component in components:
         amount = Decimal(str(component.amount))
         if component.kind == PayComponentKind.ONE_TIME:
-            if component.pay_date is not None and date_from <= component.pay_date <= date_to:
-                result.append(PayComponentAmount(component, amount.quantize(_CENT, ROUND_HALF_UP)))
+            for pay_day in _payment_days(component, date_from, date_to):
+                value = amount
+                if component.percent_of_salary is not None:
+                    value = await _monthly_salary(db, employee.id, pay_day) * Decimal(str(component.percent_of_salary)) / 100
+                result.append(PayComponentAmount(component, value.quantize(_CENT, ROUND_HALF_UP)))
             continue
         start = max(date_from, component.valid_from)
         end = min(date_to, component.valid_to or date_to)

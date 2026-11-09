@@ -22,7 +22,7 @@ from sqlalchemy import Table, delete, exists, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
-from app.models import Base, EmployeeDocument, HrUser, Tenant
+from app.models import Account, Base, EmployeeDocument, Tenant
 from app.services.document_service import delete_document_file
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,9 @@ async def tenants_due_for_purge(db: AsyncSession, now: datetime | None = None) -
     """Gekündigte Firmen nach dem Löschtermin und Selbstregistrierungen, deren E-Mail-Adresse
     nach 7 Tagen noch nicht bestätigt ist."""
     now = now or _now()
-    verified_admin = exists().where(HrUser.tenant_id == Tenant.id, HrUser.email_verification_pending == false())
+    verified_admin = exists().where(
+        Account.tenant_id == Tenant.id, Account.role.is_not(None), Account.email_verification_pending == false()
+    )
     stmt = select(Tenant).where(
         or_(
             Tenant.deletion_due_on <= now.date(),

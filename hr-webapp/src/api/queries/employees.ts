@@ -104,6 +104,18 @@ export function useResetEmployeePasswordMutation() {
   })
 }
 
+/** Admin setzt die Zwei-Faktor-Anmeldung eines Mitarbeiters zurück (z. B. Handy verloren). */
+export function useResetEmployeeTwoFactorMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (employeeId: number) => {
+      const result = await apiClient.POST('/employees/{employee_id}/2fa-reset', { params: { path: { employee_id: employeeId } } })
+      if (result.error) unwrap(result)
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['employees'] }),
+  })
+}
+
 export function useUpdateEmployeeHrRoleMutation() {
   const queryClient = useQueryClient()
   return useMutation({

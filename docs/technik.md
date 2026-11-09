@@ -1,6 +1,6 @@
 # HR3000 – Technik
 
-Für die Weiterentwicklung. Stand: 04.11.2026. Konventionen und Arbeitsweise stehen in der
+Für die Weiterentwicklung. Stand: 06.11.2026. Konventionen und Arbeitsweise stehen in der
 `CLAUDE.md` im Repo-Root. Diese Seite erklärt, wie die Teile zusammenspielen.
 
 ## 1. Bausteine
@@ -54,7 +54,7 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - „Jetzt“ kommt aus `_utcnow()`, in Tests über das Fixture `at_time`. Auch „heute“ (`today_in`,
     `utc_today` für mandantenweite Listen) leitet sich davon ab – nicht `date.today()` verwenden.
   - Ein offenes Kommen gilt nach der maximalen Schichtlänge als vergessenes Gehen.
-- **Gleitzeitkonto:**
+- **Überstundenkonto:**
   - `daily_summaries` ist nur ein Cache; `Employee.balance_through` markiert, bis wann er
     aktuell ist.
   - Schreibende Stellen rufen `invalidate_balance` bzw. `invalidate_tenant_balances`, lesende
@@ -105,7 +105,7 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   `STAGING_BASE_DOMAIN` weiter; `api/tls.py` fragt für sie das Staging-Backend
   (`staging_tls_ask_url`).
 - **Berechtigung „Vergütung & Lohn-Export“:** `Actor.has_payroll_access` (Admin immer; volle HR mit
-  `HrUser.payroll_access` bzw. `Employee.hr_payroll_access`, Migration 0094), Dependency
+  `Account.payroll_access`, Migration 0094/0119), Dependency
   `get_current_payroll_principal` für Vergütung, Zulagen, Lohnkosten, DATEV (inkl. `GET/PUT
   /payroll-export/datev/settings`), Lohnarten und `PUT /surcharge-rules/{id}/wage-type`; Beträge im
   CSV-Export und DATEV-Einträge im Export-Status ebenso. Vergabe über `PATCH
@@ -158,6 +158,31 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Soll-/Pausenänderung einer Schichtvorlage ab Stichtag (`_version_for_target_change`) teilt nur
     Fassungen, die Soll bzw. Pause von der Vorlage erben; Fassungen mit eigenem Soll und eigener
     Pause wechseln nur auf die neue Vorlagen-Fassung.
+- **Arbeitszeitmodelle (zentral, zuweisbar):** in der Oberfläche „Arbeitszeitmodelle“, im
+  Code weiter „Profile“ (`work_time_profiles`, `/work-time-profiles`). `WorkTimeProfile` (Name, archiviert, je Mandant) mit effektiv-datierten
+  `WorkTimeProfileVersion` (dieselben Angaben wie eine Fassung plus `flex_frame_mode/-start/-end`
+  und `late_tolerance_minutes`; die erste gilt ab `PROFILE_START` = 01.01.2000, also auch
+  rückwirkend zuweisbar). Eine **Zuweisung ist eine Fassung mit `profile_id`**: Ihre Angaben werden
+  aus der Modell-Fassung übernommen und an Modell-Fassungsgrenzen geteilt
+  (`services/work_time_profile_service.materialize`). Tagesberechnung, Urlaub, Lohn-Export usw.
+  lesen dadurch weiter nur `EmployeeDefaultShift`.
+  - Nachziehen: `sync_employee(db, employee_id)` gleicht alle Zuweisungen eines Mitarbeiters
+    (zusammenhängende Fassungen mit gleichem Modell) mit den Modell-Fassungen ab und liefert den
+    frühesten geänderten Tag (für `invalidate_balance`). Nach jeder Änderung an Fassungen mit Modell
+    oder an Modell-Fassungen aufrufen (`api/work_time_model.py`, `api/work_time_profiles.py`,
+    `shift_templates._version_for_target_change`, das Modell-Fassungen genauso teilt wie Fassungen).
+  - API: `/work-time-profiles` (Liste mit `employee_count`/`employees` ab heute, anlegen,
+    `PATCH` Name/archiviert, `DELETE` nur ohne je zugewiesen, `/history`), `PUT
+    /work-time-profiles/{id}/model` (neue Fassung ab Stichtag; vorher `ensure_open_from` für jeden
+    Zugewiesenen ab max(Stichtag, Beginn der Zuweisung) – ein gesperrter Monat lehnt alles ab und
+    nennt die Mitarbeiter). Zuweisen: `PUT /employees/{id}/work-time-profile` bzw.
+    `POST /employees` mit `work_time_profile_id`. Entweder–oder: `PUT …/versions/{id}` macht eine
+    Modell-Fassung individuell (`profile_id = None`); die veralteten `…/default-shifts`-Endpunkte
+    lehnen Modell-Fassungen ab (409). Audit: Modelländerungen als `SETTINGS_CHANGED`
+    (`entity_type="work_time_profile"`), Zuweisungen als `EMPLOYEE_WORK_TIME_MODEL_SET`.
+  - Pünktlichkeit (`timesheet_service._punctuality_flags`): Toleranz und Gleitzeit-Rahmen der
+    Fassung vor denen des Mandanten (`TENANT`/leer = Einstellungen, `NONE` = kein Rahmen).
+    Individuelle Fassungen lassen beides leer.
 - **Kernzeit je Wochentag:** `core_time_days` (Text, 7 Einträge „HH:MM-HH:MM“ oder leer, Format
   und Schema in `schemas/core_time.py`) an `AppSettings` und an der Fassung (nur bei `CUSTOM`).
   NULL = jeden Tag `core_time_start/-end`. Ausgewertet in `timesheet_service._punctuality_flags`
@@ -187,7 +212,18 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 - **Pünktlichkeit:** kein eigener Schalter mehr – `LATE_ARRIVAL`/`EARLY_LEAVE`/`OUTSIDE_FLEX_FRAME`
   über `disabled_day_flags` (neue Mandanten: zu spät/zu früh aus). `AppSettings.punctuality_from`
   (bei jeder Regeländerung = heute) begrenzt die Hinweise auf Tage ab der Änderung.
-- **Abwesenheiten:** Kategorien (`AbsenceType`), halbe Tage (`Absence.half_day`), Stunden
+- **Erinnerungen:** `services/reminder_service.py`, Hintergrundaufgabe aus `main.lifespan`
+  (`REMINDERS_INTERVAL_SECONDS`, Standard 3600, 0 = aus); je Mandant höchstens einmal pro Tag
+  (`AppSettings.reminders_sent_on`), nur mit `reminders_enabled`. Ausgelöst genau am Tag „X Tage
+  vorher“ (Konstanten im Modul).
+- **Halbe Feiertage:** `Holiday.half_day` (Migration 0103). Sie sind für `is_holiday_for_location`/
+  `_is_holiday` **kein** Feiertag (Zuschläge, Lohn-Export „Feiertage“ unverändert), sondern ein
+  Arbeitstag: `_resolve_planned_day` halbiert das Soll (flexibel: `flexible_share` − Wochensoll/10,
+  Gutschriften × 0,5), `DayCalculation.leave_weight` = 0,5 halbiert die gezählten Abwesenheitstage,
+  `leave_service.leave_day_weight` den Urlaubsverbrauch.
+- **Abwesenheiten:** Kategorien (`AbsenceType`; ohne Gutschrift und mit entfallendem Soll alle in
+  `UNPAID_CATEGORIES` – für neue „unbezahlte“ Kategorien nur dort und in `SEPARATE_UNPAID_CATEGORIES`
+  ergänzen, Lohn-Export-Spalte in `api/payroll_export._SEPARATE_UNPAID_COLUMNS`), halbe Tage (`Absence.half_day`), Stunden
   (`Absence.duration_minutes`), Urlaubskonto in `services/leave_service.py`.
 - **Urlaubsanspruch:** `EmploymentContract.annual_vacation_days` (leer = `default_annual_vacation_days`).
   `leave_service.computed_entitlement` rechnet tagesgenau: Basis je Tag aus dem Vertragsabschnitt ×
@@ -260,15 +296,121 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (`SettingsPage`, je Bereich eine Stufe) lesen alle daraus. Neue Seite oder neuer Bereich: Stufe
     passend zur Backend-Abhängigkeit eintragen.
   - Einstellungen: `/einstellungen/:seite`; frühere eigene Seiten (Standorte, Teams, Feiertage,
-    Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten, Audit-Log) sind Bereiche dort,
+    Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten, Audit-Protokoll) sind Bereiche dort,
     die alten Pfade leiten um (`MOVED_TO_SETTINGS`), alte Reiter `?bereich=` ebenso.
   - „Zu klären“: `/zu-klaeren/:reiter` (`tage`, `korrekturen`, `urlaubsantraege`, `monatsgrenzen`);
-    `/urlaubsantraege` leitet um. Die Zahl im Menü zählt offene Tage, überschrittene Monatsgrenzen,
+    `/urlaubsantraege` leitet um. Die Zahl im Menü zählt offene Tage, überschrittene Monats- und Kontogrenzen
+    (`/timesheet/balance-limits`),
     offene Abwesenheitsanträge und (Admin/HR) Korrekturanträge.
 - **Zugangsdaten:**
   - Passwörter und PINs als bcrypt-Hash (höchstens 72 Byte).
   - Anmeldeversuche begrenzt.
   - JWT mit kurzer Laufzeit plus Refresh-Token.
+  - **Konten** (`models/account.py`, Migration 0119, `docs/konzept-konten.md`): ein Konto je Person
+    und Firma mit `email`, `password_hash`, `role` (NULL = nur „Mein Bereich“), `payroll_access` und
+    optional `employee_id`; Super-Admin mit `tenant_id` NULL. Ein Login `POST /auth/login`, ein
+    Refresh `POST /auth/refresh`, Token-Arten `account_access`/`account_refresh` mit `sub` =
+    Konto-ID und den Claims `role`, `emp` (Mitarbeiter-ID), `payroll`, `pwv`. `Actor` hat `device`
+    oder `account` (`actor.employee` = Mitarbeiter des Kontos). Alle „wer“-Spalten heißen
+    `*_account_id` (`actor.account_id`). `Employee.login_email`, `password_hash`, `hr_role` und
+    `hr_payroll_access` sind Eigenschaften, die das verknüpfte Konto lesen bzw. bei Bedarf anlegen.
+    Ein Konto ohne E-Mail oder Passwort hat keinen Zugang, bleibt aber für den Verlauf bestehen
+    („Zugang entfernen“ bei `/hr-users`, Anonymisieren). `account_can_sign_in` prüft zusätzlich,
+    dass ein verknüpfter Mitarbeiter aktiv ist.
+  - **API & Webhooks** (Migration 0129, `api/public_api.py`, `services/webhook_service.py`):
+    `api_clients` (Secret nur als SHA-256, `scopes`), Token `api_access` (1 Std., Claim `scopes`,
+    geprüft gegen den aktuellen Stand des Zugangs und die Firma des Hosts), Rate-Limit je Zugang.
+    Webhooks: Secret per `secret_box`, Ausgangswarteschlange `webhook_deliveries` (in derselben
+    Transaktion wie die Änderung, `emit_event` in employees/absences), Zustellung
+    `run_deliveries` (Lifespan, `WEBHOOK_INTERVAL_SECONDS`, Standard 15) mit httpx, ohne
+    Weiterleitungen; SSRF-Schutz beim Anlegen (`validate_url`) und bei jeder Zustellung
+    (`_resolves_publicly`: alle aufgelösten Adressen öffentlich).
+  - **Aufgaben-Aktionen** (Migration 0128, `api/checklists.py`): `action` (TASK, UPLOAD_DOCUMENT,
+    FILL_DATA, SEND_EMAIL) und `action_category_id` an Vorlagen- und Mitarbeiter-Aufgaben.
+    SEND_EMAIL verschickt beim Start (`_send_email_step`, Platzhalter aus
+    `document_template_service`), `GET /me/checklist-items`, `POST /me/checklist-items/{id}/done`,
+    Upload-Aufgaben über `POST /me/documents` mit `checklist_item_id`.
+  - **Dokumentvorlagen** (Migration 0127, `api/document_templates.py`,
+    `services/document_template_service.py`): Text mit `{{platzhalter}}` (Liste `PLACEHOLDERS`,
+    eigene Felder `{{feld:…}}`), alles HTML-maskiert, Mini-Formatierung (Absatz, `# `, `**…**`),
+    PDF über WeasyPrint mit Firmenlogo; unbekannte Platzhalter → 400 beim Ablegen, Vorschau ohne
+    Ablage.
+  - **Dokumentkategorien** (Migration 0126): `document_categories` (`employee_upload`,
+    `employee_visible`, `confidential`, `archived`), `employee_documents.category_id` (dann
+    `category` = OTHER). `POST /me/documents` nur in Kategorien mit `employee_upload`, Dokument
+    sichtbar, Benachrichtigung `DOCUMENT_UPLOADED` an Admin/HR.
+  - **Datenänderungen** (Migration 0125, `api/change_requests.py`): `data_change_requests.changes`
+    verschlüsselt (`{"personal", "attributes", "note"}`), `contains_payroll` steuert, wer entscheiden
+    darf. Übernehmen schreibt über `personal_data_service.save` und `attributes.set_value`;
+    Benachrichtigungen `DATA_CHANGE_REQUESTED`/`DATA_CHANGE_DECIDED`.
+  - **Eigene Felder** (Migration 0124, `api/attributes.py`, `services/attribute_service.py`):
+    `attribute_sections` (`employee_access` NONE/VIEW/EDIT), `attribute_definitions` (`field_type`,
+    `options` als JSON, `dated`), `attribute_values` (Text; bei `dated` mehrere Zeilen mit
+    `valid_from`, aktuell = jüngster bis heute). Prüfung je Art in `normalize`. `GET
+    /employees/{id}/history` = Audit-Einträge zum Mitarbeiter (Vergütung nur mit Freigabe).
+  - **Genehmigungsketten** (Migration 0123, `services/approval_service.py`):
+    `AbsenceTypeDefinition.approval_chain` (DEFAULT/SUPERVISOR/SUPERVISOR_HR/HR → Schritte TEAM,
+    SUPERVISOR, HR), `Absence.approval_step`, Verlauf in `absence_approvals`. `can_decide` ersetzt
+    beim Entscheiden die Team-Prüfung; Admin/HR dürfen jeden Schritt. SUPERVISOR = Führungskraft
+    mit Rolle und Zugang, bei heutiger Abwesenheit `Employee.approval_delegate_id`, sonst Admin/HR.
+    `GET /absences/pending` filtert für Führungskräfte über `can_decide`; `waiting_for` in
+    `AbsenceResponse`; Benachrichtigung je Schritt über `step_recipients`.
+  - **Stammdaten** (Migration 0122, `api/personal_data.py`, `services/personal_data_service.py`):
+    `employee_personal_data.data` ist JSON, per `secret_box` verschlüsselt; Felder und Prüfungen
+    (IBAN Modulo 97, Steuer-ID 11 Ziffern, SV-Nummer) in `schemas/personal_data.py`.
+    `PAYROLL_FIELDS` nur mit `has_payroll_access` (sonst `null` und `payroll_visible: false`, Ändern
+    403). `PATCH` ändert nur mitgeschickte Felder; Audit `PERSONAL_DATA_CHANGED` nennt nur die
+    Feldnamen. `cost_centers` und `employee_cost_centers` (Prozent, zusammen 100, `PUT
+    /employees/{id}/cost-centers`). `Employee.employment_status` (ONBOARDING/ACTIVE/LEAVE/INACTIVE);
+    LEAVE setzt `mark_leave` in Liste und Einzelansicht (laufende Elternzeit/Pflegezeit).
+    Anonymisieren löscht persönliche Daten und Kostenstellen, der Datenexport enthält sie.
+  - **Organisation** (Migration 0121, `api/departments.py`): `departments` (hierarchisch über
+    `parent_id`, `ON DELETE SET NULL`, Name je Firma eindeutig, Kreise abgelehnt), am Mitarbeiter
+    `department_id`, `position` und `supervisor_id` (Führungskraft, `ON DELETE SET NULL`, Kreise
+    über `_check_supervisor` abgelehnt). `GET /org-chart` liefert die aktiven Mitarbeiter mit
+    Führungskraft; für Rollen immer, für Mitarbeiter nur mit `AppSettings.org_chart_for_employees`.
+  - **Zwei-Faktor-Anmeldung** (Migration 0120, `services/totp_service.py` ohne Zusatzpaket,
+    `services/two_factor_service.py`, `api/two_factor.py`): TOTP nach RFC 6238 (SHA-1, 6 Ziffern,
+    30 s, ±1 Schritt), Geheimnis per `secret_box` verschlüsselt in `accounts.totp_secret`,
+    `totp_last_step` verhindert das zweite Einlösen eines Codes, 10 Wiederherstellungscodes als
+    SHA-256 (`totp_recovery_hashes`). `POST /auth/login` liefert bei eingeschalteter 2FA statt
+    Tokens `two_factor: "required"` und ein Challenge-Token (10 Min., Typ `2fa_challenge`), das
+    `POST /auth/login/2fa` mit dem Code einlöst. Gehört das Konto zu einer Gruppe in
+    `AppSettings.two_factor_roles` (ADMIN, HR, SUPERVISOR nach Rolle, EMPLOYEE = Konto ohne Rolle;
+    Migration 0131 ersetzt den Schalter `two_factor_required`), kommt `two_factor: "setup"`; dann gehen `POST /auth/2fa/setup` und
+    `/enable` mit dem Challenge-Token statt einer Sitzung. Fehlversuche: 5 je Konto in 15 Min.
+    Der `pwv`-Claim (`session_fingerprint`) enthält den Einschaltzeitpunkt, Ein- und Ausschalten
+    beendet also alle Sitzungen. Zurücksetzen durch Admins: `POST /employees/{id}/2fa-reset` bzw.
+    `/hr-users/{id}/2fa-reset`; Audit `TWO_FACTOR_CHANGED`.
+  - **Tablets** (`api/auth.py` `device_login`/`device_pair`, Migration 0118): Das Geräte-Token liegt
+    nur als SHA-256 (`devices.token_hash`) in der Datenbank, die Webapp zeigt es nie. Die Kiosk-App
+    erzeugt einmal eine `installation_id` (localStorage `kiosk.installation_id`) und schickt sie bei
+    Anmeldung und Kopplung mit. Der Server bindet den Zugang beim ersten Login bzw. beim Koppeln
+    (`installation_hash`, `bound_at`). Ein anderes Gerät bekommt 401 `DEVICE_IN_USE`, dazu
+    Audit `DEVICE_LOGIN_REJECTED` und Benachrichtigung `DEVICE_ALERT` (höchstens einmal pro Stunde je
+    Tablet, `rejected_at`). Alte Kiosk-Versionen ohne `installation_id` werden nur abgewiesen, wenn
+    der Zugang schon gebunden ist. Koppeln per Code erzeugt ein neues Token; „Kopplung aufheben“
+    (`regenerate_token`) ebenso und löst die Bindung. Der JWT-Claim `tv` (erste 16 Zeichen des
+    Hashes) beendet dabei alte Sitzungen sofort (`deps.py`).
+  - **Verteilung per MDM** (`services/device_enrollment.py`, Migration 0130): Registrierungsschlüssel
+    je Standort (`device_enrollment_keys`, 256 Bit, nur SHA-256, optional `expires_at`). Die
+    Kiosk-App liest `#enroll=<schlüssel>&name=<gerätename>` beim Start aus dem Fragment, hält es nur
+    im Speicher und ruft `POST /auth/device/enroll` auf, wenn sie kein gültiges Token hat. Reihenfolge:
+    (1) Installation am Standort schon gebunden → neues Token für diesen Eintrag; (2) Eintrag mit
+    gleichem `mdm_name` (ohne Groß-/Kleinschreibung), nie gebunden und `last_seen` leer → binden,
+    `DEVICE_ALERT`; (3) sonst `device_enrollments` mit Prüfcode und gehashtem Token, Anmeldung mit
+    diesem Token ergibt 403 `DEVICE_PENDING`, bis `POST /devices/enrollments/{id}/approve` es an einen
+    neuen oder vorhandenen Eintrag hängt. Eine Anfrage je Installation (Neustart aktualisiert sie,
+    gleicher Prüfcode). Grenzen: 20 offene je Standort, 10 falsche Schlüssel je IP in 5 Min.
+    `mdm_name` ist je Mandant eindeutig (`MDM_NAME_TAKEN`). Nicht ersetzte MDM-Platzhalter
+    (`{{…}}`, `%…%`, `$…`) zählen als kein Name; die Kiosk-App erkennt `%…%` schon roh, weil
+    `decodeURIComponent` „%de…“ sonst als Prozent-Kodierung liest. Audit `DEVICE_ENROLLMENT`.
+    Falle: Token und `installation_id` liegen im localStorage. Der Edge-Kiosk-Modus (`--kiosk`,
+    zugewiesener Zugriff) läuft immer InPrivate, nach jedem Neustart ist das Gerät also neu und
+    wartet wieder auf Freigabe. Unter Windows Chrome `--kiosk` oder Edge `--app=` nehmen.
+  - Chip-UIDs gehen nicht mehr ans Tablet: `/locations/{id}/employees` liefert Geräten nur
+    `card_hash` = SHA-256(`hr3000-card:<tenant_id>:` + normalisierte UID). Die Kiosk-App hasht die
+    gelesene UID genauso (`card_salt` aus der Login-Antwort).
 - **Verschlüsselung:** Dokumente und SMTP-Passwörter per Fernet (`ENCRYPTION_KEY`). Sicherungen
   extern mit restic.
 - **Secrets:** nur in `.env` auf dem Server, nie im Code.
@@ -287,6 +429,11 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   `mockApi()` ersetzt, Logins über `loginAs()`.
 - Alle Tests laufen im Docker-Build; ein roter Test stoppt den Rollout.
 - Neue Funktionen bekommen immer Tests für Sonderfälle.
+- **Falle Radix-`Select` in Formularen:** Wird sein Wert per `useEffect` vorbelegt, bevor die
+  Optionen registriert sind, meldet er über das versteckte native `<select>` kurz `""` an
+  `onValueChange` zurück. Das leert das Feld oder löst – wenn `onValueChange` sofort speichert –
+  einen ungewollten Aufruf aus. Im Mitarbeiterformular fängt `ifChosen()` das ab
+  (`components/employees/EmployeeFormDialog.tsx`, Test in `pages/EmployeeSettingsTab.test.tsx`).
 
 ## 6. Lokal entwickeln
 

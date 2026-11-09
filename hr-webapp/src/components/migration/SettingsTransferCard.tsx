@@ -68,7 +68,7 @@ export function SettingsTransferCard() {
   return (
     <SettingsCard
       title="Einstellungen übertragen"
-      description="Für den Umstieg oder eine zweite Firma: fachliche Einstellungen, Pausenregeln, Abwesenheitsarten und Zuschläge als Datei. Mailserver, Tablet-PIN, „Gleitzeitkonten führen ab“ und die DATEV-Nummern bleiben außen vor. Beim Import werden Einstellungen überschrieben, Regeln und Arten nur ergänzt."
+      description="Für den Umstieg oder eine zweite Firma: fachliche Einstellungen, Pausenregeln, Abwesenheitsarten und Zuschläge als Datei. Mailserver, Tablet-PIN, „Überstundenkonten führen ab“ und die DATEV-Nummern bleiben außen vor. Beim Import werden Einstellungen überschrieben, Regeln und Arten nur ergänzt."
       error={error}
     >
       <div className="flex flex-wrap items-center gap-2">

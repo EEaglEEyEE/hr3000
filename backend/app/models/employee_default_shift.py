@@ -30,7 +30,7 @@ class EmployeeDefaultShift(Base):
     day_minutes: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # Flexibel (z.B. Aushilfe): nur ein Wochensoll (Vorlagen-Soll), keine festen Arbeitstage.
     flexible: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Nach Aufwand (Aushilfe ohne feste Stunden): kein Soll, kein Gleitzeitkonto – abgerechnet werden
+    # Nach Aufwand (Aushilfe ohne feste Stunden): kein Soll, kein Überstundenkonto – abgerechnet werden
     # die Ist-Stunden je Monat. Optional eine Monatsgrenze (z.B. Minijob) als Warnung.
     on_demand: Mapped[bool] = mapped_column(Boolean, default=False)
     monthly_cap_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -49,6 +49,15 @@ class EmployeeDefaultShift(Base):
     core_time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     core_time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     core_time_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Gleitzeit-Rahmen: TENANT (oder leer) = wie in den Einstellungen, CUSTOM = eigener, NONE = keiner.
+    flex_frame_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    flex_frame_start: Mapped[time | None] = mapped_column(Time, nullable=True)
+    flex_frame_end: Mapped[time | None] = mapped_column(Time, nullable=True)
+    # Toleranz der Pünktlichkeitsprüfung in Minuten (leer = wie in den Einstellungen).
+    late_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Zugewiesenes Arbeitszeitmodell: Die Angaben oben kommen dann aus dessen Fassung und werden bei
+    # Modelländerungen nachgezogen (leer = individuell eingetragen).
+    profile_id: Mapped[int | None] = mapped_column(ForeignKey("work_time_profiles.id"), nullable=True)
 
     @property
     def day_minutes_list(self) -> list[int] | None:

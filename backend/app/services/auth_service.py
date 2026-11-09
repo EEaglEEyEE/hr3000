@@ -27,6 +27,21 @@ def password_fingerprint(password_hash: str | None) -> str:
     return hashlib.sha256((password_hash or "").encode("utf-8")).hexdigest()[:16]
 
 
+def session_fingerprint(account) -> str:
+    """"pwv"-Claim eines Kontos: ändert sich mit dem Passwort und beim Ein-/Ausschalten der
+    Zwei-Faktor-Anmeldung – dann enden alle bisherigen Sitzungen."""
+    enabled = account.totp_enabled_at.isoformat() if account.totp_enabled_at else ""
+    return password_fingerprint(f"{account.password_hash or ''}|{enabled}")
+
+
+def account_can_sign_in(account) -> bool:
+    """Anmelden darf ein Konto mit E-Mail und Passwort; ist es mit einem Mitarbeiter verknüpft, muss
+    dieser aktiv sein (deaktivierte/ausgeschiedene/anonymisierte Mitarbeiter kommen nicht mehr rein)."""
+    if account.email is None or account.password_hash is None:
+        return False
+    return account.employee is None or bool(account.employee.active)
+
+
 def generate_one_time_password() -> str:
     """Für Konten, die ohne Self-Signup durch einen Admin angelegt/zurückgesetzt
     werden (Mandanten-Erst-Admin, Passwort-Reset) – wird dem anlegenden Admin

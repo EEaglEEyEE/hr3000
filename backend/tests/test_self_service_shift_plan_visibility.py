@@ -28,7 +28,7 @@ async def _create_self_service_employee(db_session: AsyncSession) -> Employee:
 
 async def _employee_token(client: AsyncClient) -> str:
     response = await client.post(
-        "/auth/employee/login", json={"email": "erika@example.com", "password": "pw123456"}
+        "/auth/login", json={"email": "erika@example.com", "password": "pw123456"}
     )
     return response.json()["access_token"]
 

@@ -1,6 +1,6 @@
 /** Rechte der Oberfläche aus einer Quelle: Menü, Einstellungs-Bereiche und Seitenschutz lesen alle
  * hier. Die Stufen entsprechen den Abhängigkeiten im Backend, das dasselbe erzwingt:
- * - all     = get_current_hr_principal (auch Teamleiter/in, mit Team-Filter)
+ * - all     = get_current_hr_principal (auch Führungskraft, mit Team-Filter)
  * - hr      = get_current_full_hr_principal (Admin und HR)
  * - payroll = get_current_payroll_principal (Berechtigung „Vergütung & Lohn-Export“)
  * - admin   = get_current_admin_principal */
@@ -31,6 +31,7 @@ export const PAGE_ACCESS: Record<string, Access> = {
   '/mitarbeiter': 'all',
   '/uebersicht': 'all',
   '/team-kalender': 'all',
+  '/organigramm': 'all',
   '/zu-klaeren': 'all',
   '/mitarbeiter-import': 'hr',
   '/schichtplan-kalender': 'hr',

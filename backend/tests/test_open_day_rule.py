@@ -9,7 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import DayReview, Employee, HrRole, HrUser, Location, Punch
+from app.models import DayReview, Employee, HrRole, Account, Location, Punch
 from app.services.auth_service import hash_password
 
 SATURDAY = "2026-10-10"  # Modell Mo–Fr: Stempeln am Samstag = "außerplanmäßig"
@@ -20,10 +20,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[int, di
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Olga", last_name="Offen", employee_number="O1", auto_break_enabled=False)
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     employee_id = employee.id
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     admin = {"Authorization": f"Bearer {token}"}
     r = await client.put(
         f"/employees/{employee_id}/work-time-model", headers=admin, json={"weekly_hours": 40, "weekdays": [0, 1, 2, 3, 4], "valid_from": "2026-10-01"}

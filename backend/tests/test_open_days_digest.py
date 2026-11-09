@@ -1,8 +1,9 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, Employee, HrRole, HrUser, Location
+from app.models import Device, Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _create_location(db_session: AsyncSession) -> Location:
@@ -22,15 +23,15 @@ async def _create_employee(db_session: AsyncSession, location: Location) -> Empl
 
 
 async def _create_device(db_session: AsyncSession, location: Location, token: str) -> Device:
-    device = Device(location_id=location.id, device_token=token, name="Kiosk A1")
+    device = Device(location_id=location.id, token_hash=token_hash(token), name="Kiosk A1")
     db_session.add(device)
     await db_session.commit()
     await db_session.refresh(device)
     return device
 
 
-async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> HrUser:
-    user = HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=role)
+async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN) -> Account:
+    user = Account(email="admin@example.com", password_hash=hash_password("pw"), role=role)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -38,7 +39,7 @@ async def _create_hr_user(db_session: AsyncSession, role: HrRole = HrRole.ADMIN)
 
 
 async def _hr_token(client: AsyncClient) -> str:
-    response = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    response = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     return response.json()["access_token"]
 
 
@@ -132,11 +133,11 @@ async def test_supervisor_view_does_not_trigger_digest(
 
     await _create_open_day(client, device_token, employee.id)
 
-    supervisor = HrUser(email="super@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
+    supervisor = Account(email="super@example.com", password_hash=hash_password("pw"), role=HrRole.SUPERVISOR)
     db_session.add(supervisor)
     await db_session.commit()
     supervisor_login = await client.post(
-        "/auth/hr/login", json={"email": "super@example.com", "password": "pw"}
+        "/auth/login", json={"email": "super@example.com", "password": "pw"}
     )
     supervisor_token = supervisor_login.json()["access_token"]
 

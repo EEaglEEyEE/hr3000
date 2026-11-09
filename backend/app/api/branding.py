@@ -71,8 +71,7 @@ async def upload_logo(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SETTINGS_CHANGED,
         entity_type="app_settings",
         entity_id=settings_row.id,
@@ -92,8 +91,7 @@ async def delete_logo(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SETTINGS_CHANGED,
         entity_type="app_settings",
         entity_id=settings_row.id,

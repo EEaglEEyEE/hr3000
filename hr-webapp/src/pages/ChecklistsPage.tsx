@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import { useDocumentCategoriesQuery } from '../api/documents'
+import { CHECKLIST_ACTION_LABELS } from '../lib/labels'
 import {
   useChecklistTemplatesQuery,
   useCreateDefaultTemplatesMutation,
@@ -45,7 +47,7 @@ export function ChecklistsPage() {
       <section className="flex flex-col gap-3">
         <h1 className="text-lg font-semibold text-slate-900">Offene Aufgaben (On-/Offboarding)</h1>
         <p className="text-sm text-slate-500">
-          Checklisten werden am Mitarbeiter gestartet (Reiter „Personalakte“ → „Checklisten“). Hier siehst du alle offenen Aufgaben nach Fälligkeit.
+          Vorlagen werden am Mitarbeiter zugewiesen (Reiter „Personalakte“ → „On- & Offboarding“). Hier siehst du alle offenen Aufgaben nach Fälligkeit.
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
         <Table>
@@ -118,7 +120,7 @@ export function ChecklistsPage() {
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  if (window.confirm(`Vorlage "${template.name}" löschen? Bereits gestartete Checklisten bleiben bestehen.`)) {
+                  if (window.confirm(`Vorlage "${template.name}" löschen? Bereits zugewiesene On-/Offboardings bleiben bestehen.`)) {
                     void run(() => removeTemplate.mutateAsync(template.id))
                   }
                 }}
@@ -149,7 +151,8 @@ function TemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const create = useCreateTemplateMutation()
   const [name, setName] = useState('')
   const [kind, setKind] = useState<'ONBOARDING' | 'OFFBOARDING'>('ONBOARDING')
-  const [items, setItems] = useState<TemplateItemInput[]>([{ title: '', responsible: 'HR', due_offset_days: 0 }])
+  const documentCategories = (useDocumentCategoriesQuery().data ?? []).filter((c) => !c.archived)
+  const [items, setItems] = useState<TemplateItemInput[]>([{ title: '', responsible: 'HR', due_offset_days: 0, action: 'TASK', action_category_id: null }])
   const [error, setError] = useState<string | null>(null)
 
   function patchItem(index: number, patch: Partial<TemplateItemInput>) {
@@ -167,7 +170,7 @@ function TemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     try {
       await create.mutateAsync({ kind, name: name.trim(), items: filled.map((i) => ({ ...i, title: i.title.trim() })) })
       setName('')
-      setItems([{ title: '', responsible: 'HR', due_offset_days: 0 }])
+      setItems([{ title: '', responsible: 'HR', due_offset_days: 0, action: 'TASK', action_category_id: null }])
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof ApiError && err.status !== 422 ? err.message : 'Bitte Angaben prüfen (Titel max. 200 Zeichen).')
@@ -178,7 +181,7 @@ function TemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Neue Checklisten-Vorlage</DialogTitle>
+          <DialogTitle>Neue Vorlage</DialogTitle>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-3">
@@ -229,10 +232,52 @@ function TemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
                 <Button type="button" variant="ghost" size="icon" onClick={() => setItems((c) => c.filter((_, i) => i !== index))}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
+                <div className="col-span-4 flex flex-wrap items-center gap-2 pb-1 text-sm">
+                  <select
+                    aria-label={`Aktion ${index + 1}`}
+                    className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                    value={item.action ?? 'TASK'}
+                    onChange={(e) => {
+                      const action = e.target.value as NonNullable<TemplateItemInput['action']>
+                      patchItem(index, action === 'UPLOAD_DOCUMENT' || action === 'FILL_DATA' ? { action, responsible: 'EMPLOYEE' } : { action })
+                    }}
+                  >
+                    {Object.entries(CHECKLIST_ACTION_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  {item.action === 'UPLOAD_DOCUMENT' && (
+                    <select
+                      aria-label={`Kategorie ${index + 1}`}
+                      className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                      value={item.action_category_id ?? ''}
+                      onChange={(e) => patchItem(index, { action_category_id: e.target.value ? Number(e.target.value) : null })}
+                    >
+                      <option value="">Kategorie wählen</option>
+                      {documentCategories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {item.action === 'SEND_EMAIL' && (
+                    <Input
+                      className="h-8 flex-1"
+                      placeholder="Text der E-Mail, z. B. Hallo {{vorname}}, willkommen!"
+                      aria-label={`E-Mail-Text ${index + 1}`}
+                      maxLength={500}
+                      value={item.description ?? ''}
+                      onChange={(e) => patchItem(index, { description: e.target.value })}
+                    />
+                  )}
+                </div>
               </div>
             ))}
             <div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setItems((c) => [...c, { title: '', responsible: 'HR', due_offset_days: 0 }])}>
+              <Button type="button" variant="outline" size="sm" onClick={() => setItems((c) => [...c, { title: '', responsible: 'HR', due_offset_days: 0, action: 'TASK', action_category_id: null }])}>
                 <Plus className="h-4 w-4" />
                 Aufgabe
               </Button>

@@ -73,7 +73,7 @@ export function TeamsPage() {
       </div>
 
       <p className="text-sm text-slate-500">
-        Teams grenzen den Zugriff von Teamleiter/innen ein – sie sehen ausschließlich Mitarbeiter der
+        Teams grenzen den Zugriff von Führungskräfte ein – sie sehen ausschließlich Mitarbeiter der
         ihnen zugeordneten Teams (siehe Mitarbeiterformular, Feld „Team“).
       </p>
 
@@ -112,7 +112,7 @@ export function TeamsPage() {
                                 ? 'font-semibold text-sky-800 underline underline-offset-2'
                                 : 'text-sky-700 hover:underline'
                             }
-                            title={member.supervisor ? 'Teamleiter/in' : undefined}
+                            title={member.supervisor ? 'Führungskraft' : undefined}
                             to={`/employees/${member.id}`}
                           >
                             {member.name}
@@ -124,7 +124,7 @@ export function TeamsPage() {
                 </TableCell>
                 <TableCell className="flex justify-end gap-2">
                   <Button variant="outline" size="sm" onClick={() => setSupervisorsTeam(team)}>
-                    Teamleiter/innen
+                    Führungskräfte
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => openEditDialog(team)}>
                     Bearbeiten

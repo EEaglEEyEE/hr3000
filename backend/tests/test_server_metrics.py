@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import HrRole, HrUser, ServerMetricSample
+from app.models import HrRole, Account, ServerMetricSample
 from app.services import server_metrics
 from app.services.auth_service import hash_password
 
@@ -77,10 +77,10 @@ async def test_history_averages_per_bucket_and_purges_old(db_session: AsyncSessi
 
 
 async def _token(client: AsyncClient, db_session: AsyncSession, role: HrRole, email: str) -> str:
-    db_session.add(HrUser(tenant_id=None if role == HrRole.SUPER_ADMIN else 1, email=email, password_hash=hash_password("pw"), role=role))
+    db_session.add(Account(tenant_id=None if role == HrRole.SUPER_ADMIN else 1, email=email, password_hash=hash_password("pw"), role=role))
     await db_session.commit()
     headers = {"Host": settings.super_admin_hostname} if role == HrRole.SUPER_ADMIN else {}
-    response = await client.post("/auth/hr/login", headers=headers, json={"email": email, "password": "pw"})
+    response = await client.post("/auth/login", headers=headers, json={"email": email, "password": "pw"})
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
 

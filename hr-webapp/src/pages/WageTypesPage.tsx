@@ -74,8 +74,9 @@ function TimeTypesSection({ run }: { run: Run }) {
     )
   }
 
+  // Zwei Spalten nach verfügbarer Breite (@container), nicht nach Bildschirm: am Tablet ist neben den Menüs wenig Platz
   return (
-    <form className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={save}>
+    <form className="@container flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4" onSubmit={save}>
       <div>
         <h2 className="font-medium text-slate-900">Zeitarten</h2>
         <p className="text-sm text-slate-500">
@@ -83,15 +84,15 @@ function TimeTypesSection({ run }: { run: Run }) {
           Arbeitszeit-Angaben ohne eigene Lohnart zählen als gearbeitete Stunden.
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 @md:grid-cols-2">
         {(query.data?.items ?? []).map((item) => (
           <label key={item.item} className="flex items-center justify-between gap-3 text-sm">
-            <span>{item.label}</span>
+            <span className="flex-1">{item.label}</span>
             <Input
               aria-label={`Lohnart ${item.label}`}
               inputMode="numeric"
               maxLength={6}
-              className="w-28"
+              className="w-28 min-w-20"
               placeholder={item.item === 'WORK_TIME' ? 'wie gearbeitet' : '–'}
               value={values[item.item] ?? ''}
               onChange={(e) => setValues((current) => ({ ...current, [item.item]: e.target.value }))}
@@ -111,7 +112,7 @@ function SurchargesSection({ run }: { run: Run }) {
   const setWageType = useSetSurchargeWageTypeMutation()
   const rules = rulesQuery.data ?? []
   return (
-    <section className="flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4">
+    <section className="@container flex flex-col gap-3 rounded-md border border-slate-200 bg-white p-4">
       <div>
         <h2 className="font-medium text-slate-900">Zuschläge</h2>
         <p className="text-sm text-slate-500">
@@ -123,10 +124,10 @@ function SurchargesSection({ run }: { run: Run }) {
         </p>
       </div>
       {rules.length === 0 && <p className="text-sm text-slate-500">Noch keine Zuschlagsregeln angelegt.</p>}
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 @md:grid-cols-2">
         {rules.map((rule) => (
           <label key={rule.id} className="flex items-center justify-between gap-3 text-sm">
-            <span>
+            <span className="flex-1">
               {rule.name}
               {!rule.active && <span className="text-slate-400"> (inaktiv)</span>}
             </span>
@@ -134,7 +135,7 @@ function SurchargesSection({ run }: { run: Run }) {
               aria-label={`Lohnart Zuschlag ${rule.name}`}
               inputMode="numeric"
               maxLength={6}
-              className="w-28"
+              className="w-28 min-w-20"
               defaultValue={rule.wage_type ?? ''}
               onBlur={(e) => {
                 const value = e.target.value.trim()
@@ -264,9 +265,9 @@ function ComponentTypesSection({ run }: { run: Run }) {
             <option value="ONE_TIME">Einmalzahlung</option>
           </select>
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex max-w-full flex-col gap-1.5">
           <Label htmlFor="type_name">Bezeichnung</Label>
-          <Input id="type_name" maxLength={100} className="w-56" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input id="type_name" maxLength={100} className="w-56 max-w-full" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="type_wage">Lohnart (optional)</Label>

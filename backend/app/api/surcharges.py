@@ -70,8 +70,7 @@ def _audit(db: AsyncSession, actor: Actor, rule_id: int, detail: str) -> None:
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.SURCHARGE_RULES_CHANGED,
         entity_type="surcharge_rule",
         entity_id=rule_id,
@@ -320,8 +319,7 @@ async def employee_surcharges(
             log_action(
                 db,
                 tenant_id=actor.tenant_id,
-                actor_hr_user_id=actor.audit_hr_user_id,
-                actor_employee_id=actor.audit_employee_id,
+                actor_account_id=actor.account_id,
                 action=AuditAction.COMPENSATION_VIEWED,
                 entity_type="employee",
                 entity_id=employee_id,

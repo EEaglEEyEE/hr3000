@@ -5,16 +5,17 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Device, Employee, EmployeeDefaultShift, HrRole, HrUser, Location, ShiftTemplate
+from app.models import Device, Employee, EmployeeDefaultShift, HrRole, Account, Location, ShiftTemplate
 from app.services.auth_service import hash_password
+from app.services.pairing_service import token_hash
 
 
 async def _admin(db_session: AsyncSession, client: AsyncClient):
     location = Location(name="Zentrale", timezone="UTC")
-    db_session.add_all([location, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([location, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     await db_session.refresh(location)
-    token = (await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
+    token = (await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})).json()["access_token"]
     return location, {"Authorization": f"Bearer {token}"}
 
 
@@ -74,7 +75,7 @@ async def test_disabled_flag_and_shift_span(client: AsyncClient, db_session: Asy
 
 async def test_kiosk_admin_pin(client: AsyncClient, db_session: AsyncSession) -> None:
     location, headers = await _admin(db_session, client)
-    db_session.add(Device(location_id=location.id, name="Tablet", device_token="dev-token"))
+    db_session.add(Device(location_id=location.id, name="Tablet", token_hash=token_hash("dev-token")))
     await db_session.commit()
     device = {"Authorization": "Bearer " + (await client.post("/auth/device/login", json={"device_token": "dev-token"})).json()["access_token"]}
 
@@ -95,7 +96,7 @@ async def test_kiosk_admin_pin(client: AsyncClient, db_session: AsyncSession) ->
 
 async def test_rfid_required_and_uid_normalization(client: AsyncClient, db_session: AsyncSession) -> None:
     location, headers = await _admin(db_session, client)
-    db_session.add(Device(location_id=location.id, name="Tablet", device_token="dev-token"))
+    db_session.add(Device(location_id=location.id, name="Tablet", token_hash=token_hash("dev-token")))
     await db_session.commit()
     created = (await client.post("/employees", headers=headers, json={"location_id": location.id, "first_name": "R", "last_name": "F", "employee_number": "9", "nfc_uid": "04:A2:3B:4C"})).json()
     assert created["nfc_uid"] == "04a23b4c"

@@ -8,7 +8,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Employee, HrRole, HrUser, Location
+from app.models import Employee, HrRole, Account, Location
 from app.services.auth_service import hash_password
 
 @pytest.fixture(autouse=True)
@@ -34,10 +34,10 @@ async def _setup(db_session: AsyncSession, client: AsyncClient) -> tuple[Employe
     db_session.add(location)
     await db_session.commit()
     employee = Employee(location_id=location.id, first_name="Kai", last_name="Kern", employee_number="K1", auto_break_enabled=False)
-    db_session.add_all([employee, HrUser(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
+    db_session.add_all([employee, Account(email="admin@example.com", password_hash=hash_password("pw"), role=HrRole.ADMIN)])
     await db_session.commit()
     await db_session.refresh(employee)
-    login = await client.post("/auth/hr/login", json={"email": "admin@example.com", "password": "pw"})
+    login = await client.post("/auth/login", json={"email": "admin@example.com", "password": "pw"})
     admin = {"Authorization": f"Bearer {login.json()['access_token']}"}
     r = await client.put(
         f"/employees/{employee.id}/work-time-model",

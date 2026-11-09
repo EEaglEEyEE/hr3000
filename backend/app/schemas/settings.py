@@ -8,6 +8,32 @@ from app.schemas.core_time import CoreTimeDays
 from app.services.holiday_calendar import Bundesland
 
 
+class SeniorityLeaveRule(BaseModel):
+    """Zusatzurlaub ab vollendeten Jahren Betriebszugehörigkeit (bezogen auf die 5-Tage-Woche)."""
+
+    years: int = Field(ge=1, le=50)
+    days: float = Field(gt=0, le=20, multiple_of=0.5)
+
+
+# Gruppen, für die die Firma die Zwei-Faktor-Anmeldung vorschreiben kann (EMPLOYEE = Konten ohne Rolle)
+TWO_FACTOR_ROLES = ("ADMIN", "HR", "SUPERVISOR", "EMPLOYEE")
+TwoFactorRole = Literal["ADMIN", "HR", "SUPERVISOR", "EMPLOYEE"]
+
+
+def parse_two_factor_roles(value: str | None) -> list[str]:
+    present = {v for v in (value or "").split(",") if v}
+    return [role for role in TWO_FACTOR_ROLES if role in present]
+
+
+def parse_seniority_rules(value: str | None) -> list[SeniorityLeaveRule]:
+    rules = []
+    for part in (value or "").split(","):
+        if ":" in part:
+            years, days = part.split(":", 1)
+            rules.append(SeniorityLeaveRule(years=int(years), days=float(days)))
+    return rules
+
+
 class SettingsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +56,11 @@ class SettingsResponse(BaseModel):
     default_day_minutes: list[int] | None = None
     prorate_part_time_vacation: bool = True
     prorate_partial_year_vacation: bool = True
+    reduce_vacation_parental_leave: bool = False
+    seniority_leave_rules: list[SeniorityLeaveRule] = []
+    team_calendar_for_employees: bool = False
+    org_chart_for_employees: bool = False
+    two_factor_roles: list[TwoFactorRole] = []
     vacation_carry_over_auto: bool = False
     vacation_carry_over_max_days: float | None = None
     vacation_carry_over_expiry: str | None = None
@@ -50,6 +81,9 @@ class SettingsResponse(BaseModel):
     flex_frame_start: time | None = None
     flex_frame_end: time | None = None
     max_shift_span_hours: int = 16
+    overtime_limit_max_hours: int | None = None
+    overtime_limit_min_hours: int | None = None
+    reminders_enabled: bool = False
     kiosk_admin_pin_set: bool = False
     rfid_required: bool = False
     kiosk_rfid_enabled: bool = True
@@ -62,6 +96,7 @@ class SettingsResponse(BaseModel):
     portal_punching_enabled: bool = False
     absence_requests_enabled: bool = True
     absence_four_eyes: bool = False
+    absence_overlaps_for_employees: bool = False
     kiosk_greeting: str | None = None
     kiosk_sort: Literal["LAST_NAME", "FIRST_NAME"] = "LAST_NAME"
     kiosk_theme: Literal["DARK", "LIGHT"] = "DARK"
@@ -74,6 +109,16 @@ class SettingsResponse(BaseModel):
         if isinstance(value, str):
             return [int(v) for v in value.split(",")] if value else None
         return value
+
+    @field_validator("seniority_leave_rules", mode="before")
+    @classmethod
+    def _parse_seniority(cls, value):
+        return parse_seniority_rules(value) if isinstance(value, str) or value is None else value
+
+    @field_validator("two_factor_roles", mode="before")
+    @classmethod
+    def _split_two_factor_roles(cls, value):
+        return parse_two_factor_roles(value) if isinstance(value, str) or value is None else value
 
     @field_validator("disabled_day_flags", mode="before")
     @classmethod
@@ -99,6 +144,13 @@ class SettingsUpdateRequest(BaseModel):
     default_day_minutes: list[int] | None = Field(default=None, max_length=7)
     prorate_part_time_vacation: bool | None = None
     prorate_partial_year_vacation: bool | None = None
+    reduce_vacation_parental_leave: bool | None = None
+    # [] = keinen Zusatzurlaub; aufsteigend nach Jahren, je Jahreszahl höchstens einmal
+    seniority_leave_rules: list[SeniorityLeaveRule] | None = Field(default=None, max_length=10)
+    team_calendar_for_employees: bool | None = None
+    org_chart_for_employees: bool | None = None
+    # Pflicht zur Zwei-Faktor-Anmeldung je Gruppe; [] = für niemanden
+    two_factor_roles: list[TwoFactorRole] | None = Field(default=None, max_length=len(TWO_FACTOR_ROLES))
     vacation_carry_over_auto: bool | None = None
     vacation_carry_over_max_days: float | None = Field(default=None, ge=0, le=365)
     clear_vacation_carry_over_max_days: bool = False
@@ -110,6 +162,12 @@ class SettingsUpdateRequest(BaseModel):
     datev_consultant_number: str | None = Field(default=None, pattern=r"^(\d{4,7})?$")
     datev_client_number: str | None = Field(default=None, pattern=r"^(\d{1,5})?$")
     max_shift_span_hours: int | None = Field(default=None, ge=8, le=24)
+    # Grenzen fürs Überstundenkonto (Stunden); clear_* = keine Grenze
+    overtime_limit_max_hours: int | None = Field(default=None, ge=1, le=2000)
+    overtime_limit_min_hours: int | None = Field(default=None, ge=-2000, le=-1)
+    clear_overtime_limit_max: bool = False
+    clear_overtime_limit_min: bool = False
+    reminders_enabled: bool | None = None
     # Kernzeit und Gleitzeit-Rahmen: jeweils beide Zeiten zusammen; clear_* = entfernen
     core_time_start: time | None = None
     core_time_end: time | None = None
@@ -140,6 +198,7 @@ class SettingsUpdateRequest(BaseModel):
     portal_punching_enabled: bool | None = None
     absence_requests_enabled: bool | None = None
     absence_four_eyes: bool | None = None
+    absence_overlaps_for_employees: bool | None = None
     # Leerer String = Text entfernen
     kiosk_greeting: str | None = Field(default=None, max_length=120)
     kiosk_sort: Literal["LAST_NAME", "FIRST_NAME"] | None = None
@@ -163,7 +222,7 @@ class SettingsUpdateRequest(BaseModel):
     @model_validator(mode="after")
     def _valid_time_ranges(self) -> "SettingsUpdateRequest":
         if self.balance_start_date is not None and not date(2000, 1, 1) <= self.balance_start_date <= date(2100, 12, 31):
-            raise ValueError("„Gleitzeitkonten führen ab“: bitte ein Datum zwischen 2000 und 2100 angeben.")
+            raise ValueError("„Überstundenkonten führen ab“: bitte ein Datum zwischen 2000 und 2100 angeben.")
         for start, end, label in (
             (self.core_time_start, self.core_time_end, "Kernzeit"),
             (self.flex_frame_start, self.flex_frame_end, "Gleitzeit-Rahmen"),
@@ -203,6 +262,10 @@ class SettingsUpdateRequest(BaseModel):
 
 class FeaturesResponse(BaseModel):
     shift_planning_enabled: bool
+    # Mitarbeiter sehen den Teamkalender (für den Reiter in „Mein Bereich“)
+    team_calendar_for_employees: bool = False
+    # Mitarbeiter sehen das Organigramm (Reiter in „Mein Bereich“)
+    org_chart_for_employees: bool = False
     absence_requests_enabled: bool = True
     # Vorbelegung für "Neuer Mitarbeiter"
     default_auto_break: bool = True

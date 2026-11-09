@@ -16,9 +16,13 @@ const ABSENCE_VARIANT: Record<AbsenceType, BadgeProps['variant']> = {
   WORK_TIME: 'success',
   PUBLIC_HOLIDAY: 'info',
   CHILD_SICK: 'warning',
+  PARENTAL_LEAVE: 'default',
+  SHORT_TIME_WORK: 'default',
+  UNEXCUSED: 'default',
+  CARE_LEAVE: 'default',
 }
 
-/** Einheitliche Status-Anzeige für einen Tag – verwendet in Saldenübersicht,
+/** Einheitliche Status-Anzeige für einen Tag – verwendet in Überstundenkonto,
  * Kalenderansicht, globaler Anwesenheitsübersicht und "Zu klären". */
 export function DayStatusBadge({
   status,

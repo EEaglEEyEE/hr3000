@@ -31,8 +31,7 @@ class PunchResponse(BaseModel):
     timestamp_utc: datetime
     source: PunchSource
     device_id: int | None
-    created_by: int | None
-    created_by_employee_id: int | None
+    created_by_account_id: int | None
     corrected: bool
     correction_reason: str | None
 

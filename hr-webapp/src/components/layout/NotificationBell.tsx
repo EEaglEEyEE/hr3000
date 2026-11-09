@@ -3,7 +3,9 @@ import { Bell } from 'lucide-react'
 import {
   useMarkAllNotificationsReadMutation,
   useMarkNotificationReadMutation,
+  useNotificationSettingsQuery,
   useNotificationsQuery,
+  useUpdateNotificationSettingsMutation,
 } from '../../api/queries/notifications'
 import { cn } from '../../lib/utils'
 
@@ -88,8 +90,27 @@ export function NotificationBell({ align = 'left' }: { align?: 'left' | 'right' 
               </button>
             ))}
           </div>
+          <NotificationEmailToggle enabled={open} />
         </div>
       )}
     </div>
+  )
+}
+
+/** „Auch per E-Mail“ – persönliche Einstellung; ob überhaupt gemailt wird, legt die Firma fest. */
+function NotificationEmailToggle({ enabled }: { enabled: boolean }) {
+  const settingsQuery = useNotificationSettingsQuery(enabled)
+  const update = useUpdateNotificationSettingsMutation()
+  if (!settingsQuery.data) return null
+  return (
+    <label className="flex items-center gap-2 border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
+      <input
+        type="checkbox"
+        checked={settingsQuery.data.email}
+        disabled={update.isPending}
+        onChange={(event) => update.mutate(event.target.checked)}
+      />
+      Benachrichtigungen auch per E-Mail (wenn die Firma einen Mailversand eingerichtet hat)
+    </label>
   )
 }

@@ -25,11 +25,12 @@ function setup() {
 }
 
 describe('Abwesenheitsarten', () => {
-  it('bietet alle Kategorien an – auch Arbeitszeit, Feiertag und Kind krank', async () => {
+  it('bietet alle Kategorien an – auch Arbeitszeit, Feiertag, Kind krank und die lohnrelevanten', async () => {
     setup()
     const select = (await screen.findByLabelText('Kategorie von Feiertag GfB')) as HTMLSelectElement
     expect(Array.from(select.options, (o) => o.textContent)).toEqual([
       'Urlaub', 'Krankheit', 'Sonderurlaub', 'Unbezahlt', 'Freizeitausgleich', 'Arbeitszeit', 'Feiertag', 'Kind krank',
+      'Mutterschutz/Elternzeit', 'Kurzarbeit', 'Unentschuldigt', 'Pflege von Angehörigen',
     ])
     expect(select).toHaveValue('SPECIAL_LEAVE')
   })

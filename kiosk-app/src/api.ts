@@ -1,3 +1,4 @@
+import { installationId } from './installation'
 export type PunchType = 'COME' | 'GO' | 'BREAK_START' | 'BREAK_END' | 'ERRAND_START' | 'ERRAND_END'
 export type SummaryStatus =
   | 'COMPLETE'
@@ -39,6 +40,8 @@ export interface DeviceLoginResponse extends KioskConfig {
   token_type: string
   location_id: number
   device_name: string
+  // Salz für die Chip-Hashes (card_hash)
+  card_salt?: string
 }
 
 export interface Employee {
@@ -48,6 +51,8 @@ export interface Employee {
   employee_number: string
   has_pin: boolean
   nfc_uid: string | null
+  // SHA-256(card_salt + normalisierte UID) – Tablets bekommen Chips nur so
+  card_hash?: string | null
   today_status: SummaryStatus
 }
 
@@ -142,13 +147,28 @@ export function registerCard(accessToken: string, payload: { employee_id: number
 
 /** Kurzen Kopplungscode (HR-Webapp → Tablets → QR-Code) gegen das Geräte-Token tauschen. */
 export function pairDevice(code: string): Promise<{ device_token: string }> {
-  return request('/auth/device/pair', { method: 'POST', body: JSON.stringify({ code }) })
+  return request('/auth/device/pair', { method: 'POST', body: JSON.stringify({ code, installation_id: installationId() }) })
+}
+
+export interface DeviceEnrollResponse {
+  /** BOUND = an einen Tablet-Eintrag gebunden, PENDING = wartet auf Freigabe in der HR-Webapp */
+  status: 'BOUND' | 'PENDING'
+  device_token: string
+  verify_code?: string | null
+}
+
+/** Selbstregistrierung mit dem Registrierungsschlüssel aus der MDM-Start-URL (#enroll=…&name=…). */
+export function enrollDevice(key: string, name: string | null): Promise<DeviceEnrollResponse> {
+  return request('/auth/device/enroll', {
+    method: 'POST',
+    body: JSON.stringify({ key, installation_id: installationId(), ...(name ? { name } : {}) }),
+  })
 }
 
 export function deviceLogin(deviceToken: string): Promise<DeviceLoginResponse> {
   return request('/auth/device/login', {
     method: 'POST',
-    body: JSON.stringify({ device_token: deviceToken }),
+    body: JSON.stringify({ device_token: deviceToken, installation_id: installationId() }),
   })
 }
 

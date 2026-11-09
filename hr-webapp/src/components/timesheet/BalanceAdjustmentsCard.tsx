@@ -5,6 +5,7 @@ import {
   useBalanceAdjustmentsQuery,
   useCreateBalanceAdjustmentMutation,
   useDeleteBalanceAdjustmentMutation,
+  useSetBalanceMutation,
   type BalanceAdjustment,
 } from '../../api/queries/balanceAdjustments'
 import { formatDate, formatMinutesAsHours, todayIsoDate } from '../../lib/format'
@@ -15,9 +16,18 @@ import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 const KIND_LABELS: Record<BalanceAdjustment['kind'], string> = {
-  OPENING_BALANCE: 'Übertrag (Altsystem/Vorjahr)',
+  OPENING_BALANCE: 'Anfangskontostand',
   PAYOUT: 'Auszahlung',
-  CORRECTION: 'Korrektur',
+  CORRECTION: 'Anpassung',
+}
+
+/** Buchungsarten am Überstundenkonto. */
+type Action = 'ADJUST' | 'SET' | 'PAYOUT' | 'OPENING'
+const ACTION_LABELS: Record<Action, string> = {
+  ADJUST: 'Kontostand anpassen (+/−)',
+  SET: 'Neuen Kontostand festlegen',
+  PAYOUT: 'Überstunden auszahlen',
+  OPENING: 'Anfangskontostand (Altsystem/Vorjahr)',
 }
 
 /** "8:30" oder "8,5" -> Minuten. */
@@ -33,7 +43,9 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
   const query = useBalanceAdjustmentsQuery(employeeId)
   const create = useCreateBalanceAdjustmentMutation(employeeId)
   const remove = useDeleteBalanceAdjustmentMutation(employeeId)
-  const [kind, setKind] = useState<BalanceAdjustment['kind']>('OPENING_BALANCE')
+  const setBalance = useSetBalanceMutation(employeeId)
+  const [action, setAction] = useState<Action>('ADJUST')
+  const [factor, setFactor] = useState('1')
   const [direction, setDirection] = useState<'plus' | 'minus'>('plus')
   const [hours, setHours] = useState('')
   const [date, setDate] = useState(todayIsoDate())
@@ -51,11 +63,29 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
       setError('Bitte Stunden als „7,5“ oder „7:30“ angeben.')
       return
     }
-    const signed = kind === 'PAYOUT' || direction === 'minus' ? -minutes : minutes
+    const signed = action === 'PAYOUT' || direction === 'minus' ? -minutes : minutes
+    const factorValue = Number(factor.replace(',', '.'))
+    if (action === 'PAYOUT' && !(factorValue >= 1 && factorValue <= 3)) {
+      setError('Der Faktor liegt zwischen 1 und 3 (z. B. 1,5).')
+      return
+    }
     try {
-      await create.mutateAsync({ effective_date: date, minutes: signed, kind, note: note.trim() })
+      if (action === 'SET') {
+        await setBalance.mutateAsync({ effective_date: date, balance_minutes: signed, note: note.trim() })
+      } else {
+        const kind: BalanceAdjustment['kind'] =
+          action === 'PAYOUT' ? 'PAYOUT' : action === 'OPENING' ? 'OPENING_BALANCE' : 'CORRECTION'
+        await create.mutateAsync({
+          effective_date: date,
+          minutes: signed,
+          kind,
+          note: note.trim(),
+          payout_factor: action === 'PAYOUT' && factorValue !== 1 ? factorValue : null,
+        })
+      }
       setHours('')
       setNote('')
+      setFactor('1')
     } catch (err) {
       setError(err instanceof ApiError && err.status !== 422 ? err.message : 'Bitte Datum, Stunden und eine Begründung angeben.')
     }
@@ -64,7 +94,7 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Korrekturbuchungen Gleitzeitkonto</CardTitle>
+        <CardTitle>Korrekturbuchungen Überstundenkonto</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {adjustments.length > 0 && (
@@ -75,7 +105,9 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
                   <span className={a.minutes < 0 ? 'font-medium text-red-600' : 'font-medium text-emerald-700'}>
                     {formatMinutesAsHours(a.minutes)} Std.
                   </span>{' '}
-                  {KIND_LABELS[a.kind]} zum {formatDate(a.effective_date)}
+                  {KIND_LABELS[a.kind]}
+                  {a.payout_factor != null && ` (Faktor ${String(a.payout_factor).replace('.', ',')})`} zum{' '}
+                  {formatDate(a.effective_date)}
                   <span className="block text-xs text-slate-500">{a.note}</span>
                 </span>
                 {canEdit && (
@@ -99,13 +131,13 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
         {canEdit && (
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-1.5">
-              <Label>Art</Label>
-              <Select value={kind} onValueChange={(value) => setKind(value as BalanceAdjustment['kind'])}>
+              <Label>Aktion</Label>
+              <Select value={action} onValueChange={(value) => setAction(value as Action)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(KIND_LABELS).map(([value, label]) => (
+                  {Object.entries(ACTION_LABELS).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
                       {label}
                     </SelectItem>
@@ -114,9 +146,9 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
               </Select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="adj_hours">Stunden</Label>
+              <Label htmlFor="adj_hours">{action === 'SET' ? 'Neuer Kontostand (Stunden)' : 'Stunden'}</Label>
               <div className="flex gap-2">
-                {kind !== 'PAYOUT' && (
+                {action !== 'PAYOUT' && (
                   <Select value={direction} onValueChange={(value) => setDirection(value as 'plus' | 'minus')}>
                     <SelectTrigger className="w-24">
                       <SelectValue />
@@ -129,7 +161,19 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
                 )}
                 <Input id="adj_hours" required placeholder="z. B. 12,5 oder 12:30" value={hours} onChange={(e) => setHours(e.target.value)} />
               </div>
+              {action === 'SET' && (
+                <p className="text-xs text-slate-500">Gebucht wird die Differenz zum Stand am Ende des gewählten Tages.</p>
+              )}
             </div>
+            {action === 'PAYOUT' && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="adj_factor">Faktor</Label>
+                <Input id="adj_factor" inputMode="decimal" className="w-24" value={factor} onChange={(e) => setFactor(e.target.value)} />
+                <p className="text-xs text-slate-500">
+                  z. B. 1,5 für 50 % Zuschlag. Das Konto sinkt um die Stunden; im Lohn-Export stehen sie zusätzlich gewichtet.
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="adj_date">Buchungsdatum</Label>
               <Input id="adj_date" type="date" required max={todayIsoDate()} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -140,7 +184,7 @@ export function BalanceAdjustmentsCard({ employeeId, canEdit }: { employeeId: nu
             </div>
             {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
             <div className="sm:col-span-2">
-              <Button type="submit" disabled={create.isPending}>
+              <Button type="submit" disabled={create.isPending || setBalance.isPending}>
                 Buchen
               </Button>
             </div>

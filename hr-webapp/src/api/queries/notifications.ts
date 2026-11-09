@@ -43,3 +43,20 @@ export function useMarkAllNotificationsReadMutation() {
     onSuccess: () => invalidate(queryClient),
   })
 }
+
+/** Persönliche Einstellung: Benachrichtigungen zusätzlich per E-Mail. */
+export function useNotificationSettingsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['notifications', 'settings'],
+    enabled,
+    queryFn: async () => unwrap(await apiClient.GET('/notifications/settings')),
+  })
+}
+
+export function useUpdateNotificationSettingsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (email: boolean) => unwrap(await apiClient.PUT('/notifications/settings', { body: { email } })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notifications', 'settings'] }),
+  })
+}

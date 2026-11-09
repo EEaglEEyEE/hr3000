@@ -49,8 +49,7 @@ async def create_team(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.TEAM_CREATED,
         entity_type="team",
         entity_id=team.id,
@@ -85,8 +84,7 @@ async def update_team(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.TEAM_UPDATED,
         entity_type="team",
         entity_id=team.id,
@@ -111,8 +109,7 @@ async def delete_team(
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=AuditAction.TEAM_DELETED,
         entity_type="team",
         entity_id=team.id,

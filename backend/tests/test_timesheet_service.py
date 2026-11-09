@@ -492,10 +492,10 @@ async def test_recalculate_day_flips_stale_present_to_missing_punch(
 
 
 async def _create_absence_creator(db_session: AsyncSession) -> int:
-    from app.models import HrRole, HrUser
+    from app.models import HrRole, Account
     from app.services.auth_service import hash_password
 
-    user = HrUser(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
+    user = Account(email="hr@example.com", password_hash=hash_password("pw"), role=HrRole.HR)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -511,7 +511,7 @@ async def test_calculate_day_absence_without_punches_is_not_open(db_session: Asy
             type=AbsenceType.VACATION,
             date_from=MONDAY,
             date_to=MONDAY,
-            created_by=creator_id,
+            created_by_account_id=creator_id,
         )
     )
     await db_session.commit()
@@ -537,7 +537,7 @@ async def test_calculate_day_approved_absence_is_credited_with_full_target(
             type=AbsenceType.SICK,
             date_from=MONDAY,
             date_to=MONDAY,
-            created_by=creator_id,
+            created_by_account_id=creator_id,
         )
     )
     await db_session.commit()
@@ -567,7 +567,7 @@ async def test_calculate_day_pending_absence_does_not_neutralize_day(
             type=AbsenceType.VACATION,
             date_from=MONDAY,
             date_to=MONDAY,
-            created_by=creator_id,
+            created_by_account_id=creator_id,
             approval_status=AbsenceApprovalStatus.PENDING,
         )
     )
@@ -592,7 +592,7 @@ async def test_recalculate_day_full_week_absence_is_neutral_for_overtime_balance
             type=AbsenceType.VACATION,
             date_from=MONDAY,
             date_to=date(2026, 8, 14),
-            created_by=creator_id,
+            created_by_account_id=creator_id,
         )
     )
     # Das Konto beginnt mit der ersten Stempelung (Freitag davor, genau 8 Std., keine Pausenregel).

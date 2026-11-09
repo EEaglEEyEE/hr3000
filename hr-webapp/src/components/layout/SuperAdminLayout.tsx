@@ -4,6 +4,7 @@ import { cn } from '../../lib/utils'
 import { BrandLogo } from './BrandLogo'
 import { useAuth } from '../../auth/AuthContext'
 import { ChangePasswordButton } from '../account/ChangePasswordDialog'
+import { TwoFactorButton } from '../account/TwoFactorDialog'
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -31,6 +32,7 @@ export function SuperAdminLayout() {
           </NavLink>
         </nav>
         <ChangePasswordButton className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900" />
+        <TwoFactorButton className="flex items-center gap-2 rounded-md px-2 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900" />
         <button
           type="button"
           onClick={logout}

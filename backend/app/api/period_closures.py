@@ -78,8 +78,7 @@ def _audit(db: AsyncSession, actor: Actor, action: AuditAction, employee: Employ
     log_action(
         db,
         tenant_id=actor.tenant_id,
-        actor_hr_user_id=actor.audit_hr_user_id,
-        actor_employee_id=actor.audit_employee_id,
+        actor_account_id=actor.account_id,
         action=action,
         entity_type="employee",
         entity_id=employee.id,
@@ -187,8 +186,7 @@ async def _submit(
         confidential=False,
         # ArbZG §16 Abs. 2: Nachweise über Mehrarbeit sind mindestens zwei Jahre aufzubewahren.
         retention_until=last + timedelta(days=731),
-        uploaded_by_hr_user_id=actor.audit_hr_user_id,
-        uploaded_by_employee_id=actor.audit_employee_id,
+        uploaded_by_account_id=actor.account_id,
     )
     await db.flush()
 
@@ -202,8 +200,7 @@ async def _submit(
     closure.document_id = document.id
     closure.report_sha256 = document.sha256
     closure.submitted_at = now
-    closure.submitted_by_hr_user_id = actor.audit_hr_user_id
-    closure.submitted_by_employee_id = actor.audit_employee_id
+    closure.submitted_by_account_id = actor.account_id
     closure.confirmed_at = None
     closure.disputed_at = None
     closure.dispute_reason = None

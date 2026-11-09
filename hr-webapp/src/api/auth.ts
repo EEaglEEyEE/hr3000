@@ -23,12 +23,40 @@ async function postPublic<T>(endpoint: string, body: unknown, fallback: string):
   return response.json() as Promise<T>
 }
 
-export function hrLogin(email: string, password: string): Promise<TokenPair> {
-  return postPublic('/api/auth/hr/login', { email, password }, 'Login fehlgeschlagen.')
+export interface LoginResult {
+  access_token: string | null
+  refresh_token: string | null
+  /** "required": Code aus der App eingeben; "setup": Zwei-Faktor-Anmeldung ist Pflicht und erst einzurichten */
+  two_factor: 'required' | 'setup' | null
+  challenge_token: string | null
 }
 
-export function employeeLogin(email: string, password: string): Promise<TokenPair> {
-  return postPublic('/api/auth/employee/login', { email, password }, 'Login fehlgeschlagen.')
+export interface TwoFactorSetup {
+  secret: string
+  otpauth_uri: string
+}
+
+export interface TwoFactorEnabled extends TokenPair {
+  recovery_codes: string[]
+}
+
+/** Ein Login für alle Konten (Verwaltung, Mitarbeiter, Super-Admin auf dem admin.-Host). */
+export function login(email: string, password: string): Promise<LoginResult> {
+  return postPublic('/api/auth/login', { email, password }, 'Login fehlgeschlagen.')
+}
+
+/** Zweiter Schritt: Code aus der Authenticator-App oder ein Wiederherstellungscode. */
+export function loginTwoFactor(challengeToken: string, code: string): Promise<TokenPair> {
+  return postPublic('/api/auth/login/2fa', { challenge_token: challengeToken, code }, 'Der Code stimmt nicht.')
+}
+
+/** Pflicht-Einrichtung direkt beim Login (mit dem Challenge-Token statt einer Sitzung). */
+export function setupTwoFactorAtLogin(challengeToken: string): Promise<TwoFactorSetup> {
+  return postPublic('/api/auth/2fa/setup', { challenge_token: challengeToken }, 'Das hat nicht geklappt.')
+}
+
+export function enableTwoFactorAtLogin(challengeToken: string, code: string): Promise<TwoFactorEnabled> {
+  return postPublic('/api/auth/2fa/enable', { challenge_token: challengeToken, code }, 'Der Code stimmt nicht.')
 }
 
 /** "Passwort vergessen": Link per E-Mail anfordern – antwortet immer gleich (kein Hinweis, ob es das Konto gibt). */
