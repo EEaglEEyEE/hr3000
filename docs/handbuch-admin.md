@@ -167,8 +167,13 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   Organigramm“ an ist.
   **Bearbeiten (Admin und HR):** „Neue Abteilung“ oben; an jeder Karte Stift (Name, übergeordnete
   Abteilung, Leitungen und Stellvertretungen – derselbe Dialog wie unter „Einstellungen“ →
-  „Abteilungen“), Plus (Unterabteilung anlegen) und Papierkorb (Löschen, nur leere Abteilungen); an
-  jeder Person das Pfeil-Symbol: in eine andere Abteilung oder „ohne Abteilung“ verschieben. Am
+  „Abteilungen“), Personen-Symbol (Mitarbeiter hinzufügen), Plus (Unterabteilung anlegen) und
+  Papierkorb (Löschen, nur leere Abteilungen); an jeder Person das Pfeil-Symbol: in eine andere
+  Abteilung oder „ohne Abteilung“ verschieben. „Mitarbeiter hinzufügen“ listet zuerst alle ohne
+  Abteilung, dann alle aus anderen Abteilungen mit ihrer bisherigen Abteilung; Suche nach Name,
+  Position oder Abteilung, je Gruppe „Alle auswählen“. Mehrere werden auf einmal aufgenommen, wer
+  aus einer anderen Abteilung kommt, wechselt. Führungskraft wird die Leitung der Abteilung, außer
+  bei einer je Person eingetragenen Führungskraft. Am
   Computer lassen sich Personen und Abteilungen auch mit der Maus auf eine andere Karte ziehen
   (gestrichelt umrandet = hier ablegen): eine Abteilung auf „Hierher ziehen: Abteilung auf die oberste
   Ebene“, eine Person auf „Ohne Abteilung“. Unter sich selbst lässt sich eine Abteilung nicht ziehen;

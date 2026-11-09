@@ -1368,6 +1368,28 @@ export interface paths {
         patch: operations["update_department_departments__department_id__patch"];
         trace?: never;
     };
+    "/departments/{department_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Department Members
+         * @description Mehrere Mitarbeiter auf einmal in die Abteilung aufnehmen (Organigramm „Mitarbeiter hinzufügen“).
+         *     Alles oder nichts: Fehlt eine Person, ist sie anonymisiert oder entstünde ein Kreis in den
+         *     Führungskräften, ändert sich keiner.
+         */
+        post: operations["add_department_members_departments__department_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org-chart": {
         parameters: {
             query?: never;
@@ -5658,6 +5680,21 @@ export interface components {
             deputy_rights: "STANDBY" | "FULL" | "ABSENCE";
             /** Active */
             active: boolean;
+        };
+        /**
+         * DepartmentMembersRequest
+         * @description Mitarbeiter in diese Abteilung aufnehmen (z. B. aus dem Organigramm). Wer in einer anderen
+         *     Abteilung ist, wechselt hierher; wer schon darin ist, bleibt unverändert.
+         */
+        DepartmentMembersRequest: {
+            /** Employee Ids */
+            employee_ids: number[];
+        };
+        /** DepartmentMembersResponse */
+        DepartmentMembersResponse: {
+            department: components["schemas"]["DepartmentResponse"];
+            /** Added */
+            added: number;
         };
         /** DepartmentResponse */
         DepartmentResponse: {
@@ -12451,6 +12488,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DepartmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_department_members_departments__department_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentMembersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentMembersResponse"];
                 };
             };
             /** @description Validation Error */

@@ -411,7 +411,12 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     `supervisor_ids`); für Rollen immer, für Mitarbeiter nur mit `AppSettings.org_chart_for_employees`.
     Bearbeitet wird im Organigramm über dieselben Endpunkte (`PATCH /departments/{id}` für
     `parent_id`, `PATCH /employees/{id}` für `department_id`); Ziehen und Ablegen ist natives HTML5
-    Drag and Drop ohne Zusatzpaket. Migration 0134 macht aus jedem Team eine Abteilung (vorhandene
+    Drag and Drop ohne Zusatzpaket. „Mitarbeiter hinzufügen“ nutzt `POST /departments/{id}/members`
+    (`employee_ids`, Pydantic: 1–500, je Person einmal, ≥ 1; nur Admin/HR): alles oder nichts – fremde
+    oder unbekannte Personen 404, anonymisierte 400, Kreis 400 `SUPERVISOR_CYCLE` mit Rollback. Wer
+    schon drin ist, bleibt unverändert (`added` zählt nur Wechsel). Je Wechsel ein Webhook
+    `employee.updated`, ein Protokolleintrag `DEPARTMENT_CHANGED` mit bisheriger Abteilung (auf 500
+    Zeichen gekürzt). Migration 0134 macht aus jedem Team eine Abteilung (vorhandene
     gleichen Namens wird genutzt), die erste Teamleitung mit Mitarbeiter-Konto zur Leitung, setzt
     Teammitglieder ohne Abteilung hinein und trägt bei Mitgliedern anderer Abteilungen die
     Teamleitung als Ausnahme ein. Migration 0135 legt `department_leaders` an, übernimmt

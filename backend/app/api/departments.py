@@ -21,6 +21,8 @@ from app.schemas.department import (
     DepartmentCreateRequest,
     DepartmentLeaderInput,
     DepartmentLeaderResponse,
+    DepartmentMembersRequest,
+    DepartmentMembersResponse,
     DepartmentResponse,
     DepartmentUpdateRequest,
     OrgChartDepartment,
@@ -28,6 +30,7 @@ from app.schemas.department import (
     OrgChartPerson,
     OrgChartResponse,
 )
+from app.services import webhook_service
 from app.services.audit_service import log_action
 from app.services.org_service import check_no_supervisor_cycle, load_org
 from app.services.settings_service import get_or_create_settings
@@ -217,6 +220,65 @@ async def update_department(
         await db.rollback()
         raise AppError(409, "DEPARTMENT_NAME_TAKEN", "Diese Abteilung gibt es schon.") from exc
     return (await _responses(db, actor.tenant_id, [department]))[0]
+
+
+AUDIT_DETAIL_MAX = 500  # Länge von audit_log.detail
+
+
+def _members_note(department: Department, moved: list[tuple[Employee, str | None]]) -> str:
+    """Protokolltext: wer aus welcher Abteilung kam – zu lang für die Spalte wird gekürzt."""
+    people = ", ".join(
+        f"{e.first_name} {e.last_name} (bisher {f'„{before}“' if before else 'ohne Abteilung'})" for e, before in moved
+    )
+    text = f"{len(moved)} Mitarbeiter in Abteilung „{department.name}“ aufgenommen: {people}"
+    return text if len(text) <= AUDIT_DETAIL_MAX else text[: AUDIT_DETAIL_MAX - 1] + "…"
+
+
+@router.post("/departments/{department_id}/members", response_model=DepartmentMembersResponse)
+async def add_department_members(
+    department_id: int,
+    payload: DepartmentMembersRequest,
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> DepartmentMembersResponse:
+    """Mehrere Mitarbeiter auf einmal in die Abteilung aufnehmen (Organigramm „Mitarbeiter hinzufügen“).
+    Alles oder nichts: Fehlt eine Person, ist sie anonymisiert oder entstünde ein Kreis in den
+    Führungskräften, ändert sich keiner."""
+    department = await _department(db, department_id, actor.tenant_id)
+    people = {
+        e.id: e
+        for e in (
+            await db.execute(
+                select(Employee).where(Employee.id.in_(payload.employee_ids), Employee.tenant_id == actor.tenant_id)
+            )
+        ).scalars()
+    }
+    if any(i not in people for i in payload.employee_ids):
+        raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
+    if any(people[i].anonymized_at is not None for i in payload.employee_ids):
+        raise AppError(400, "ALREADY_ANONYMIZED", "Anonymisierte Mitarbeiter können nicht mehr bearbeitet werden.")
+    names = dict(
+        (await db.execute(select(Department.id, Department.name).where(Department.tenant_id == actor.tenant_id))).all()
+    )
+    moved: list[tuple[Employee, str | None]] = []
+    for employee_id in payload.employee_ids:
+        employee = people[employee_id]
+        if employee.department_id == department.id:
+            continue
+        moved.append((employee, names.get(employee.department_id) if employee.department_id else None))
+        employee.department_id = department.id
+    if moved:
+        await db.flush()
+        try:
+            await check_no_supervisor_cycle(db, actor.tenant_id)
+        except AppError:
+            await db.rollback()
+            raise
+        for employee, _ in moved:
+            await webhook_service.emit_event(db, actor.tenant_id, "employee.updated", {"employee_id": employee.id})
+        _audit(db, actor, department, _members_note(department, moved))
+        await db.commit()
+    return DepartmentMembersResponse(department=(await _responses(db, actor.tenant_id, [department]))[0], added=len(moved))
 
 
 @router.delete("/departments/{department_id}", status_code=204)

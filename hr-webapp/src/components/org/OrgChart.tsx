@@ -9,7 +9,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { ArrowRightLeft, ChevronDown, ChevronRight, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ChevronDown, ChevronRight, ChevronUp, Pencil, Plus, Trash2, UserPlus } from 'lucide-react'
 import { ApiError } from '../../api/client'
 import {
   useDeleteDepartmentMutation,
@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { AddMembersDialog } from './AddMembersDialog'
 import { DepartmentDialog } from './DepartmentDialog'
 
 type OrgNode = GenericOrgNode<OrgChartPerson>
@@ -65,6 +66,7 @@ interface OrgEditing {
   drop: (target: number | null) => void
   edit: (department: OrgChartDepartment) => void
   addChild: (department: OrgChartDepartment) => void
+  addMembers: (department: OrgChartDepartment) => void
   remove: (department: OrgChartDepartment) => void
   move: (person: OrgChartPerson) => void
 }
@@ -78,6 +80,7 @@ const READ_ONLY: OrgEditing = {
   drop: () => {},
   edit: () => {},
   addChild: () => {},
+  addMembers: () => {},
   remove: () => {},
   move: () => {},
 }
@@ -218,6 +221,9 @@ function DepartmentCard({ node, query, className }: { node: OrgNode; query: stri
               <IconButton label={`${name} bearbeiten`} onClick={() => editing.edit(node.department)}>
                 <Pencil className="h-3.5 w-3.5" />
               </IconButton>
+              <IconButton label={`Mitarbeiter zu ${name} hinzufügen`} onClick={() => editing.addMembers(node.department)}>
+                <UserPlus className="h-3.5 w-3.5" />
+              </IconButton>
               <IconButton label={`Unterabteilung zu ${name} anlegen`} onClick={() => editing.addChild(node.department)}>
                 <Plus className="h-3.5 w-3.5" />
               </IconButton>
@@ -279,13 +285,14 @@ const toggleLabel = (node: OrgNode, expanded: boolean) =>
 // --- Baum (von oben nach unten, Linien per CSS: .org-tree in index.css) ---------------------------
 
 function TreeNode({ node, depth, query }: { node: OrgNode; depth: number; query: string }) {
+  const { canEdit } = useContext(EditingContext)
   const [open, setOpen] = useState(depth < 2)
   const visibleChildren = query ? node.children.filter((child) => containsMatch(child, query)) : node.children
   const expanded = query ? visibleChildren.length > 0 : open
   return (
     <li className="org-node">
       <div className="flex flex-col items-center">
-        <DepartmentCard node={node} query={query} className="w-56" />
+        <DepartmentCard node={node} query={query} className={canEdit ? 'w-64' : 'w-56'} />
         {node.children.length > 0 && (
           <button
             type="button"
@@ -519,6 +526,7 @@ export function OrgChart() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ id: number | null; parentId: number | null } | null>(null)
   const [moving, setMoving] = useState<OrgChartPerson | null>(null)
+  const [adding, setAdding] = useState<OrgChartDepartment | null>(null)
   const [moveError, setMoveError] = useState<string | null>(null)
   const departments = useMemo(() => query.data?.departments ?? [], [query.data])
   const people = useMemo(() => query.data?.people ?? [], [query.data])
@@ -598,6 +606,7 @@ export function OrgChart() {
         },
         edit: (department) => setEditing({ id: department.id, parentId: department.parent_id }),
         addChild: (department) => setEditing({ id: null, parentId: department.id }),
+        addMembers: (department) => setAdding(department),
         remove: (department) => {
           if (!window.confirm(`Abteilung „${department.name}“ löschen? Das geht nur, wenn sie leer ist.`)) return
           setError(null)
@@ -654,8 +663,8 @@ export function OrgChart() {
         </div>
         {isFullHr && (
           <p className="text-xs text-slate-500">
-            Bearbeiten über die Symbole an Abteilungen und Personen. Am Computer lassen sich Personen und Abteilungen auch
-            mit der Maus auf eine andere Abteilung ziehen.
+            Bearbeiten über die Symbole an Abteilungen und Personen, Mitarbeiter aufnehmen über das Personen-Symbol an der
+            Abteilung. Am Computer lassen sich Personen und Abteilungen auch mit der Maus auf eine andere Abteilung ziehen.
           </p>
         )}
         {error && (
@@ -693,6 +702,7 @@ export function OrgChart() {
             departments={fullDepartments}
             onClose={() => setEditing(null)}
           />
+          <AddMembersDialog department={adding} people={people} departments={departments} onClose={() => setAdding(null)} />
           <MovePersonDialog
             person={moving}
             departments={departments}

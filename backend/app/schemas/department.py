@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -45,6 +45,23 @@ class DepartmentUpdateRequest(BaseModel):
     _unique = field_validator("leaders")(_unique_people)
 
 
+MAX_MEMBERS_PER_REQUEST = 500
+
+
+class DepartmentMembersRequest(BaseModel):
+    """Mitarbeiter in diese Abteilung aufnehmen (z. B. aus dem Organigramm). Wer in einer anderen
+    Abteilung ist, wechselt hierher; wer schon darin ist, bleibt unverändert."""
+
+    employee_ids: list[Annotated[int, Field(ge=1)]] = Field(min_length=1, max_length=MAX_MEMBERS_PER_REQUEST)
+
+    @field_validator("employee_ids")
+    @classmethod
+    def _unique(cls, ids: list[int]) -> list[int]:
+        if len(ids) != len(set(ids)):
+            raise ValueError("Jede Person nur einmal angeben.")
+        return ids
+
+
 class DepartmentLeaderResponse(BaseModel):
     employee_id: int
     # „Vorname Nachname“
@@ -64,6 +81,12 @@ class DepartmentResponse(BaseModel):
     leaders: list[DepartmentLeaderResponse] = []
     # Aktive Mitarbeiter direkt in dieser Abteilung
     employee_count: int = 0
+
+
+class DepartmentMembersResponse(BaseModel):
+    department: DepartmentResponse
+    # Personen, die tatsächlich in die Abteilung gekommen sind (ohne die, die schon darin waren)
+    added: int
 
 
 class OrgChartPerson(BaseModel):

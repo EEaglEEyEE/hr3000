@@ -51,6 +51,24 @@ export function useDeleteDepartmentMutation() {
   })
 }
 
+/** Mehrere Mitarbeiter in eine Abteilung aufnehmen (alles oder nichts) – ändert auch die Mitarbeiter. */
+export function useAddDepartmentMembersMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, employeeIds }: { id: number; employeeIds: number[] }) =>
+      unwrap(
+        await apiClient.POST('/departments/{department_id}/members', {
+          params: { path: { department_id: id } },
+          body: { employee_ids: employeeIds },
+        }),
+      ),
+    onSuccess: () => {
+      invalidate(queryClient)
+      void queryClient.invalidateQueries({ queryKey: ['employees'] })
+    },
+  })
+}
+
 export function useOrgChartQuery(enabled = true) {
   return useQuery({
     queryKey: ['org-chart'],

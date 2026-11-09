@@ -5,6 +5,12 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 09.11.2026
 
+- **Mitarbeiter im Organigramm einer Abteilung hinzufügen:** An jeder Abteilungskarte gibt es für
+  Admin und HR das Personen-Symbol „Mitarbeiter hinzufügen“. Der Dialog listet zuerst alle ohne
+  Abteilung, dann alle aus anderen Abteilungen (mit ihrer bisherigen Abteilung), mit Suche und „Alle
+  auswählen“. Mehrere lassen sich auf einmal aufnehmen; wer aus einer anderen Abteilung kommt,
+  wechselt. Entstünde dadurch ein Kreis in den Führungskräften, ändert sich keiner. Das Protokoll
+  vermerkt, wer aus welcher Abteilung kam. Neu in der API: `POST /departments/{id}/members`.
 - **Mehrere Leitungen und Stellvertretungen, Organigramm direkt bearbeiten:** Eine Abteilung kann
   mehrere gleichberechtigte Leitungen und beliebig viele Stellvertretungen haben. Je Stellvertretung
   wählt ihr die Rechte: „Sieht immer, entscheidet bei Abwesenheit“ (Standard), „Gleiche Rechte wie die
