@@ -149,6 +149,7 @@ async def test_break_rules_of_other_tenants_do_not_affect_calculation(client: As
 async def test_vacation_days_ignore_holidays_of_other_tenants_and_locations(db_session: AsyncSession) -> None:
     location, _, worker = await _world(db_session)
     db_session.add(Tenant(id=2, subdomain="other", name="Other"))
+    await db_session.flush()  # Mandant zuerst – sonst scheitert der Standort am Fremdschlüssel
     other_location = Location(tenant_id=2, name="Fremd", timezone="UTC")
     second_location = Location(name="Standort B", timezone="UTC")
     db_session.add_all([other_location, second_location])

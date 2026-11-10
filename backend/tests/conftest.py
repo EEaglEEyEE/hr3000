@@ -63,6 +63,12 @@ def _reset_rate_limiter():
     rate_limiter.clear_all()
 
 
+def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 @pytest.fixture
 async def db_session(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncSession, None]:
     # Aktiviert den Dev-Escape-Hatch der Tenant-Resolution-Middleware, damit der
@@ -75,6 +81,9 @@ async def db_session(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncSes
         poolclass=StaticPool,
         connect_args={"check_same_thread": False},
     )
+    # SQLite prüft Fremdschlüssel nur mit diesem PRAGMA – MySQL immer. Ohne fiel lange nicht auf, dass
+    # Abwesenheiten mit Benachrichtigungen nicht löschbar waren (Prod: IntegrityError 1451).
+    event.listen(engine.sync_engine, "connect", _enable_sqlite_foreign_keys)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -87,6 +96,7 @@ async def db_session(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncSes
 
     async with session_factory() as seed_session:
         seed_session.add(Tenant(id=1, subdomain="musterfirma", name="Musterfirma"))
+        await seed_session.flush()  # ohne relationship() sortiert SQLAlchemy nicht nach Fremdschlüssel
         # Schichtplanung standardmäßig an, damit die bestehenden Schichtplan-Tests
         # unverändert laufen; neue Mandanten starten produktiv ohne (siehe
         # AppSettings.shift_planning_enabled).

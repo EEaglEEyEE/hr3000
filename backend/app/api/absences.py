@@ -29,7 +29,12 @@ from app.schemas.absence import (
 )
 from app.services.absence_type_service import CATEGORY_LABELS, resolve_absence_type
 from app.services.audit_service import log_action
-from app.services.notification_service import notify_absence_decided, notify_absence_requested, notify_substitute_assigned
+from app.services.notification_service import (
+    notify_absence_decided,
+    notify_absence_requested,
+    notify_substitute_assigned,
+    unlink_absence,
+)
 from app.services.settings_service import get_or_create_settings
 from app.services.scope_service import ensure_employee_visible, visible_employee_ids
 from app.services import approval_service, webhook_service
@@ -242,6 +247,7 @@ async def _resolve_full_day_overlap(
         before = (vacation.date_from, date_from - timedelta(days=1)) if vacation.date_from < date_from else None
         after = (date_to + timedelta(days=1), vacation.date_to) if vacation.date_to > date_to else None
         if before is None and after is None:
+            await unlink_absence(db, vacation.id)
             await db.delete(vacation)
             continue
         first, second = (before, after) if before is not None else (after, None)
@@ -686,5 +692,6 @@ async def delete_absence(
     await ensure_range_open(db, absence.employee_id, absence.date_from, absence.date_to)
     await invalidate_balance(db, absence.employee_id, absence.date_from)
 
+    await unlink_absence(db, absence.id)
     await db.delete(absence)
     await db.commit()

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -149,6 +149,15 @@ async def notify_open_days_digest(db: AsyncSession, tenant_id: int, open_day_cou
     await _notify_accounts(
         db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.OPEN_DAYS_DIGEST, message,
         "Zu klären: offene Tage",
+    )
+
+
+async def unlink_absence(db: AsyncSession, absence_id: int) -> None:
+    """Vor dem Löschen einer Abwesenheit aufrufen: Benachrichtigungen dazu bleiben erhalten, verweisen
+    danach aber auf keinen Eintrag mehr. notifications.related_absence_id hat kein ON DELETE – ohne
+    diesen Schritt lehnt MySQL das Löschen ab (IntegrityError 1451)."""
+    await db.execute(
+        update(Notification).where(Notification.related_absence_id == absence_id).values(related_absence_id=None)
     )
 
 

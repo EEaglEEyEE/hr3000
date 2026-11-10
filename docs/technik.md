@@ -375,6 +375,10 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     sonst Admin/HR.
     `GET /absences/pending` filtert für Führungskräfte über `can_decide`; `waiting_for` in
     `AbsenceResponse`; Benachrichtigung je Schritt über `step_recipients`.
+  - **Abwesenheit löschen:** `notifications.related_absence_id` verweist ohne `ON DELETE` auf
+    `absences.id` (Migration 0037). Wer eine Abwesenheit löscht, ruft vorher
+    `notification_service.unlink_absence` auf – sonst lehnt MySQL ab (IntegrityError 1451). Gilt für
+    `DELETE /absences/{id}` und für den ganz ersetzten Urlaub bei Krankheit (`split_vacation`).
   - **Stammdaten** (Migration 0122, `api/personal_data.py`, `services/personal_data_service.py`):
     `employee_personal_data.data` ist JSON, per `secret_box` verschlüsselt; Felder und Prüfungen
     (IBAN Modulo 97, Steuer-ID 11 Ziffern, SV-Nummer) in `schemas/personal_data.py`.
@@ -485,6 +489,11 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   ```bash
   cd backend && ~/.build-caches/hr3000_backend_venv/bin/python -m pytest -q -n auto
   ```
+
+- SQLite prüft Fremdschlüssel wie MySQL: `tests/conftest.py` setzt `PRAGMA foreign_keys=ON` für
+  jede Verbindung. Wer im Test Eltern- und Kindzeilen ohne `relationship()` in einem Schritt anlegt
+  (z. B. Mandant und Standort), muss zuerst `flush()` aufrufen – SQLAlchemy sortiert dann nicht nach
+  Fremdschlüssel.
 
 - **HR-Webapp und Tablet-App:** Vitest mit Testing Library (`npm test`). Die API wird über
   `mockApi()` ersetzt, Logins über `loginAs()`.

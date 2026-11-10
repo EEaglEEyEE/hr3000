@@ -3,6 +3,15 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 10.11.2026
+
+- **Abwesenheiten mit Benachrichtigung wieder löschbar:** Eine Abwesenheit ließ sich nicht löschen,
+  sobald es eine Benachrichtigung zu ihr gab – nach jeder Entscheidung über einen Antrag (wenn die
+  Person einen Zugang hat) und wenn eine Vertretung benachrichtigt wurde. Die Web-App zeigte dann
+  einen Serverfehler. Dasselbe galt, wenn eine Krankmeldung einen solchen Urlaub ganz ersetzte. Jetzt
+  wird die Abwesenheit gelöscht, die Benachrichtigung bleibt in der Glocke stehen. Der Fehler bestand
+  seit Einführung der Benachrichtigungen.
+
 ## 09.11.2026
 
 - **Mitarbeiter im Organigramm einer Abteilung hinzufügen:** An jeder Abteilungskarte gibt es für
