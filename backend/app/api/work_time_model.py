@@ -18,6 +18,7 @@ from app.models import (
     WorkTimeProfile,
     WorkTimeProfileVersion,
 )
+from app.models.rotation import monday_of, serialize_rotation
 from app.schemas.break_rule import fixed_break_windows, serialize_break_windows
 from app.schemas.core_time import describe_day_windows, day_windows, serialize_core_time_days, serialize_day_windows
 from app.schemas.work_time_model import (
@@ -59,9 +60,14 @@ async def _get_employee_in_tenant(db: AsyncSession, employee_id: int, tenant_id:
     return employee
 
 
-def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
+def _contract(payload: WorkTimeModelInput, valid_from: date | None = None) -> tuple[dict, str]:
     """Soll, Arbeitstage und Pause einer Fassung aus der Eingabe – und die Soll-Angabe fürs
-    Audit-Protokoll (z.B. "40 h/Woche", "108.5 h/Monat")."""
+    Audit-Protokoll (z.B. "40 h/Woche", "108.5 h/Monat").
+
+    Mehrwöchiges Modell: Woche 1 beginnt am Montag von "Turnus beginnt am", ohne Angabe am Montag
+    der Woche von valid_from (Gültig-ab der Fassung; None = heute, z.B. beim Anlegen eines
+    Arbeitszeitmodells, dessen erste Fassung "von Anfang an" gilt). Gespeichert wird immer das
+    feste Datum."""
     if payload.exceeds_daily_maximum:
         raise AppError(
             400,
@@ -74,14 +80,26 @@ def _contract(payload: WorkTimeModelInput) -> tuple[dict, str]:
     elif payload.monthly_hours is not None:
         minutes, period = payload.monthly_minutes, TargetPeriod.MONTHLY
         label = f"{minutes / 60:g} h/Monat"
+    elif payload.rotation_minutes is not None:
+        weeks = payload.rotation_minutes
+        minutes, period = round(sum(sum(week) for week in weeks) / len(weeks)), TargetPeriod.WEEKLY
+        label = f"im Schnitt {minutes / 60:g} h/Woche"
     else:
         minutes, period = round(payload.weekly_hours * 60), TargetPeriod.WEEKLY
         label = f"{minutes / 60:g} h/Woche"
+    rotation = payload.rotation_minutes
+    rotation_start = None
+    if rotation is not None:
+        rotation_start = payload.rotation_start or monday_of(valid_from or date.today())
+        payload.rotation_start = rotation_start  # für das Audit-Protokoll (_days_only_label)
     windows = payload.break_window_list
     window = bool(windows)
     fields = dict(
         weekdays_mask=_weekdays_to_mask(payload.weekdays or []) or _ALL_DAYS,
         day_minutes=",".join(str(m) for m in payload.day_minutes) if payload.day_minutes else None,
+        rotation_minutes=serialize_rotation(rotation) if rotation is not None else None,
+        rotation_start=rotation_start,
+        settled_overtime_minutes=payload.settled_overtime_minutes,
         flexible=payload.flexible,
         on_demand=payload.on_demand,
         monthly_cap_minutes=payload.monthly_cap_minutes,
@@ -140,7 +158,14 @@ def _flex_frame_fields(payload: WorkTimeModelInput, inherit_from: EmployeeDefaul
 
 
 def _frame_label(payload: WorkTimeModelInput) -> str:
-    """Gleitzeit-Rahmen fürs Audit-Protokoll (leer = nicht angegeben bzw. wie Einstellungen)."""
+    """Gleitzeit-Rahmen und abgegoltene Überstunden fürs Audit-Protokoll (leer = nicht angegeben
+    bzw. wie Einstellungen)."""
+    settled = payload.settled_overtime_minutes
+    suffix = f", abgegolten bis {settled / 60:g} h/Monat" if settled else ""
+    return _flex_frame_label(payload) + suffix
+
+
+def _flex_frame_label(payload: WorkTimeModelInput) -> str:
     if payload.flex_frame_mode == "CUSTOM":
         if payload.flex_frame_days is not None:
             days = describe_day_windows(day_windows(payload.flex_frame_days, None, None))
@@ -232,6 +257,7 @@ async def _describe(db: AsyncSession, version: EmployeeDefaultShift | WorkTimePr
         "flex_frame_end": version.flex_frame_end if frame else None,
         "flex_frame_days": version.flex_frame_days if frame else None,
         "late_tolerance_minutes": version.late_tolerance_minutes,
+        "settled_overtime_minutes": version.settled_overtime_minutes,
         "profile_id": profile.id if profile else None,
         "profile_name": profile.name if profile else None,
     }
@@ -253,6 +279,17 @@ def _describe_target(default: EmployeeDefaultShift, template: ShiftTemplate | No
     total, period = version_target(default, template)
     if default.flexible:
         return dict(weekly_minutes=total, daily_minutes=None, weekdays=[], day_minutes=None, flexible=True)
+    rotation = default.rotation_weeks
+    if rotation is not None:
+        # Mehrwöchiges Modell: Wochenminuten = Durchschnitt, Arbeitstage = Tage mit Soll in irgendeiner Woche.
+        return dict(
+            weekly_minutes=round(sum(sum(week) for week in rotation) / len(rotation)),
+            daily_minutes=None,
+            weekdays=[d for d in range(7) if any(week[d] > 0 for week in rotation)],
+            day_minutes=None,
+            rotation_minutes=rotation,
+            rotation_start=monday_of(default.rotation_start or default.valid_from),
+        )
     if per_day is not None:
         uneven = len(set(m for m in per_day if m > 0)) > 1
         return dict(
@@ -291,6 +328,13 @@ def _days_only_label(payload: WorkTimeModelInput) -> str:
         return f"nach Aufwand ohne Soll{cap}"
     if payload.flexible:
         return "flexibel ohne feste Tage"
+    if payload.rotation_minutes is not None:
+        weeks = "; ".join(
+            f"Woche {index}: " + (", ".join(f"{_WEEKDAY_LABELS[d]} {m / 60:g} h" for d, m in enumerate(week) if m > 0) or "frei")
+            for index, week in enumerate(payload.rotation_minutes, start=1)
+        )
+        start = f", Woche 1 ab {payload.rotation_start:%d.%m.%Y}" if payload.rotation_start else ""
+        return f"Turnus über {len(payload.rotation_minutes)} Wochen ({weeks}){start}"
     if payload.day_minutes:
         return ", ".join(f"{_WEEKDAY_LABELS[d]} {m / 60:g} h" for d, m in enumerate(payload.day_minutes) if m > 0)
     return ", ".join(_WEEKDAY_LABELS[d] for d in payload.weekdays)
@@ -322,7 +366,7 @@ async def set_work_time_model(
     läuft zum Vortag aus, spätere entfallen."""
     await _get_employee_in_tenant(db, employee_id, actor.tenant_id)
     await ensure_open_from(db, employee_id, payload.valid_from)
-    fields, soll_label = _contract(payload)
+    fields, soll_label = _contract(payload, payload.valid_from)
     template = await _times_template(db, actor.tenant_id, payload.shift_template_id)
 
     rows = await _versions(db, employee_id)
@@ -473,7 +517,7 @@ async def update_work_time_model_version(
     start = min(version.valid_from, payload.valid_from)
     await _ensure_unlocked(db, employee_id, start, version.valid_to)
 
-    fields, soll_label = _contract(payload)
+    fields, soll_label = _contract(payload, payload.valid_from)
     fields.update(_core_time_fields(payload, version))
     fields.update(_flex_frame_fields(payload, version))
     template = await _times_template(db, actor.tenant_id, payload.shift_template_id, version.shift_template_id)

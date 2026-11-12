@@ -11,6 +11,7 @@ import {
 } from '../../api/queries/correctionRequests'
 import { formatDate, todayIsoDate } from '../../lib/format'
 import { PUNCH_TYPE_LABELS } from '../../lib/labels'
+import { describeTimeEntry } from '../../lib/timeEntries'
 import { Badge, type BadgeProps } from '../ui/badge'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -32,8 +33,21 @@ const STATUS_VARIANT: Record<CorrectionRequest['status'], BadgeProps['variant']>
   REJECTED: 'danger',
 }
 
-function describeItems(items: Item[]): string {
+function describePunches(items: Item[]): string {
   return items.map((i) => `${PUNCH_TYPE_LABELS[i.punch_type]} ${i.time}${i.next_day ? ' (Folgetag)' : ''}`).join(', ')
+}
+
+function describeItems(request: CorrectionRequest): string {
+  if (request.kind !== 'TIME_ENTRY') return describePunches(request.items)
+  // Projektzeiten: Projekt und Tätigkeit je Arbeitszeit
+  return describeTimeEntry(request.items, (item) => {
+    const project = item.project_id != null ? request.project_names?.[item.project_id] : undefined
+    return [project, item.note].filter(Boolean).join(' – ') || null
+  })
+}
+
+function KindBadge({ request }: { request: CorrectionRequest }) {
+  return request.kind === 'TIME_ENTRY' ? <Badge variant="info" className="whitespace-nowrap">Zeiten eingetragen</Badge> : <Badge>Korrektur</Badge>
 }
 
 /** Mein Bereich: fehlende/falsche Stempelung melden – HR bestätigt, erst dann ändern sich die Zeiten. */
@@ -185,7 +199,7 @@ export function CorrectionRequestSelfCard() {
           <TableHeader>
             <TableRow>
               <TableHead>Tag</TableHead>
-              <TableHead>Stempelungen</TableHead>
+              <TableHead>Zeiten</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -194,7 +208,7 @@ export function CorrectionRequestSelfCard() {
               <TableRow key={request.id}>
                 <TableCell>{formatDate(request.work_date)}</TableCell>
                 <TableCell className="text-sm">
-                  {describeItems(request.items)}
+                  {describeItems(request)}
                   {request.decision_note && <div className="text-xs text-slate-500">HR: {request.decision_note}</div>}
                 </TableCell>
                 <TableCell>
@@ -228,12 +242,14 @@ export function PendingCorrectionRequests() {
 
   const requests = requestsQuery.data ?? []
   if (requestsQuery.isLoading) return <p className="text-slate-500">Lädt…</p>
-  if (requests.length === 0) return <p className="text-sm text-slate-500">Keine offenen Korrekturanträge.</p>
+  if (requests.length === 0) return <p className="text-sm text-slate-500">Keine offenen Anträge.</p>
 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-slate-500">
-        Von Mitarbeitern beantragte Korrekturen ihrer Stempelungen. „Übernehmen“ trägt sie ein.
+        Von Mitarbeitern beantragte Korrekturen ihrer Stempelungen und selbst eingetragene Zeiten (Stundenzettel), die
+        eine Genehmigung brauchen. „Übernehmen“ trägt sie ein; eingetragene Zeiten erscheinen dann mit der Quelle
+        „Selbst eingetragen“.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <Table>
@@ -241,6 +257,7 @@ export function PendingCorrectionRequests() {
           <TableRow>
             <TableHead>Mitarbeiter</TableHead>
             <TableHead>Tag</TableHead>
+            <TableHead>Art</TableHead>
             <TableHead>Beantragt</TableHead>
             <TableHead>Begründung</TableHead>
             <TableHead />
@@ -259,8 +276,11 @@ export function PendingCorrectionRequests() {
                 </button>
               </TableCell>
               <TableCell>{formatDate(request.work_date)}</TableCell>
-              <TableCell className="text-sm">{describeItems(request.items)}</TableCell>
-              <TableCell className="text-sm text-slate-600">{request.reason}</TableCell>
+              <TableCell>
+                <KindBadge request={request} />
+              </TableCell>
+              <TableCell className="text-sm">{describeItems(request)}</TableCell>
+              <TableCell className="text-sm text-slate-600">{request.reason || '–'}</TableCell>
               <TableCell className="flex justify-end gap-2">
                 <Button size="sm" disabled={decide.isPending} onClick={() => void handleDecide(request, true)}>
                   Übernehmen

@@ -16,6 +16,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.role_permissions import Area
 from app.api.deps import Actor
 from app.models import Absence, AbsenceApprovalStatus, AbsenceTypeDefinition, Account, Employee
 from app.services.org_service import load_org
@@ -126,4 +127,4 @@ async def step_recipients(db: AsyncSession, absence: Absence, employee: Employee
         recipients = await approver_recipients(db, employee)
         if recipients:
             return recipients
-    return await full_hr_recipients(db, employee.tenant_id, exclude_employee_id=employee.id)
+    return await full_hr_recipients(db, employee.tenant_id, exclude_employee_id=employee.id, area=Area.ABSENCES)

@@ -20,6 +20,7 @@ from app.services.pay_component_service import PayComponentAmount, pay_component
 from app.services.payroll_export_service import PayrollPeriod, payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges, merge_by_family
 from app.services.scope_service import ensure_employee_visible
+from app.services.timesheet_service import has_settled_limit, settled_between
 
 
 # Eigene Spalten im Lohn-Export, in dieser Reihenfolge (nur wenn im Zeitraum genutzt).
@@ -83,29 +84,13 @@ async def _load_employees(db: AsyncSession, actor: Actor, employee_ids: list[int
     return employees
 
 
-@router.get("/payroll-export")
-async def export_payroll(
-    employee_ids: list[int] = Query(default_factory=list),
-    date_from: date = Query(alias="from"),
-    date_to: date = Query(alias="to"),
-    actor: Actor = Depends(get_current_full_hr_principal),
-    db: AsyncSession = Depends(get_db),
-) -> Response:
-    """CSV-Export für die Lohnbuchhaltung: pro Mitarbeiter aggregiertes
-    Soll/Ist/Saldo sowie Abwesenheitstage über den gewählten Zeitraum (siehe
-    app/services/payroll_export_service.py). Dieselbe Sichtbarkeitsprüfung
-    wie beim PDF-Export (app/api/shift_plan_pdf.py) – ein Supervisor kann
-    nur für die eigenen Teams exportieren."""
-    if date_to < date_from:
-        raise AppError(400, "INVALID_RANGE", "'to' darf nicht vor 'from' liegen.")
-    if (date_to - date_from).days > _MAX_RANGE_DAYS:
-        raise AppError(
-            400, "RANGE_TOO_LARGE", f"Zeitraum darf maximal {_MAX_RANGE_DAYS} Tage umfassen."
-        )
-
-    employees = await _load_employees(db, actor, employee_ids)
-
-    rules = await active_rules(db, actor.tenant_id)
+async def render_payroll_csv(
+    db: AsyncSession, tenant_id: int, employees: list[Employee], date_from: date, date_to: date, include_pay: bool
+) -> str:
+    """Inhalt des Lohn-Exports (CSV, Semikolon, UTF-8 mit BOM) – auch für die Freigabe der
+    Lohnbuchhaltung (app/api/payroll_accounting.py). include_pay: Zulagen/Einmalzahlungen (Beträge)
+    nur mit Berechtigung „Vergütung & Lohn-Export“."""
+    rules = await active_rules(db, tenant_id)
     # Eine Spalte je Regel über alle Fassungen (Name der neuesten Fassung)
     families: dict[int, str] = {}
     for rule in sorted(rules, key=lambda r: (r.family, r.valid_from or date.min)):
@@ -114,7 +99,7 @@ async def export_payroll(
     periods: dict[int, PayrollPeriod] = {e.id: await payroll_period(db, e, date_from, date_to) for e in employees}
     # Zulagen/Einmalzahlungen sind Vergütung: nur mit Berechtigung „Vergütung & Lohn-Export“.
     pay: dict[int, list[PayComponentAmount]] = {}
-    if actor.has_payroll_access:
+    if include_pay:
         for employee in employees:
             pay[employee.id] = await pay_component_amounts(db, employee, date_from, date_to, periods[employee.id])
     pay_columns = sorted(
@@ -131,6 +116,12 @@ async def export_payroll(
     ]
     # Auszahlung mit Faktor (z. B. 1,5): gewichtete Stunden als eigene Spalte, nur wenn vorhanden.
     weighted_payout_column = any(summary.payout_has_factor for summary in summaries.values())
+    # Mit dem Gehalt abgegoltene Überstunden: Spalte ganz hinten, nur wenn für einen der Mitarbeiter im
+    # Zeitraum eine Grenze gilt – so bleibt der Export für alle anderen unverändert.
+    settled: dict[int, int] = {}
+    for employee in employees:
+        if await has_settled_limit(db, employee, date_from, date_to):
+            settled[employee.id] = await settled_between(db, employee, date_from, date_to)
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=";")
     writer.writerow(
@@ -156,6 +147,7 @@ async def export_payroll(
             *[_SEPARATE_UNPAID_COLUMNS[category] for category in unpaid_columns],
             *[_csv_text(f"Zuschlag {name} (Std.)") for name in families.values()],
             *[_csv_text(f"{column} (€)") for column in pay_columns],
+            *(["Abgegoltene Überstunden (Std.)"] if settled else []),
         ]
     )
 
@@ -186,15 +178,41 @@ async def export_payroll(
                 *[format_days(summary.separate_unpaid_days[category]) for category in unpaid_columns],
                 *surcharge_hours,
                 *[_euro(pay.get(employee.id, []), column) for column in pay_columns],
+                *([_minutes_to_hours_str(settled.get(employee.id, 0))] if settled else []),
             ]
         )
+
+    # UTF-8-BOM voranstellen, damit Excel Umlaute (Müller, Straße, ...) beim
+    # Öffnen korrekt als UTF-8 statt als Systemcodepage interpretiert.
+    return "﻿" + buffer.getvalue()
+
+
+@router.get("/payroll-export")
+async def export_payroll(
+    employee_ids: list[int] = Query(default_factory=list),
+    date_from: date = Query(alias="from"),
+    date_to: date = Query(alias="to"),
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """CSV-Export für die Lohnbuchhaltung: pro Mitarbeiter aggregiertes
+    Soll/Ist/Saldo sowie Abwesenheitstage über den gewählten Zeitraum (siehe
+    app/services/payroll_export_service.py). Dieselbe Sichtbarkeitsprüfung
+    wie beim PDF-Export (app/api/shift_plan_pdf.py) – ein Supervisor kann
+    nur für die eigenen Teams exportieren."""
+    if date_to < date_from:
+        raise AppError(400, "INVALID_RANGE", "'to' darf nicht vor 'from' liegen.")
+    if (date_to - date_from).days > _MAX_RANGE_DAYS:
+        raise AppError(
+            400, "RANGE_TOO_LARGE", f"Zeitraum darf maximal {_MAX_RANGE_DAYS} Tage umfassen."
+        )
+
+    employees = await _load_employees(db, actor, employee_ids)
+    content = await render_payroll_csv(db, actor.tenant_id, employees, date_from, date_to, actor.has_payroll_access)
 
     _log_export(db, actor, "CSV", date_from, date_to, len(employees))
     await db.commit()
     filename = f"lohn-export_{date_from.isoformat()}_{date_to.isoformat()}.csv"
-    # UTF-8-BOM voranstellen, damit Excel Umlaute (Müller, Straße, ...) beim
-    # Öffnen korrekt als UTF-8 statt als Systemcodepage interpretiert.
-    content = "﻿" + buffer.getvalue()
     return Response(
         content=content,
         media_type="text/csv",

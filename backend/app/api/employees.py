@@ -5,6 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.roles import assign_custom_role
 from app.api.deps import (
     Actor,
     get_current_actor,
@@ -379,6 +380,7 @@ async def bulk_import_employees(
             or parsed.flexible
             or (parsed.weekly_hours is not None and parsed.weekdays)
             or parsed.daily_hours
+            or parsed.rotation_weeks
         )
         if not has_model and default_daily:
             parsed.daily_hours = default_daily  # Standard-Arbeitszeitmodell des Mandanten
@@ -390,6 +392,9 @@ async def bulk_import_employees(
                     weekly_hours=parsed.weekly_hours,
                     weekdays=parsed.weekdays,
                     daily_hours=parsed.daily_hours,
+                    rotation_weeks=parsed.rotation_weeks,
+                    rotation_start=parsed.rotation_start,
+                    settled_overtime_hours=parsed.settled_overtime_hours,
                     flexible=parsed.flexible,
                     on_demand=parsed.on_demand,
                     monthly_cap_hours=parsed.monthly_cap_hours,
@@ -420,6 +425,8 @@ async def update_employee_hr_role(
     employee = await db.get(Employee, employee_id)
     if employee is None or employee.tenant_id != actor.tenant_id:
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
+    if payload.custom_role_id is not None and (payload.hr_role != HrRole.HR or employee.account is None):
+        raise AppError(400, "CUSTOM_ROLE_REQUIRES_HR", "Eine eigene Rolle gibt es nur für die Verwaltungsrolle HR.")
 
     if employee.hr_role == HrRole.ADMIN and payload.hr_role != HrRole.ADMIN:
         await ensure_not_last_admin(db, actor.tenant_id, exclude_employee_id=employee.id)
@@ -435,15 +442,29 @@ async def update_employee_hr_role(
     if employee.hr_payroll_access != old_payroll:
         new_role += ", Vergütung & Lohn-Export " + ("an" if employee.hr_payroll_access else "aus")
 
-    log_action(
-        db,
-        tenant_id=actor.tenant_id,
-        actor_account_id=actor.account_id,
-        action=AuditAction.EMPLOYEE_HR_ROLE_CHANGED,
-        entity_type="employee",
-        entity_id=employee.id,
-        detail=f"Rolle geändert: {old_role} -> {new_role}",
-    )
+    if old_role != new_role:
+        log_action(
+            db,
+            tenant_id=actor.tenant_id,
+            actor_account_id=actor.account_id,
+            action=AuditAction.EMPLOYEE_HR_ROLE_CHANGED,
+            entity_type="employee",
+            entity_id=employee.id,
+            detail=f"Rolle geändert: {old_role} -> {new_role}",
+        )
+
+    # Eigene Rolle: nur bei HR; wer nicht (mehr) HR ist, verliert sie (Admins/Führungskräfte nie).
+    if employee.account is not None:
+        await db.flush()
+        if employee.hr_role != HrRole.HR:
+            role_id = None
+        elif "custom_role_id" in payload.model_fields_set:
+            role_id = payload.custom_role_id
+        else:
+            role_id = employee.account.custom_role_id
+        await assign_custom_role(
+            db, actor, employee.account, role_id, label=f"{employee.first_name} {employee.last_name}"
+        )
 
     await db.commit()
     await db.refresh(employee)
@@ -556,6 +577,7 @@ async def anonymize_employee(
     employee.hr_payroll_access = False
     if employee.account is not None:
         employee.account.calendar_token_hash = None
+        employee.account.custom_role = None
     employee.active = False
     employee.anonymized_at = datetime.now(UTC)
 

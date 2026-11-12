@@ -55,6 +55,7 @@
     <tr><td>Ist gesamt</td><td class="num"><b>{{ fmt(r.actual_minutes) }} h</b></td></tr>
     <tr><td>Pausen gesamt</td><td class="num"><b>{{ fmt(r.break_minutes) }} h</b></td></tr>
     <tr><td>Saldo im Monat</td><td class="num"><b>{{ fmt(r.delta_minutes, true) }} h</b></td></tr>
+    {% if r.settled_limit_minutes or r.settled_minutes %}<tr><td>davon abgegolten (mit dem Gehalt, bis {{ fmt(r.settled_limit_minutes) }} h/Monat)</td><td class="num"><b>{{ fmt(r.settled_minutes) }} h</b></td></tr>{% endif %}
     <tr><td>Überstundenkonto zum Monatsende</td><td class="num"><b>{{ fmt(r.balance_end_minutes, true) }} h</b></td></tr>
     <tr><td>Urlaubstage / Krankheitstage / Sonderurlaub</td><td class="num"><b>{{ r.vacation_days|days }} / {{ r.sick_days|days }} / {{ r.special_leave_days|days }}</b></td></tr>
     {% if r.child_sick_days %}<tr><td>Kind krank</td><td class="num"><b>{{ r.child_sick_days|days }}</b></td></tr>{% endif %}

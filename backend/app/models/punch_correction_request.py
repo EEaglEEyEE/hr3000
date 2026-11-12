@@ -13,6 +13,13 @@ class CorrectionRequestStatus(str, enum.Enum):
     REJECTED = "REJECTED"
 
 
+class CorrectionRequestKind(str, enum.Enum):
+    # Korrektur fehlender/falscher Stempelungen ("Gehen vergessen") – übernommen als HR-Buchung
+    CORRECTION = "CORRECTION"
+    # Selbst eingetragene Zeiten (Stundenzettel) mit Genehmigung – übernommen als "selbst eingetragen"
+    TIME_ENTRY = "TIME_ENTRY"
+
+
 class PunchCorrectionRequest(Base):
     """Korrekturantrag eines Mitarbeiters ("Gehen vergessen") – HR bestätigt, erst dann werden
     die gewünschten Stempelungen als manuelle HR-Buchung angelegt, siehe
@@ -24,7 +31,12 @@ class PunchCorrectionRequest(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id"), index=True)
     work_date: Mapped[date] = mapped_column(Date)
-    # JSON-Liste [{"punch_type": "GO", "time": "17:00", "next_day": false}, ...] (Ortszeit des Standorts)
+    kind: Mapped[CorrectionRequestKind] = mapped_column(
+        Enum(CorrectionRequestKind), default=CorrectionRequestKind.CORRECTION,
+        server_default=CorrectionRequestKind.CORRECTION.value,
+    )
+    # JSON-Liste [{"punch_type": "GO", "time": "17:00", "next_day": false}, ...] (Ortszeit des Standorts).
+    # Bei TIME_ENTRY sind es die Kommen/Gehen- (und Pausen-)Stempelungen der eingetragenen Spannen.
     items: Mapped[str] = mapped_column(Text)
     reason: Mapped[str] = mapped_column(String(500))
     status: Mapped[CorrectionRequestStatus] = mapped_column(

@@ -183,19 +183,24 @@ async def leave_balance(
     )
 
 
-def _workdays_of(default: EmployeeDefaultShift) -> int:
+def _workdays_of(default: EmployeeDefaultShift) -> float:
     if default.on_demand:
         return 0  # nach Aufwand: keine festen Arbeitstage, Urlaub legt HR fest
     if default.flexible:
         return 5  # flexibel: Urlaub in Tagen der 5-Tage-Woche, Gutschrift je Tag = Wochensoll / 5
+    average = default.average_workdays
+    if average is not None:
+        # mehrwöchiges Modell: durchschnittliche Arbeitstage je Woche über den Turnus (z.B. 2,5)
+        return int(average) if average == int(average) else average
     per_day = default.day_minutes_list
     if per_day is not None:
         return sum(1 for m in per_day if m > 0)
     return bin(default.weekdays_mask).count("1")
 
 
-async def workdays_per_week(db: AsyncSession, employee_id: int, on: date) -> int | None:
-    """Arbeitstage pro Woche laut Arbeitszeitmodell an einem Stichtag (None = kein Modell)."""
+async def workdays_per_week(db: AsyncSession, employee_id: int, on: date) -> float | None:
+    """Arbeitstage pro Woche laut Arbeitszeitmodell an einem Stichtag (None = kein Modell); beim
+    mehrwöchigen Modell der Durchschnitt über den Turnus."""
     rows = (
         await db.execute(
             select(EmployeeDefaultShift).where(

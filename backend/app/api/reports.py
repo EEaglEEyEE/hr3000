@@ -1,6 +1,8 @@
 import calendar
 from datetime import date, timedelta
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,16 @@ from app.models import (
     PayType,
 )
 from app.schemas.reports import (
+    AbsenceRateDepartment,
+    AbsenceRateMonth,
+    AbsenceRateQuery,
+    AbsenceRateResponse,
+    HeadcountDepartment,
+    HeadcountDepartmentValue,
+    HeadcountMonthRow,
+    HeadcountQuery,
+    HeadcountResponse,
+    RateValue,
     AbsenceStatsEmployee,
     AbsenceStatsMonth,
     AbsenceStatsResponse,
@@ -41,7 +53,9 @@ from app.services.leave_service import leave_day_weight, leave_balance
 from app.services.pay_component_service import pay_component_amounts
 from app.services.payroll_export_service import payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges
+from app.services.settings_service import get_or_create_settings
 from app.services.timesheet_service import balance_as_of
+from app.services import workforce_stats_service as workforce
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -99,7 +113,7 @@ async def _planned_workdays(
             if active is None:
                 count += day.weekday() < 5
             elif not active.on_demand:
-                per_day = active.day_minutes_list
+                per_day = active.day_minutes_on(day)  # mehrwöchiges Modell: Turnus-Woche des Tages
                 if active.flexible:
                     count += day.weekday() < 5
                 elif per_day is not None:
@@ -444,3 +458,83 @@ async def labor_costs(
     )
     await db.commit()
     return LaborCostResponse(date_from=date_from, date_to=date_to, rows=rows, total_cost=round(total, 2))
+
+
+# --- Abwesenheitsquote und Köpfe/FTE ---------------------------------------------------------------
+
+
+def _department_name(names: dict[int, str], department_id: int | None) -> str:
+    return names.get(department_id, "Ohne Abteilung") if department_id is not None else "Ohne Abteilung"
+
+
+def _rate(cell: workforce.RateCell) -> dict:
+    return dict(absence_days=round(cell.absence_days, 2), workdays=cell.workdays, rate_percent=cell.rate_percent)
+
+
+@router.get("/absence-rate", response_model=AbsenceRateResponse)
+async def absence_rate(
+    query: Annotated[AbsenceRateQuery, Query()],
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> AbsenceRateResponse:
+    """Abwesenheitstage der gewählten Kategorien / Soll-Arbeitstage je Monat, gesamt und je
+    Abteilung (Näherungen: app/services/workforce_stats_service.py)."""
+    result = await workforce.absence_rate(db, actor.tenant_id, query.date_from, query.date_to, set(query.categories))
+    departments = []
+    for department_id, months in sorted(
+        result.departments.items(), key=lambda item: (item[0] is None, _department_name(result.department_names, item[0]).casefold())
+    ):
+        total = workforce.RateCell(sum(c.absence_days for c in months.values()), sum(c.workdays for c in months.values()))
+        departments.append(
+            AbsenceRateDepartment(
+                department_id=department_id,
+                name=_department_name(result.department_names, department_id),
+                months=[AbsenceRateMonth(month=key, **_rate(cell)) for key, cell in months.items()],
+                total=RateValue(**_rate(total)),
+            )
+        )
+    return AbsenceRateResponse(
+        date_from=query.date_from,
+        date_to=query.date_to,
+        through=result.through,
+        categories=query.categories,
+        months=[AbsenceRateMonth(month=key, **_rate(cell)) for key, cell in result.months.items()],
+        total=RateValue(**_rate(result.total)),
+        departments=departments,
+    )
+
+
+@router.get("/headcount", response_model=HeadcountResponse)
+async def headcount(
+    query: Annotated[HeadcountQuery, Query()],
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> HeadcountResponse:
+    """Köpfe und Vollzeitstellen (FTE) je Monatsende, gesamt und je Abteilung, mit Zu- und Abgängen."""
+    settings_row = await get_or_create_settings(db, actor.tenant_id)
+    result = await workforce.headcount(db, actor.tenant_id, settings_row, query.date_from, query.date_to)
+    seen = {department_id for month in result.months for department_id in month.departments}
+    ordered = sorted(seen, key=lambda d: (d is None, _department_name(result.department_names, d).casefold()))
+    return HeadcountResponse(
+        date_from=query.date_from,
+        date_to=query.date_to,
+        full_time_weekly_hours=round(result.full_time_minutes / 60, 2),
+        full_time_from_settings=result.full_time_from_settings,
+        months=[
+            HeadcountMonthRow(
+                month=month.month,
+                as_of=month.as_of,
+                headcount=month.total.headcount,
+                fte=round(month.total.fte, 2),
+                joiners=month.joiners,
+                leavers=month.leavers,
+                departments=[
+                    HeadcountDepartmentValue(department_id=d, headcount=month.departments[d].headcount, fte=round(month.departments[d].fte, 2))
+                    for d in ordered
+                    if d in month.departments
+                ],
+            )
+            for month in result.months
+        ],
+        departments=[HeadcountDepartment(department_id=d, name=_department_name(result.department_names, d)) for d in ordered],
+    )

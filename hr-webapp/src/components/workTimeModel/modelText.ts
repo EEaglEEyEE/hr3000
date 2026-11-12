@@ -44,6 +44,38 @@ export function formatHours(minutes: number): string {
   return (minutes / 60).toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
+/** Montag der Woche eines Datums (lokal, ohne Uhrzeit). */
+function mondayOf(day: Date): Date {
+  const result = new Date(day.getFullYear(), day.getMonth(), day.getDate())
+  result.setDate(result.getDate() - ((result.getDay() + 6) % 7))
+  return result
+}
+
+/** 0-basierte Woche eines mehrwöchigen Turnus an einem Tag: Wochen seit dem Montag der Woche 1
+ * (`start`, ISO-Datum), modulo Turnuslänge – auch vor dem Start richtig herum (wie im Backend). */
+export function rotationWeekIndex(start: string, weeks: number, day: Date): number {
+  const [year, month, date] = start.split('-').map(Number)
+  const first = mondayOf(new Date(year, month - 1, date))
+  // Math.round: Sommer-/Winterzeit verschiebt die Differenz um eine Stunde
+  const diff = Math.round((mondayOf(day).getTime() - first.getTime()) / (7 * 24 * 3600 * 1000))
+  return ((diff % weeks) + weeks) % weeks
+}
+
+/** Turnus als Text, z. B. "Woche 1: Mo 8 h, Di 8 h; Woche 2: Do 8 h" (freie Woche: "frei"). */
+export function rotationText(weeks: number[][]): string {
+  return weeks
+    .map(
+      (week, index) =>
+        `Woche ${index + 1}: ${
+          week
+            .map((m, d) => (m > 0 ? `${WEEKDAYS[d]} ${formatHours(m)} h` : null))
+            .filter(Boolean)
+            .join(', ') || 'frei'
+        }`,
+    )
+    .join('; ')
+}
+
 export function formatRange(version: { valid_from: string; valid_to?: string | null }): string {
   return `${formatDate(version.valid_from)} – ${version.valid_to ? formatDate(version.valid_to) : 'heute'}`
 }
@@ -66,7 +98,8 @@ export function describeVersion(version: ModelSource): string {
     shiftLabel(version) +
     (core ? `, ${core}` : '') +
     (frame ? `, Gleitzeit-Rahmen ${frame}` : '') +
-    (version.late_tolerance_minutes != null ? `, Toleranz ${version.late_tolerance_minutes} Min.` : '')
+    (version.late_tolerance_minutes != null ? `, Toleranz ${version.late_tolerance_minutes} Min.` : '') +
+    (version.settled_overtime_minutes ? `, abgegolten bis ${formatHours(version.settled_overtime_minutes)} h/Monat` : '')
   )
 }
 
@@ -76,6 +109,11 @@ function describeTarget(version: ModelSource): string {
   }
   if (version.monthly_minutes != null) {
     return `${formatHours(version.monthly_minutes)} h/Monat an ${version.weekdays.map((d) => WEEKDAYS[d]).join(', ')}`
+  }
+  if (version.rotation_minutes && version.rotation_minutes.length > 0) {
+    const average = version.weekly_minutes != null ? `im Schnitt ${formatHours(version.weekly_minutes)} h/Woche, ` : ''
+    const start = version.rotation_start ? `, Woche 1 ab ${formatDate(version.rotation_start)}` : ''
+    return `${average}Turnus über ${version.rotation_minutes.length} Wochen (${rotationText(version.rotation_minutes)})${start}`
   }
   const weekly = version.weekly_minutes != null ? `${formatHours(version.weekly_minutes)} h/Woche` : ''
   if (version.flexible) return `${weekly}, flexibel ohne feste Tage`

@@ -131,19 +131,27 @@ export function useUpdateEmployeeHrRoleMutation() {
       employeeId,
       hrRole,
       payrollAccess,
+      customRoleId,
     }: {
       employeeId: number
       hrRole: HrRole | null
       payrollAccess?: boolean
+      /** Eigene Rolle (nur HR): undefined = unverändert, null = keine */
+      customRoleId?: number | null
     }) =>
       unwrap(
         await apiClient.PATCH('/employees/{employee_id}/hr-role', {
           params: { path: { employee_id: employeeId } },
-          body: { hr_role: hrRole, ...(payrollAccess === undefined ? {} : { payroll_access: payrollAccess }) },
+          body: {
+            hr_role: hrRole,
+            ...(payrollAccess === undefined ? {} : { payroll_access: payrollAccess }),
+            ...(customRoleId === undefined ? {} : { custom_role_id: customRoleId }),
+          },
         }),
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
+      void queryClient.invalidateQueries({ queryKey: ['roles'] })
     },
   })
 }

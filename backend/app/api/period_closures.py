@@ -197,6 +197,7 @@ async def _submit(
     closure.actual_minutes = report.actual_minutes
     closure.delta_minutes = report.delta_minutes
     closure.balance_end_minutes = report.balance_end_minutes
+    closure.settled_minutes = report.settled_minutes
     closure.document_id = document.id
     closure.report_sha256 = document.sha256
     closure.submitted_at = now

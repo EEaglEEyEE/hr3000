@@ -16,6 +16,9 @@ Seite „Lohnarten“):
 - Zuschlagsstunden je Zuschlagsregel mit hinterlegter Lohnart,
 - Zulagen und Einmalzahlungen mit der Lohnart ihrer Art als Betrag.
 
+Mit dem Gehalt abgegoltene Überstunden (Grenze im Arbeitszeitmodell) lösen keine Zahlung aus und
+werden deshalb nicht gebucht; die Vorschau nennt sie je Mitarbeiter als Hinweis.
+
 Gutschriften ohne Lohnart erfasst das Lohnbüro wie bisher als Fehlzeiten (z.B. aus dem
 CSV-Lohn-Export); die Vorschau nennt sie je Mitarbeiter. Was nicht übertragen werden kann, steht in
 den Hinweisen. Der Aufbau muss mit dem Lohnbüro einmal per Testimport abgestimmt werden.
@@ -34,6 +37,7 @@ from app.schemas.wage_type import WAGE_TYPE_LABELS
 from app.services.pay_component_service import pay_component_amounts
 from app.services.payroll_export_service import payroll_period
 from app.services.surcharge_service import active_rules, compute_surcharges
+from app.services.timesheet_service import has_settled_limit, settled_between
 from app.services.wage_type_service import wage_type_map
 
 HOURS = "01"
@@ -205,6 +209,13 @@ async def build_datev_export(db: AsyncSession, tenant_id: int, employees: list[E
             else:
                 export.warnings.append(
                     f"{name}: {_hours_text(summary.payout_minutes)} Std. ausgezahlte Überstunden ohne Lohnart – nicht übertragen."
+                )
+
+        if await has_settled_limit(db, employee, first, last):
+            settled = await settled_between(db, employee, first, last)
+            if settled:
+                export.warnings.append(
+                    f"{name}: {_hours_text(settled)} Std. Überstunden mit dem Gehalt abgegolten – keine Buchung, nur zur Information."
                 )
 
         for total in await compute_surcharges(db, employee, first, last, rules):

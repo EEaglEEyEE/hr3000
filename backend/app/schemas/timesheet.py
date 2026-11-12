@@ -72,6 +72,10 @@ class OvertimeBalanceResponse(BaseModel):
     adjustment_minutes: int = 0
     # Erster Kontotag (None = noch kein Konto: beginnt mit der ersten Stempelung)
     balance_start: date | None = None
+    # Mit dem Gehalt abgegoltene Überstunden: Grenze im laufenden Monat (None = keine) und davon
+    # bisher abgegolten (laufend gekappter Monatssaldo, nicht im Kontostand enthalten).
+    settled_limit_minutes: int | None = None
+    settled_month_minutes: int = 0
 
 
 class WeeklyBalanceWeek(BaseModel):

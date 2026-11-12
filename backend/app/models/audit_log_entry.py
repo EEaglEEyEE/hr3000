@@ -56,6 +56,34 @@ class AuditAction(str, enum.Enum):
     ATTRIBUTE_CHANGED = "ATTRIBUTE_CHANGED"
     # Registrierungsschlüssel erzeugt/gesperrt, Tablet per MDM eingerichtet, Anfrage freigegeben/abgelehnt
     DEVICE_ENROLLMENT = "DEVICE_ENROLLMENT"
+    # Hinweisgebersystem: Beauftragte benannt/abberufen; Meldung angesehen, bearbeitet, gelöscht –
+    # nie mit Inhalten (app/services/whistle_service.py)
+    WHISTLE_OFFICER_CHANGED = "WHISTLE_OFFICER_CHANGED"
+    WHISTLE_CASE_VIEWED = "WHISTLE_CASE_VIEWED"
+    WHISTLE_CASE_CHANGED = "WHISTLE_CASE_CHANGED"
+    WHISTLE_CASE_DELETED = "WHISTLE_CASE_DELETED"
+    # Eigene Berichte (Berichts-Builder): Definition angelegt/geändert/gelöscht, ausgeführt (Vorschau),
+    # als CSV exportiert – jeweils ohne Inhalte
+    REPORT_CHANGED = "REPORT_CHANGED"
+    REPORT_RUN = "REPORT_RUN"
+    REPORT_EXPORTED = "REPORT_EXPORTED"
+    # Recruiting: Stelle angelegt/geändert/gelöscht, Bewerbung angelegt/geändert (Phase, Notiz,
+    # Bewertung, Übernahme), Anhang angesehen/heruntergeladen, Bewerbung gelöscht (ohne Inhalte)
+    RECRUITING_JOB_CHANGED = "RECRUITING_JOB_CHANGED"
+    RECRUITING_APPLICATION_CHANGED = "RECRUITING_APPLICATION_CHANGED"
+    RECRUITING_ATTACHMENT_ACCESSED = "RECRUITING_ATTACHMENT_ACCESSED"
+    RECRUITING_DELETED = "RECRUITING_DELETED"
+    # Eigene Rolle angelegt/geändert/gelöscht bzw. einem Konto zugewiesen oder entzogen
+    ROLE_CHANGED = "ROLE_CHANGED"
+    # Lohnbuchhaltung: Monat freigegeben / Freigabe zurückgenommen / Monat oder Datei abgerufen
+    PAYROLL_RELEASED = "PAYROLL_RELEASED"
+    PAYROLL_RELEASE_REVOKED = "PAYROLL_RELEASE_REVOKED"
+    # Zeiten selbst eintragen (Stundenzettel): ohne Genehmigung eingetragen bzw. selbst wieder gelöscht
+    TIME_ENTRY_CREATED = "TIME_ENTRY_CREATED"
+    TIME_ENTRY_DELETED = "TIME_ENTRY_DELETED"
+    # Projektzeiten: Kunde oder Projekt angelegt/geändert/gelöscht, Projekt einer Stempelung geändert
+    PROJECT_CHANGED = "PROJECT_CHANGED"
+    PAYROLL_ACCOUNTING_ACCESSED = "PAYROLL_ACCOUNTING_ACCESSED"
 
 
 class AuditLogEntry(Base):

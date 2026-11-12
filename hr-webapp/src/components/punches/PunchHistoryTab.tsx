@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useDeletePunchMutation, useEmployeePunchesQuery, type Punch } from '../../api/queries/punches'
+import { useProjectsQuery } from '../../api/queries/projects'
+import { useFeaturesQuery } from '../../api/queries/workTimeModel'
 import { formatDateTime } from '../../lib/format'
 import { PUNCH_SOURCE_LABELS, PUNCH_SOURCE_VARIANT, PUNCH_TYPE_LABELS } from '../../lib/labels'
 import { Badge } from '../ui/badge'
@@ -9,6 +11,25 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import { PunchCorrectionDialog } from './PunchCorrectionDialog'
 import { PunchCreateDialog } from './PunchCreateDialog'
+
+/** Kennzeichen der Standortprüfung beim Stempeln im Web-Login („innerhalb“ bleibt ohne Kennzeichen). */
+export function LocationCheckBadge({ check }: { check: Punch['location_check'] }) {
+  if (check === 'OUTSIDE') {
+    return (
+      <Badge variant="danger" title="Im Web-Login außerhalb der Firmenstandorte gestempelt (gespeichert ist nur das Ergebnis, keine Koordinaten)">
+        außerhalb
+      </Badge>
+    )
+  }
+  if (check === 'UNKNOWN') {
+    return (
+      <Badge variant="warning" title="Standort beim Stempeln nicht freigegeben oder zu ungenau">
+        Standort unbekannt
+      </Badge>
+    )
+  }
+  return null
+}
 
 export function PunchHistoryTab({
   employeeId,
@@ -19,6 +40,15 @@ export function PunchHistoryTab({
 }) {
   const punchesQuery = useEmployeePunchesQuery(employeeId)
   const deletePunch = useDeletePunchMutation(employeeId)
+  // Projektzeiten: Projekt am „Kommen“ anzeigen und beim Korrigieren ändern (nur Verwaltung)
+  const projectsEnabled = useFeaturesQuery(!readOnly).data?.project_times_enabled === true
+  const projects = useProjectsQuery(!readOnly && projectsEnabled).data
+  const projectLabel = (punch: Punch) => {
+    if (punch.project_id == null) return null
+    const project = projects?.find((p) => p.id === punch.project_id)
+    const name = project ? `${project.number ? `${project.number} ` : ''}${project.name}` : `Projekt ${punch.project_id}`
+    return punch.activity_note ? `${name} – ${punch.activity_note}` : name
+  }
   const [selectedPunch, setSelectedPunch] = useState<Punch | undefined>(undefined)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -65,11 +95,17 @@ export function PunchHistoryTab({
           {punches.map((punch) => (
             <TableRow key={punch.id}>
               <TableCell>{formatDateTime(punch.timestamp_utc)}</TableCell>
-              <TableCell>{PUNCH_TYPE_LABELS[punch.punch_type]}</TableCell>
               <TableCell>
-                <Badge variant={PUNCH_SOURCE_VARIANT[punch.source]}>
-                  {PUNCH_SOURCE_LABELS[punch.source]}
-                </Badge>
+                {PUNCH_TYPE_LABELS[punch.punch_type]}
+                {projectsEnabled && projectLabel(punch) && <div className="text-xs text-slate-500">{projectLabel(punch)}</div>}
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-wrap gap-1">
+                  <Badge variant={PUNCH_SOURCE_VARIANT[punch.source]}>
+                    {PUNCH_SOURCE_LABELS[punch.source]}
+                  </Badge>
+                  <LocationCheckBadge check={punch.location_check} />
+                </div>
               </TableCell>
               <TableCell>
                 {punch.corrected ? (
@@ -111,6 +147,7 @@ export function PunchHistoryTab({
             onOpenChange={setDialogOpen}
             punch={selectedPunch}
             employeeId={employeeId}
+            projects={projectsEnabled ? (projects ?? []) : undefined}
           />
           <PunchCreateDialog
             open={createDialogOpen}

@@ -8,6 +8,7 @@ from app.api.deps import Actor, get_current_full_hr_principal
 from app.db import get_db
 from app.models import Account, AuditLogEntry
 from app.schemas.audit_log import AuditLogEntryResponse
+from app.services.whistle_service import ENTITY_TYPE as WHISTLE_ENTITY_TYPE
 
 router = APIRouter(tags=["audit_log"])
 
@@ -28,7 +29,11 @@ async def list_audit_log(
     SUPER_ADMIN beschränkt (siehe get_current_full_hr_principal), da ein
     Supervisor damit auch Aktionen außerhalb der eigenen Teams einsehen
     könnte."""
-    stmt = select(AuditLogEntry).where(AuditLogEntry.tenant_id == actor.tenant_id)
+    # Einträge zu Meldungen des Hinweisgebersystems gehören nicht hierher: Schon „Meldung X angesehen“
+    # würde Admins und HR verraten, dass es eine Meldung gibt. Die Meldestelle sieht sie am Vorgang.
+    stmt = select(AuditLogEntry).where(
+        AuditLogEntry.tenant_id == actor.tenant_id, AuditLogEntry.entity_type != WHISTLE_ENTITY_TYPE
+    )
     if entity_type is not None:
         stmt = stmt.where(AuditLogEntry.entity_type == entity_type)
     if date_from is not None:

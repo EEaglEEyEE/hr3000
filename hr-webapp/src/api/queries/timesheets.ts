@@ -82,8 +82,9 @@ export function useOpenDaysQuery(filters: { from?: string; to?: string; location
 }
 
 /** Anzahl der Tage unter "Zu klären" für das Menü – teilt den Cache mit der Seite, aktualisiert minütlich. */
-export function useOpenDaysCount(): number {
+export function useOpenDaysCount(enabled = true): number {
   const { data } = useQuery({
+    enabled,
     queryKey: ['open-days', {}],
     queryFn: async () => unwrap(await apiClient.GET('/timesheet/open-days', { params: { query: {} } })),
     refetchInterval: 60_000,
@@ -92,8 +93,9 @@ export function useOpenDaysCount(): number {
 }
 
 /** Überstundenkonten ab 90 % der Obergrenze bzw. unter der Untergrenze (Einstellungen). */
-export function useBalanceLimitsQuery() {
+export function useBalanceLimitsQuery(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ['balance-limits'],
     queryFn: async () => unwrap(await apiClient.GET('/timesheet/balance-limits')),
     refetchInterval: 60_000,
@@ -101,8 +103,9 @@ export function useBalanceLimitsQuery() {
 }
 
 /** Aushilfen "nach Aufwand", die ≥ 90 % ihrer Monatsgrenze erreicht haben. */
-export function useMonthlyCapsQuery() {
+export function useMonthlyCapsQuery(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ['monthly-caps'],
     queryFn: async () => unwrap(await apiClient.GET('/timesheet/monthly-caps')),
     refetchInterval: 60_000,

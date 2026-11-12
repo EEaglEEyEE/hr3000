@@ -9,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import Actor, get_current_actor, get_current_full_hr_principal, get_current_hr_or_self
 from app.db import get_db
 from app.errors import AppError
-from app.models import AuditAction, Employee, Punch, PunchSource, PunchType
+from app.models import AuditAction, Employee, Project, Punch, PunchSource, PunchType
 from app.schemas.common import normalize_card_uid
 from app.schemas.punch import OwnPunchRequest, PunchCorrectionRequest, PunchCreateRequest, PunchResponse
 from app.services.audit_service import log_action
 from app.services import rate_limiter
+from app.services.punch_location_service import check_own_punch
 from app.services.auth_service import verify_password
 from app.services.settings_service import get_or_create_settings
 from app.services.timesheet_service import (
@@ -184,6 +185,9 @@ async def create_own_punch(
     if not settings_row.portal_punching_enabled:
         raise AppError(403, "PORTAL_PUNCHING_DISABLED", "Stempeln über den Web-Login ist nicht freigeschaltet.")
     _ensure_punch_type_enabled(settings_row, payload.punch_type)
+    # Standort (A18): nur das Ergebnis wird gespeichert, die Position nie; im Modus „außerhalb nicht
+    # erlauben“ lehnt check_own_punch außerhalb/unbekannt ab.
+    location_check = await check_own_punch(db, settings_row, actor.tenant_id, payload.position)
 
     now = datetime.now(UTC).replace(tzinfo=None)
     # Doppelklick-Schutz: dieselbe Aktion innerhalb einer Minute nur einmal.
@@ -210,6 +214,8 @@ async def create_own_punch(
         source=PunchSource.PORTAL,
         created_by_account_id=actor.account_id,
         idempotency_key=str(uuid.uuid4()),
+        location_check=location_check.result if location_check else None,
+        location_check_location_id=location_check.location_id if location_check else None,
     )
     db.add(punch)
     await db.flush()
@@ -268,6 +274,7 @@ async def correct_punch(
         punch.punch_type = payload.punch_type
     if payload.timestamp_utc is not None:
         punch.timestamp_utc = payload.timestamp_utc
+    project_note = await _apply_project_change(db, actor, punch, payload)
     punch.corrected = True
     punch.correction_reason = payload.correction_reason
     punch.created_by_account_id = actor.account_id
@@ -279,7 +286,7 @@ async def correct_punch(
         action=AuditAction.PUNCH_CORRECTED,
         entity_type="punch",
         entity_id=punch.id,
-        detail=payload.correction_reason,
+        detail=f"{payload.correction_reason}{project_note}"[:500],
     )
 
     await db.commit()
@@ -295,6 +302,24 @@ async def correct_punch(
     await _broadcast_balance_update(db, employee, calculation)
 
     return PunchResponse.model_validate(punch)
+
+
+async def _apply_project_change(db: AsyncSession, actor: Actor, punch: Punch, payload: PunchCorrectionRequest) -> str:
+    """HR ändert Projekt/Tätigkeit einer Spanne (nur am "Kommen"). Liefert einen Zusatz fürs Audit."""
+    fields = payload.model_fields_set & {"project_id", "activity_note"}
+    if not fields:
+        return ""
+    if punch.punch_type != PunchType.COME:
+        raise AppError(400, "PROJECT_ONLY_ON_COME", "Ein Projekt lässt sich nur am „Kommen“ zuordnen.")
+    if "project_id" in fields and payload.project_id is not None:
+        project = await db.get(Project, payload.project_id)
+        if project is None or project.tenant_id != actor.tenant_id:
+            raise AppError(404, "PROJECT_NOT_FOUND", "Projekt nicht gefunden.")
+    if "project_id" in fields:
+        punch.project_id = payload.project_id
+    if "activity_note" in fields:
+        punch.activity_note = (payload.activity_note or "").strip() or None
+    return f" (Projekt: {punch.project_id or 'keins'})"
 
 
 @router.delete("/punches/{punch_id}", status_code=204)

@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.rotation import ROTATION_MAX_WEEKS, ROTATION_MIN_WEEKS, monday_of
 from app.schemas.break_rule import MAX_BREAK_WINDOWS, BreakWindow, check_window, check_windows
 from app.schemas.core_time import CoreTimeDays, CoreTimeMode, FlexFrameDays, check_core_time, day_windows
 
@@ -16,8 +17,9 @@ class WorkTimeModelInput(BaseModel):
     (weekly_hours + weekdays) ODER Stunden je Wochentag (daily_hours, 7 Werte Mo..So, 0 = frei) –
     z.B. für Teilzeit Mo/Di 8 Std., Mi 4 Std. – ODER feste Monatsstunden (monthly_hours + weekdays):
     jeden Monat dasselbe Soll, gleichmäßig auf die Arbeitstage des jeweiligen Monats verteilt.
-    Feiertage und genehmigte Abwesenheiten werden mit dem Soll des jeweiligen Tages
-    gutgeschrieben, Urlaubstage zählen nur an Arbeitstagen."""
+    ODER ein mehrwöchiger Turnus (rotation_weeks: 2–4 Wochen mit je 7 Werten Mo..So), der sich
+    fortlaufend wiederholt. Feiertage und genehmigte Abwesenheiten werden mit dem Soll des jeweiligen
+    Tages gutgeschrieben, Urlaubstage zählen nur an Arbeitstagen."""
 
     weekly_hours: float | None = Field(default=None, gt=0, le=60)
     # Festes Monatssoll (z.B. 108,5 Std.), unabhängig von der Zahl der Arbeitstage im Monat.
@@ -25,11 +27,23 @@ class WorkTimeModelInput(BaseModel):
     # 0 = Montag … 6 = Sonntag
     weekdays: list[int] | None = Field(default=None, min_length=1, max_length=7)
     daily_hours: list[float] | None = Field(default=None, min_length=7, max_length=7)
+    # Mehrwöchiges Modell: Stunden je Wochentag für jede Woche des Turnus (2–4 Wochen, je 7 Werte
+    # Mo..So, 0 = frei). Woche 1 beginnt am Montag der Woche von rotation_start, ohne Angabe am
+    # Montag der Woche des Gültig-ab-Datums.
+    rotation_weeks: list[list[float]] | None = Field(
+        default=None, min_length=ROTATION_MIN_WEEKS, max_length=ROTATION_MAX_WEEKS
+    )
+    # "Turnus beginnt am": beliebiger Tag der Woche 1 (wird auf deren Montag gelegt).
+    rotation_start: date | None = None
     # Flexibel (Aushilfe): nur Wochenstunden, keine festen Arbeitstage.
     flexible: bool = False
     # Nach Aufwand: kein Soll, Abrechnung nach Ist-Stunden; optional Monatsgrenze als Warnung.
     on_demand: bool = False
     monthly_cap_hours: float | None = Field(default=None, gt=0, le=400)
+    # Mit dem Gehalt abgegoltene Überstunden je Kalendermonat (Stunden, 0/leer = keine): Mehrarbeit
+    # eines Monats bis zu dieser Grenze wird dem Gleitzeitkonto nicht gutgeschrieben. Nicht bei
+    # "nach Aufwand" (kein Konto).
+    settled_overtime_hours: float | None = Field(default=None, ge=0, le=100)
     # Eigene Pause statt der betrieblichen Pausenregeln des Mandanten (die gesetzliche Staffel gilt
     # immer zusätzlich als Untergrenze): feste Minuten je Arbeitstag ODER feste Pausenzeit.
     break_minutes: int | None = Field(default=None, gt=0, le=240)
@@ -156,8 +170,53 @@ class WorkTimeModelInput(BaseModel):
             raise ValueError("Mindestens ein Tag braucht Stunden.")
         return value
 
+    @field_validator("rotation_weeks")
+    @classmethod
+    def _valid_rotation(cls, value: list[list[float]] | None) -> list[list[float]] | None:
+        if value is None:
+            return value
+        if any(len(week) != 7 for week in value):
+            raise ValueError("Jede Woche des Turnus braucht sieben Werte (Montag bis Sonntag).")
+        if any(h < 0 or h > 24 for week in value for h in week):
+            raise ValueError("Stunden je Tag müssen zwischen 0 und 24 liegen.")
+        if not any(round(h * 60) > 0 for week in value for h in week):
+            raise ValueError("Mindestens ein Tag braucht Stunden.")
+        if any(round(sum(week), 4) > 60 for week in value):
+            raise ValueError("Mehr als 60 Wochenstunden sind nicht möglich.")
+        return value
+
+    @field_validator("rotation_start")
+    @classmethod
+    def _valid_rotation_start(cls, value: date | None) -> date | None:
+        if value is None:
+            return value
+        if not (2000 <= value.year <= 2100):
+            raise ValueError("„Turnus beginnt am“ muss zwischen 2000 und 2100 liegen.")
+        return monday_of(value)
+
+    @model_validator(mode="after")
+    def _settled_overtime(self) -> "WorkTimeModelInput":
+        if self.on_demand and self.settled_overtime_minutes:
+            raise ValueError("Bei „Nach Aufwand“ gibt es kein Überstundenkonto und keine abgegoltenen Überstunden.")
+        return self
+
     @model_validator(mode="after")
     def _derive(self) -> "WorkTimeModelInput":
+        if self.rotation_weeks is not None:
+            if self.flexible or self.on_demand or self.monthly_hours is not None:
+                raise ValueError(
+                    "Ein mehrwöchiges Modell lässt sich nicht mit flexibel, nach Aufwand oder Monatsstunden verbinden."
+                )
+            self.monthly_cap_hours = None
+            self.daily_hours = None
+            # Arbeitstage = alle Tage, die in irgendeiner Woche Stunden haben; Wochenstunden = Durchschnitt.
+            self.weekdays = [
+                day for day in range(7) if any(round(week[day] * 60) > 0 for week in self.rotation_weeks)
+            ]
+            self.weekly_hours = round(sum(sum(week) for week in self.rotation_weeks) / len(self.rotation_weeks), 4)
+            return self
+        if self.rotation_start is not None:
+            raise ValueError("„Turnus beginnt am“ gibt es nur beim mehrwöchigen Modell.")
         if self.on_demand:
             if self.flexible:
                 raise ValueError("Ein Modell ist entweder flexibel oder nach Aufwand.")
@@ -195,6 +254,13 @@ class WorkTimeModelInput(BaseModel):
         return self
 
     @property
+    def settled_overtime_minutes(self) -> int | None:
+        """Abgegoltene Überstunden je Monat in Minuten (None = keine, auch bei 0)."""
+        if self.settled_overtime_hours is None:
+            return None
+        return round(self.settled_overtime_hours * 60) or None
+
+    @property
     def monthly_cap_minutes(self) -> int | None:
         return round(self.monthly_cap_hours * 60) if self.monthly_cap_hours is not None else None
 
@@ -207,10 +273,19 @@ class WorkTimeModelInput(BaseModel):
         return [round(h * 60) for h in self.daily_hours] if self.daily_hours is not None else None
 
     @property
+    def rotation_minutes(self) -> list[list[int]] | None:
+        """Soll-Minuten je Turnus-Woche und Wochentag (None = kein mehrwöchiges Modell)."""
+        if self.rotation_weeks is None:
+            return None
+        return [[round(h * 60) for h in week] for week in self.rotation_weeks]
+
+    @property
     def exceeds_daily_maximum(self) -> bool:
         """§3 ArbZG: mehr als 10 Std. je Arbeitstag (geprüft mit fachlicher Meldung, siehe API)."""
         if self.flexible or self.on_demand:
             return False  # keine festen Tage – Tagesgrenze wird erst beim Stempeln geprüft
+        if self.rotation_weeks is not None:
+            return any(m > 600 for week in self.rotation_minutes for m in week)
         if self.daily_hours is not None:
             return any(m > 600 for m in self.day_minutes)
         if self.monthly_hours is not None:
@@ -244,6 +319,12 @@ class WorkTimeModelFields(BaseModel):
     # Soll-Minuten je Wochentag (Mo..So) – bei ungleich verteilten Stunden maßgeblich.
     day_minutes: list[int] | None = None
     uneven: bool = False
+    # Mehrwöchiges Modell: Soll-Minuten je Turnus-Woche (je 7 Werte Mo..So) und der Montag der
+    # Woche 1; weekly_minutes ist dann der Durchschnitt, weekdays alle Tage mit Soll in irgendeiner Woche.
+    rotation_minutes: list[list[int]] | None = None
+    rotation_start: date | None = None
+    # Mit dem Gehalt abgegoltene Überstunden je Kalendermonat (Minuten, None = keine)
+    settled_overtime_minutes: int | None = None
     flexible: bool = False
     on_demand: bool = False
     monthly_cap_minutes: int | None = None

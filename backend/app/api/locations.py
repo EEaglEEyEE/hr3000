@@ -34,6 +34,9 @@ async def create_location(
         name=payload.name,
         timezone=payload.timezone,
         bundesland=payload.bundesland.value if payload.bundesland else None,
+        geo_latitude=payload.geo_latitude,
+        geo_longitude=payload.geo_longitude,
+        geo_radius_m=payload.geo_radius_m,
     )
     db.add(location)
     await db.commit()
@@ -64,6 +67,12 @@ async def update_location(
         location.bundesland = payload.bundesland.value
     elif payload.clear_bundesland:
         location.bundesland = None
+    if payload.geo_radius_m is not None:  # Schema: Breite, Länge und Radius nur zusammen
+        location.geo_latitude = payload.geo_latitude
+        location.geo_longitude = payload.geo_longitude
+        location.geo_radius_m = payload.geo_radius_m
+    elif payload.clear_geofence:
+        location.geo_latitude = location.geo_longitude = location.geo_radius_m = None
 
     await db.commit()
     if location.bundesland != old_state:

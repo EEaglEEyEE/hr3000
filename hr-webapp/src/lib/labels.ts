@@ -22,6 +22,7 @@ export const PUNCH_SOURCE_LABELS: Record<PunchSource, string> = {
   MANUAL_HR: 'HR manuell',
   AUTO_BREAK: 'Automatisch (Pause)',
   PORTAL: 'Web-Login',
+  SELF_ENTRY: 'Selbst eingetragen',
 }
 
 export const PUNCH_SOURCE_VARIANT: Record<PunchSource, BadgeProps['variant']> = {
@@ -29,6 +30,7 @@ export const PUNCH_SOURCE_VARIANT: Record<PunchSource, BadgeProps['variant']> = 
   MANUAL_HR: 'warning',
   AUTO_BREAK: 'info',
   PORTAL: 'violet',
+  SELF_ENTRY: 'success',
 }
 
 export const ABSENCE_TYPE_LABELS: Record<AbsenceType, string> = {
@@ -119,6 +121,24 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   COST_CENTERS_CHANGED: 'Kostenstellen geändert',
   ATTRIBUTE_CHANGED: 'Feld der Personalakte geändert',
   DEVICE_ENROLLMENT: 'Tablet-Registrierung per MDM',
+  WHISTLE_OFFICER_CHANGED: 'Meldestellen-Beauftragte geändert',
+  WHISTLE_CASE_VIEWED: 'Hinweis angesehen',
+  WHISTLE_CASE_CHANGED: 'Hinweis bearbeitet',
+  WHISTLE_CASE_DELETED: 'Hinweis gelöscht',
+  REPORT_CHANGED: 'Eigener Bericht geändert',
+  REPORT_RUN: 'Eigener Bericht ausgeführt',
+  REPORT_EXPORTED: 'Eigener Bericht exportiert (CSV)',
+  RECRUITING_JOB_CHANGED: 'Stelle geändert (Recruiting)',
+  RECRUITING_APPLICATION_CHANGED: 'Bewerbung geändert',
+  RECRUITING_ATTACHMENT_ACCESSED: 'Bewerbungsanhang abgerufen',
+  RECRUITING_DELETED: 'Bewerbung bzw. Anhang gelöscht',
+  ROLE_CHANGED: 'Rolle geändert (eigene Rolle)',
+  PAYROLL_RELEASED: 'Lohnbuchhaltung freigegeben',
+  PAYROLL_RELEASE_REVOKED: 'Freigabe der Lohnbuchhaltung zurückgenommen',
+  TIME_ENTRY_CREATED: 'Zeiten selbst eingetragen',
+  TIME_ENTRY_DELETED: 'Selbst eingetragene Zeit gelöscht',
+  PROJECT_CHANGED: 'Projekt oder Kunde geändert',
+  PAYROLL_ACCOUNTING_ACCESSED: 'Lohnbuchhaltung abgerufen',
 }
 
 export const AUDIT_ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -126,9 +146,13 @@ export const AUDIT_ENTITY_TYPE_LABELS: Record<string, string> = {
   employee: 'Mitarbeiter',
   absence: 'Abwesenheit',
   app_settings: 'Einstellungen',
+  saved_report: 'Eigener Bericht',
   hr_user: 'HR-Konto',
   team: 'Team',
   surcharge_rule: 'Zuschlagsregel',
+  account: 'Konto',
+  recruiting_job: 'Stelle',
+  recruiting_application: 'Bewerbung',
 }
 
 export const BUNDESLAND_LABELS: Record<Bundesland, string> = {
@@ -238,4 +262,20 @@ export const CHECKLIST_ACTION_LABELS: Record<string, string> = {
   UPLOAD_DOCUMENT: 'Person lädt Dokument hoch',
   FILL_DATA: 'Person trägt Daten ein',
   SEND_EMAIL: 'E-Mail beim Start senden',
+}
+
+export const WHISTLE_CATEGORY_LABELS: Record<components['schemas']['WhistleCategory'], string> = {
+  CRIME: 'Straftat oder Ordnungswidrigkeit',
+  SAFETY: 'Arbeitsschutz',
+  PRIVACY: 'Datenschutz',
+  CORRUPTION: 'Korruption oder Betrug',
+  DISCRIMINATION: 'Diskriminierung oder Belästigung',
+  OTHER: 'Sonstiges',
+}
+
+export const WHISTLE_STATUS_LABELS: Record<components['schemas']['WhistleStatus'], string> = {
+  RECEIVED: 'Eingegangen',
+  IN_REVIEW: 'In Prüfung',
+  FEEDBACK_GIVEN: 'Rückmeldung erteilt',
+  CLOSED: 'Abgeschlossen',
 }

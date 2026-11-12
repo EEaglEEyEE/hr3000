@@ -4,7 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.punch import PunchType
-from app.models.punch_correction_request import CorrectionRequestStatus
+from app.models.punch_correction_request import CorrectionRequestKind, CorrectionRequestStatus
 
 
 class CorrectionItem(BaseModel):
@@ -13,6 +13,10 @@ class CorrectionItem(BaseModel):
     time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     # Für Nachtschichten: Uhrzeit gehört zum Folgetag (z.B. Gehen um 02:00)
     next_day: bool = False
+    # Nur bei selbst eingetragenen Zeiten (Art TIME_ENTRY) am "Kommen": Projekt und Tätigkeit.
+    # In Korrekturanträgen ohne Wirkung.
+    project_id: int | None = Field(default=None, ge=1)
+    note: str | None = Field(default=None, max_length=200)
 
 
 class CorrectionRequestCreate(BaseModel):
@@ -41,12 +45,16 @@ class CorrectionRequestResponse(BaseModel):
     employee_id: int
     employee_name: str | None = None
     work_date: date
+    # CORRECTION = Korrekturantrag, TIME_ENTRY = selbst eingetragene Zeiten (Stundenzettel)
+    kind: CorrectionRequestKind = CorrectionRequestKind.CORRECTION
     items: list[CorrectionItem]
     reason: str
     status: CorrectionRequestStatus
     created_at: datetime | None
     decided_at: datetime | None
     decision_note: str | None
+    # Projektnamen zu den project_id der Positionen (Anzeige)
+    project_names: dict[int, str] = {}
 
     @field_validator("items", mode="before")
     @classmethod

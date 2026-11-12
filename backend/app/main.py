@@ -4,6 +4,8 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.absences import router as absences_router
@@ -22,6 +24,7 @@ from app.api.branding import router as branding_router
 from app.api.checklists import router as checklists_router
 from app.api.period_closures import router as period_closures_router
 from app.api.reports import router as reports_router
+from app.api.report_builder import router as report_builder_router
 from app.api.surcharges import router as surcharges_router
 from app.api.wage_types import router as wage_types_router
 from app.api.employment import router as employment_router
@@ -29,6 +32,7 @@ from app.api.employee_default_shifts import router as employee_default_shifts_ro
 from app.api.employees import router as employees_router
 from app.api.holidays import router as holidays_router
 from app.api.hr_users import router as hr_users_router
+from app.api.roles import router as roles_router
 from app.api.departments import router as departments_router
 from app.api.personal_data import router as personal_data_router
 from app.api.attributes import router as attributes_router
@@ -40,6 +44,7 @@ from app.api.leave_entitlements import router as leave_entitlements_router
 from app.api.locations import router as locations_router
 from app.api.notifications import router as notifications_router
 from app.api.payroll_export import router as payroll_export_router
+from app.api.payroll_accounting import router as payroll_accounting_router
 from app.api.migration import router as migration_router
 from app.api.punches import router as punches_router
 from app.api.plan import router as plan_router
@@ -53,6 +58,12 @@ from app.api.tenants import router as tenants_router
 from app.api.server_metrics import router as server_metrics_router
 from app.api.tls import router as tls_router
 from app.api.public import router as public_router
+from app.api.whistle import router as whistle_router
+from app.api.whistle_public import router as whistle_public_router
+from app.api.recruiting import public_router as careers_router
+from app.api.time_entries import router as time_entries_router
+from app.api.projects import router as projects_router
+from app.api.recruiting import router as recruiting_router
 from app.api.work_time_model import router as work_time_model_router
 from app.api.work_time_profiles import router as work_time_profiles_router
 from app.api.ws import router as ws_router
@@ -61,6 +72,7 @@ from app.db import AsyncSessionLocal
 from app.errors import AppError
 from app.middleware.tenant import TenantResolutionMiddleware
 from app.services.holiday_import_service import ensure_holidays_imported_for_all_tenants
+from app.services.punch_location_service import strip_position_inputs
 from app.services.server_metrics import run_sampler
 from app.services.reminder_service import run_reminders
 from app.services.webhook_service import run_deliveries
@@ -71,7 +83,9 @@ logger = logging.getLogger(__name__)
 class SkipPublicAccessLog(logging.Filter):
     """Aufrufe der Website-Schnittstellen (/public/…, z.B. Firmensuche auf hr3000.de/login)
     nicht mit IP-Adresse ins uvicorn-Zugriffsprotokoll – so steht es in der
-    Datenschutzerklärung der Website (website/datenschutz)."""
+    Datenschutzerklärung der Website (website/datenschutz). Dasselbe gilt für die Meldeseite des
+    Hinweisgebersystems (/public/whistle/…, api/whistle_public.py): Wer einen Hinweis abgibt oder den
+    Stand abfragt, hinterlässt keine IP-Adresse im Protokoll."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         args = record.args
@@ -164,6 +178,7 @@ app.include_router(absence_types_router)
 app.include_router(dashboard_router)
 app.include_router(punch_correction_requests_router)
 app.include_router(hr_users_router)
+app.include_router(roles_router)
 app.include_router(departments_router)
 app.include_router(personal_data_router)
 app.include_router(attributes_router)
@@ -183,6 +198,7 @@ app.include_router(shift_plan_pdf_router)
 app.include_router(audit_log_router)
 app.include_router(notifications_router)
 app.include_router(payroll_export_router)
+app.include_router(payroll_accounting_router)
 app.include_router(migration_router)
 app.include_router(employee_data_export_router)
 app.include_router(team_calendar_router)
@@ -192,6 +208,7 @@ app.include_router(employment_router)
 app.include_router(documents_router)
 app.include_router(period_closures_router)
 app.include_router(reports_router)
+app.include_router(report_builder_router)
 app.include_router(checklists_router)
 app.include_router(branding_router)
 app.include_router(balance_adjustments_router)
@@ -200,11 +217,23 @@ app.include_router(wage_types_router)
 app.include_router(ws_router)
 app.include_router(tls_router)
 app.include_router(public_router)
+app.include_router(whistle_public_router)
+app.include_router(whistle_router)
+app.include_router(recruiting_router)
+app.include_router(careers_router)
+app.include_router(time_entries_router)
+app.include_router(projects_router)
 
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message, "code": exc.code})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Wie der Standard von FastAPI, nur ohne die eingegebenen Werte einer Stempel-Position (A18).
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(strip_position_inputs(list(exc.errors())))})
 
 
 @app.get("/health")

@@ -8,9 +8,10 @@ import { vi } from 'vitest'
 import { apiClient } from '../api/client'
 import { AuthProvider } from '../auth/AuthContext'
 
+type Perms = Record<string, 'NONE' | 'VIEW' | 'EDIT'>
 type Login =
-  | { kind: 'hr'; role: 'SUPER_ADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean }
-  | { kind: 'employee'; employeeId: number; hrRole?: 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean }
+  | { kind: 'hr'; role: 'SUPER_ADMIN' | 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean; perms?: Perms }
+  | { kind: 'employee'; employeeId: number; hrRole?: 'ADMIN' | 'HR' | 'SUPERVISOR'; payroll?: boolean; perms?: Perms }
 
 function base64Url(value: object): string {
   return btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -25,13 +26,21 @@ export function loginAs(login: Login): void {
   // Ein Konto: Rolle (Verwaltung) und/oder Mitarbeiter (emp), wie im echten Token
   const payload =
     login.kind === 'hr'
-      ? { sub: '1', type: 'account_access', role: login.role, emp: null, ...(login.payroll ? { payroll: true } : {}) }
+      ? {
+          sub: '1',
+          type: 'account_access',
+          role: login.role,
+          emp: null,
+          ...(login.payroll ? { payroll: true } : {}),
+          ...(login.perms ? { perms: login.perms } : {}),
+        }
       : {
           sub: '2',
           type: 'account_access',
           role: login.hrRole ?? null,
           emp: login.employeeId,
           ...(login.payroll ? { payroll: true } : {}),
+          ...(login.perms ? { perms: login.perms } : {}),
         }
   localStorage.setItem('hr3000.access_token', fakeJwt(payload))
   localStorage.setItem('hr3000.refresh_token', fakeJwt(payload))

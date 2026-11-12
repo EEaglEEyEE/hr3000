@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 from app.models.daily_summary import SummaryStatus
 from app.models.account import HrRole
 from app.schemas.personal_data import CostCenterShare
+from app.schemas.role import CustomRoleRef
 from app.schemas.common import NewPassword, normalize_card_uid
 from app.schemas.work_time_model import WorkTimeModelInput
 
@@ -96,6 +97,8 @@ class EmployeeHrRoleUpdateRequest(BaseModel):
     hr_role: HrRole | None
     # Berechtigung „Vergütung & Lohn-Export“ (nur bei HR; Admins haben sie immer); None = unverändert
     payroll_access: bool | None = None
+    # Eigene Rolle (nur bei HR): weggelassen = unverändert, null = keine (voller HR-Zugriff)
+    custom_role_id: int | None = Field(default=None, ge=1)
 
 
 class BulkImportRowError(BaseModel):
@@ -122,6 +125,7 @@ class EmployeeResponse(BaseModel):
     two_factor_enabled: bool = False
     hr_role: HrRole | None
     hr_payroll_access: bool = False
+    hr_custom_role: CustomRoleRef | None = None
     auto_break_enabled: bool
     has_pin: bool
     nfc_uid: str | None

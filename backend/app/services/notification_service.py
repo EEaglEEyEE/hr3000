@@ -12,8 +12,10 @@ from app.models import (
     HrRole,
     Notification,
     NotificationType,
+    Role,
 )
 from app.services.email_service import SmtpConfig, resolve_smtp_config, send_email
+from app.services.role_permissions import Area, Level, has_level, parse_permissions
 from app.services.settings_service import get_or_create_settings
 
 _FULL_HR_ROLES = (HrRole.ADMIN, HrRole.HR)
@@ -66,13 +68,26 @@ def _signed_in_accounts(tenant_id: int):
 
 
 async def full_hr_recipients(
-    db: AsyncSession, tenant_id: int, exclude_employee_id: int | None = None
+    db: AsyncSession, tenant_id: int, exclude_employee_id: int | None = None, area: Area | None = None
 ) -> list[tuple[int, str | None]]:
-    """(Konto-ID, E-Mail) aller Admins und HR der Firma."""
-    stmt = _signed_in_accounts(tenant_id).where(Account.role.in_(_FULL_HR_ROLES))
+    """(Konto-ID, E-Mail) aller Admins und HR der Firma. HR-Konten mit eigener Rolle nur, wenn die
+    Rolle den Bereich der Nachricht mindestens ansehen darf (ohne Bereich: nie) – das Lohnbüro bekommt
+    so keine Urlaubsanträge."""
+    stmt = (
+        _signed_in_accounts(tenant_id)
+        .add_columns(Account.role, Role.permissions)
+        .outerjoin(Role, Role.id == Account.custom_role_id)
+        .where(Account.role.in_(_FULL_HR_ROLES))
+    )
     if exclude_employee_id is not None:
         stmt = stmt.where(or_(Account.employee_id.is_(None), Account.employee_id != exclude_employee_id))
-    return [(account_id, email) for account_id, email in (await db.execute(stmt.order_by(Account.id))).all()]
+    result = []
+    for account_id, email, role, permissions in (await db.execute(stmt.order_by(Account.id))).all():
+        if role == HrRole.HR and permissions is not None:
+            if area is None or not has_level(parse_permissions(permissions), area, Level.VIEW):
+                continue
+        result.append((account_id, email))
+    return result
 
 
 def _employee_login(employee: Employee) -> Account | None:
@@ -124,7 +139,7 @@ async def notify_absence_requested(
 
     recipients = await approver_recipients(db, employee)
     if not recipients:
-        recipients = await full_hr_recipients(db, tenant_id)
+        recipients = await full_hr_recipients(db, tenant_id, area=Area.ABSENCES)
 
     message = f"Neuer Antrag ({type_name}) von {employee.first_name} {employee.last_name} wartet auf Genehmigung."
     await _notify_accounts(db, tenant_id, recipients, NotificationType.ABSENCE_REQUESTED, message, f"Neuer Antrag: {type_name}")
@@ -147,7 +162,7 @@ async def notify_open_days_digest(db: AsyncSession, tenant_id: int, open_day_cou
 
     message = f"{open_day_count} Tag(e) benötigen Aufmerksamkeit ('Zu klären')."
     await _notify_accounts(
-        db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.OPEN_DAYS_DIGEST, message,
+        db, tenant_id, await full_hr_recipients(db, tenant_id, area=Area.TIME), NotificationType.OPEN_DAYS_DIGEST, message,
         "Zu klären: offene Tage",
     )
 
@@ -200,7 +215,7 @@ async def notify_period_disputed(db: AsyncSession, tenant_id: int, employee: Emp
     """Admin und HR erfahren vom Widerspruch (ohne die Person selbst, falls sie HR ist)."""
     message = f"{employee.first_name} {employee.last_name} hat dem Monatsnachweis {label} widersprochen."
     await _notify_accounts(
-        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id),
+        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id, area=Area.PERIOD_CLOSURE),
         NotificationType.PERIOD_DISPUTED, message, "Monatsnachweis beanstandet",
     )
 
@@ -211,7 +226,7 @@ async def notify_correction_requested(db: AsyncSession, tenant_id: int, employee
         f"{work_date.strftime('%d.%m.%Y')} (Zu klären → Korrekturanträge)."
     )
     await _notify_accounts(
-        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id),
+        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id, area=Area.TIME),
         NotificationType.CORRECTION_REQUESTED, message, "Neuer Korrekturantrag",
     )
 
@@ -223,6 +238,28 @@ async def notify_correction_decided(
     await _notify_employee(db, tenant_id, employee, NotificationType.CORRECTION_DECIDED, message, "Korrekturantrag entschieden")
 
 
+async def notify_time_entry_requested(db: AsyncSession, tenant_id: int, employee: Employee, work_date: date) -> None:
+    """Selbst eingetragene Zeiten mit Genehmigungspflicht – an dieselben Empfänger wie Korrekturanträge."""
+    message = (
+        f"{employee.first_name} {employee.last_name} hat Zeiten für den {work_date.strftime('%d.%m.%Y')} "
+        "eingetragen und bittet um Genehmigung (Zu klären → Korrekturanträge)."
+    )
+    await _notify_accounts(
+        db, tenant_id, await full_hr_recipients(db, tenant_id, exclude_employee_id=employee.id, area=Area.TIME),
+        NotificationType.CORRECTION_REQUESTED, message, "Zeiten zur Genehmigung",
+    )
+
+
+async def notify_time_entry_decided(
+    db: AsyncSession, tenant_id: int, employee: Employee, work_date: date, approved: bool
+) -> None:
+    message = (
+        f"Deine eingetragenen Zeiten für den {work_date.strftime('%d.%m.%Y')} wurden "
+        f"{'genehmigt' if approved else 'abgelehnt'}."
+    )
+    await _notify_employee(db, tenant_id, employee, NotificationType.CORRECTION_DECIDED, message, "Eingetragene Zeiten entschieden")
+
+
 async def notify_device_enrolled(db: AsyncSession, device, reported_name: str | None) -> None:
     """Info an Admin/HR: ein vorbereiteter Tablet-Eintrag wurde per Registrierungsschlüssel (MDM) belegt."""
     message = (
@@ -231,7 +268,7 @@ async def notify_device_enrolled(db: AsyncSession, device, reported_name: str | 
         "Registrierungsschlüssel erneuern."
     )
     await _notify_accounts(
-        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id, area=Area.MASTER_DATA), NotificationType.DEVICE_ALERT, message,
         "Tablet per MDM eingerichtet",
     )
 
@@ -255,7 +292,7 @@ async def notify_enrollment_requested(
             "nur freigeben, wenn das Gerät wirklich ersetzt wurde."
         )
     await _notify_accounts(
-        db, tenant_id, await full_hr_recipients(db, tenant_id), NotificationType.DEVICE_ALERT, message,
+        db, tenant_id, await full_hr_recipients(db, tenant_id, area=Area.MASTER_DATA), NotificationType.DEVICE_ALERT, message,
         "Tablet wartet auf Freigabe",
     )
 
@@ -267,7 +304,7 @@ async def notify_device_replaced(db: AsyncSession, device) -> None:
         "abgemeldet. War das nicht geplant, in der HR-Webapp unter „Tablets“ prüfen, welches Gerät den Zugang hat."
     )
     await _notify_accounts(
-        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id, area=Area.MASTER_DATA), NotificationType.DEVICE_ALERT, message,
         "Tablet an anderes Gerät vergeben",
     )
 
@@ -279,6 +316,6 @@ async def notify_device_rejected(db: AsyncSession, device) -> None:
         "Wurde das Tablet getauscht, in der HR-Webapp unter „Tablets“ neu koppeln – sonst prüfen, wer den Zugang hat."
     )
     await _notify_accounts(
-        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id), NotificationType.DEVICE_ALERT, message,
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id, area=Area.MASTER_DATA), NotificationType.DEVICE_ALERT, message,
         "Warnung: Tablet-Zugang",
     )

@@ -39,7 +39,8 @@ class LeaveEntitlementResponse(BaseModel):
     entitled_manual: bool = False
     # Jahresurlaub heute laut Vertrag bzw. Standard (bezogen auf die 5-Tage-Woche)
     annual_vacation_days: float = 0
-    workdays_per_week: int | None = None
+    # beim mehrwöchigen Arbeitszeitmodell der Durchschnitt über den Turnus (z.B. 2.5)
+    workdays_per_week: float | None = None
     # Summe der Korrekturen am Urlaubskonto (± Tage) im Jahr
     adjustment_days: float = 0
 

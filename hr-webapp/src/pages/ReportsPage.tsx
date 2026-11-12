@@ -7,7 +7,11 @@ import {
   useOvertimeReportQuery,
   useVacationReportQuery,
 } from '../api/queries/reports'
+import { useFeaturesQuery } from '../api/queries/workTimeModel'
 import { useAuth } from '../auth/AuthContext'
+import { CustomReportsTab } from '../components/reports/CustomReportsTab'
+import { ProjectTimesTab } from '../components/reports/ProjectTimesTab'
+import { AbsenceRateTab, HeadcountTab } from '../components/reports/WorkforceTabs'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -44,7 +48,45 @@ function ExportButton({ onClick }: { onClick: () => void }) {
 }
 
 export function ReportsPage() {
-  const { canPayroll } = useAuth()
+  const { canPayroll, isFullHr } = useAuth()
+  const features = useFeaturesQuery().data
+  const customReports = features?.custom_reports_enabled === true
+  const projectTimes = features?.project_times_enabled === true
+  // Führungskräfte kommen nur mit eingeschalteten eigenen Berichten oder Projektzeiten hierher
+  // (lib/access.ts) und sehen nur diese Reiter – in ihrem Bereich.
+  if (!isFullHr) {
+    if (!customReports || !projectTimes) {
+      return (
+        <div className="flex flex-col gap-4">
+          <h1 className="text-lg font-semibold text-slate-900">Analysen</h1>
+          {customReports ? (
+            <CustomReportsTab />
+          ) : projectTimes ? (
+            <ProjectTimesTab />
+          ) : (
+            <p className="text-slate-500">Für diese Seite fehlt die Berechtigung.</p>
+          )}
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-lg font-semibold text-slate-900">Analysen</h1>
+        <Tabs defaultValue="projects">
+          <TabsList>
+            <TabsTrigger value="projects">Projektzeiten</TabsTrigger>
+            <TabsTrigger value="custom">Eigene Berichte</TabsTrigger>
+          </TabsList>
+          <TabsContent value="projects">
+            <ProjectTimesTab />
+          </TabsContent>
+          <TabsContent value="custom">
+            <CustomReportsTab />
+          </TabsContent>
+        </Tabs>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-slate-900">Analysen</h1>
@@ -52,15 +94,25 @@ export function ReportsPage() {
         <TabsList>
           <TabsTrigger value="attention">Handlungsbedarf</TabsTrigger>
           <TabsTrigger value="absences">Fehlzeiten</TabsTrigger>
+          <TabsTrigger value="absence-rate">Abwesenheitsquote</TabsTrigger>
+          <TabsTrigger value="headcount">Köpfe und FTE</TabsTrigger>
           <TabsTrigger value="vacation">Urlaub</TabsTrigger>
           <TabsTrigger value="overtime">Überstunden</TabsTrigger>
           {canPayroll && <TabsTrigger value="costs">Lohnkosten</TabsTrigger>}
+          {projectTimes && <TabsTrigger value="projects">Projektzeiten</TabsTrigger>}
+          {customReports && <TabsTrigger value="custom">Eigene Berichte</TabsTrigger>}
         </TabsList>
         <TabsContent value="attention">
           <AttentionTab />
         </TabsContent>
         <TabsContent value="absences">
           <AbsencesTab />
+        </TabsContent>
+        <TabsContent value="absence-rate">
+          <AbsenceRateTab />
+        </TabsContent>
+        <TabsContent value="headcount">
+          <HeadcountTab />
         </TabsContent>
         <TabsContent value="vacation">
           <VacationTab />
@@ -71,6 +123,16 @@ export function ReportsPage() {
         {canPayroll && (
           <TabsContent value="costs">
             <CostsTab />
+          </TabsContent>
+        )}
+        {projectTimes && (
+          <TabsContent value="projects">
+            <ProjectTimesTab />
+          </TabsContent>
+        )}
+        {customReports && (
+          <TabsContent value="custom">
+            <CustomReportsTab />
           </TabsContent>
         )}
       </Tabs>

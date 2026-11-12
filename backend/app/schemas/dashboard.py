@@ -39,6 +39,10 @@ class DashboardMe(BaseModel):
     portal_punching: bool = False
     break_buttons: bool = True
     errand_buttons: bool = False
+    # Standortprüfung beim Stempeln aktiv (Browser fragt die Position beim Klick ab) und ob außerhalb
+    # bzw. ohne Standortfreigabe abgelehnt wird
+    location_check: bool = False
+    location_check_required: bool = False
     month_actual_minutes: int | None = None
     monthly_cap_minutes: int | None = None
 
@@ -66,6 +70,8 @@ class DashboardResponse(BaseModel):
     horizon_date: date | None = None
     # Mandanten-Schalter, die die Startseite auch ohne verknüpften Mitarbeiter braucht
     portal_punching_enabled: bool = False
+    # „Mein Bereich“ → Zeiterfassung: Karte „Stundenzettel“ (Zeiten selbst eintragen)
+    self_time_entry_enabled: bool = False
     absence_requests_enabled: bool = True
     # Reiter „Teamkalender“ in „Mein Bereich“
     team_calendar_for_employees: bool = False

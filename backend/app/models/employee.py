@@ -144,6 +144,11 @@ class Employee(Base):
         return self.account is not None and self.account.two_factor_enabled
 
     @property
+    def hr_custom_role(self):
+        """Eigene Rolle des Zugangs (nur bei Rolle HR), siehe app/models/role.py."""
+        return self.account.custom_role if self.account is not None else None
+
+    @property
     def hr_payroll_access(self) -> bool:
         return bool(self.account.payroll_access) if self.account is not None else False
 

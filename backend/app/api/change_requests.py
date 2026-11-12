@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.role_permissions import Area
 from app.api.attributes import set_value
 from app.api.deps import Actor, get_current_actor, get_current_full_hr_principal
 from app.api.personal_data import _LABELS
@@ -99,7 +100,7 @@ async def propose_change(
     db.add(row)
     await db.flush()
     await _notify_accounts(
-        db, actor.tenant_id, await full_hr_recipients(db, actor.tenant_id, exclude_employee_id=employee.id),
+        db, actor.tenant_id, await full_hr_recipients(db, actor.tenant_id, exclude_employee_id=employee.id, area=Area.EMPLOYEES),
         NotificationType.DATA_CHANGE_REQUESTED,
         f"{employee.first_name} {employee.last_name} schlägt eine Änderung der eigenen Daten vor (Zu klären → Datenänderungen).",
         "Datenänderung vorgeschlagen",
@@ -152,7 +153,7 @@ async def decide_change_request(
         raise AppError(404, "CHANGE_REQUEST_NOT_FOUND", "Vorschlag nicht gefunden.")
     if row.status != "PENDING":
         raise AppError(400, "NOT_PENDING", "Dieser Vorschlag wurde bereits entschieden.")
-    if row.contains_payroll and not actor.has_payroll_access:
+    if row.contains_payroll and not actor.can_edit_payroll:
         raise AppError(403, "PAYROLL_PERMISSION_REQUIRED", "Bank, Steuer und Sozialversicherung nur mit „Vergütung & Lohn-Export“.")
     employee = await db.get(Employee, row.employee_id)
     if actor.employee is not None and actor.employee.id == employee.id:

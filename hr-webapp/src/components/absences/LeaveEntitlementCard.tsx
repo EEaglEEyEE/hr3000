@@ -117,9 +117,10 @@ export function LeaveEntitlementCard({
               </p>
             )}
             <LeaveAdjustments employeeId={employeeId} year={year} readOnly={readOnly} />
-            {entitlementQuery.data.workdays_per_week !== null && (
+            {entitlementQuery.data.workdays_per_week != null && (
               <p className="text-xs text-slate-500">
-                Gezählt werden nur Arbeitstage laut Arbeitszeitmodell ({entitlementQuery.data.workdays_per_week} pro Woche).
+                Gezählt werden nur Arbeitstage laut Arbeitszeitmodell ({entitlementQuery.data.workdays_per_week.toLocaleString('de-DE', { maximumFractionDigits: 2 })} pro Woche
+                {Number.isInteger(entitlementQuery.data.workdays_per_week) ? '' : ' im Schnitt'}).
               </p>
             )}
             {!entitlementQuery.data.entitled_manual && computed !== null && (

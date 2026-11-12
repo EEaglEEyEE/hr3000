@@ -17,6 +17,8 @@ class PeriodClosureResponse(BaseModel):
     actual_minutes: int
     delta_minutes: int
     balance_end_minutes: int
+    # davon mit dem Gehalt abgegoltene Überstunden (Stand bei der Vorlage)
+    settled_minutes: int = 0
     document_id: int | None
     submitted_at: datetime
     confirmed_at: datetime | None

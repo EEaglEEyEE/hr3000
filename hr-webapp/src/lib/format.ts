@@ -20,7 +20,11 @@ export function formatDateTime(iso: string): string {
   return new Date(ensureUtcSuffix(iso)).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+/** Datum als TT.MM.JJJJ. Ein reines Datum (JJJJ-MM-TT) bleibt unverändert; ein Zeitpunkt (mit „T“,
+ * naiv in UTC wie vom Backend) wird als Datum in der Ortszeit des Browsers angezeigt – sonst ergäbe
+ * `${iso}T00:00:00Z` „Invalid Date“. */
 export function formatDate(iso: string): string {
+  if (iso.includes('T')) return new Date(ensureUtcSuffix(iso)).toLocaleDateString('de-DE')
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString('de-DE', { timeZone: 'UTC' })
 }
 

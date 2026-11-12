@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -8,7 +8,9 @@ from sqlalchemy.orm.attributes import set_committed_value
 from app.db import get_db
 from app.errors import AppError
 from app.models import Account, Device, Employee, HrRole
+from app.services import role_permissions
 from app.services.auth_service import account_can_sign_in, decode_token, session_fingerprint
+from app.services.role_permissions import Area, Level
 
 bearer_scheme = HTTPBearer()
 
@@ -20,6 +22,9 @@ class Actor:
 
     device: Device | None = None
     account: Account | None = None
+    # Konto mit eigener Rolle auf einer Route, die auch „Mein Bereich“ bedient, ohne das Recht für den
+    # Bereich: gilt für diese Anfrage als reiner Mitarbeiter (role_permissions.Decision.SELF).
+    self_only: bool = field(default=False, compare=False)
 
     @property
     def employee(self) -> Employee | None:
@@ -27,7 +32,21 @@ class Actor:
 
     @property
     def role(self) -> HrRole | None:
-        return self.account.role if self.account is not None else None
+        if self.account is None or self.self_only:
+            return None
+        return self.account.role
+
+    @property
+    def custom_permissions(self) -> role_permissions.Permissions | None:
+        """Rechte der eigenen Rolle; None = Konto ohne eigene Rolle (keine zusätzliche Einschränkung)."""
+        return account_custom_permissions(self.account)
+
+    def has_area(self, area: Area, level: Level = Level.VIEW) -> bool:
+        """Darf das Konto den Bereich nutzen? Ohne eigene Rolle entscheidet die Rolle wie bisher (True)."""
+        if self.self_only:
+            return False
+        permissions = self.custom_permissions
+        return permissions is None or role_permissions.has_level(permissions, area, level)
 
     @property
     def tenant_id(self) -> int | None:
@@ -67,10 +86,50 @@ class Actor:
 
     @property
     def has_payroll_access(self) -> bool:
-        """Berechtigung „Vergütung & Lohn-Export“: Admins immer, volle HR nur mit Freigabe."""
+        """Berechtigung „Vergütung & Lohn-Export“: Admins immer, volle HR nur mit Freigabe. Mit eigener
+        Rolle entscheidet stattdessen deren Bereich „Vergütung & Lohn“ (ab Ansehen)."""
+        return self._payroll(Level.VIEW)
+
+    @property
+    def can_edit_payroll(self) -> bool:
+        """Lohndaten ändern bzw. Live-Lohndaten exportieren: wie has_payroll_access, mit eigener Rolle
+        aber erst ab Stufe Bearbeiten."""
+        return self._payroll(Level.EDIT)
+
+    def _payroll(self, level: Level) -> bool:
         if self.is_admin_level:
             return True
-        return self.is_full_hr_level and bool(self.account.payroll_access)
+        if not self.is_full_hr_level:
+            return False
+        permissions = self.custom_permissions
+        if permissions is not None:
+            return role_permissions.has_level(permissions, Area.PAYROLL, level)
+        return bool(self.account.payroll_access)
+
+
+def account_custom_permissions(account: Account | None) -> role_permissions.Permissions | None:
+    """Eigene Rollen gelten nur für Rolle HR (Admins und Führungskräfte bekommen keine)."""
+    if account is None or account.role != HrRole.HR or account.custom_role_id is None:
+        return None
+    role = account.custom_role
+    # Verweis ohne Rolle darf es nicht geben (FK); falls doch: kein Zugriff statt voller Zugriff.
+    return role_permissions.parse_permissions(role.permissions if role is not None else None)
+
+
+def _enforce_custom_role(request: Request, actor: Actor) -> None:
+    """Zentrale Prüfung für Konten mit eigener Rolle: Route → Bereich, Methode → Stufe
+    (role_permissions.ROUTE_RULES). Nicht zugeordnete Routen sind verboten."""
+    permissions = actor.custom_permissions
+    if permissions is None:
+        return
+    route = request.scope.get("route")
+    decision = role_permissions.decide(
+        request.method, getattr(route, "path", None), permissions, has_employee=actor.employee is not None
+    )
+    if decision == role_permissions.Decision.SELF:
+        actor.self_only = True
+    elif decision == role_permissions.Decision.DENY:
+        raise AppError(403, "ROLE_PERMISSION_REQUIRED", "Die zugewiesene Rolle erlaubt das nicht.")
 
 
 def _require_tenant_context(actor: Actor) -> None:
@@ -126,6 +185,7 @@ async def get_current_actor(
         raise AppError(401, "TOKEN_INVALID", "Ungültiges Token.")
 
     _check_tenant_match(request, actor)
+    _enforce_custom_role(request, actor)
     return actor
 
 

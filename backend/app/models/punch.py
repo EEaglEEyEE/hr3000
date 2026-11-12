@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.punch_location import PunchLocationCheck
 
 
 class PunchType(str, enum.Enum):
@@ -23,6 +24,9 @@ class PunchSource(str, enum.Enum):
     AUTO_BREAK = "AUTO_BREAK"
     # Vom Mitarbeiter selbst über den Web-Login (Startseite) gestempelt, immer mit Serverzeit.
     PORTAL = "PORTAL"
+    # Vom Mitarbeiter in „Mein Bereich“ selbst eingetragene Zeitspanne (Stundenzettel, Einstellung
+    # „Zeiten selbst eintragen“) – sofort wirksam oder nach Genehmigung, siehe services/time_entry_service.py.
+    SELF_ENTRY = "SELF_ENTRY"
 
 
 class Punch(Base):
@@ -40,8 +44,15 @@ class Punch(Base):
     timestamp_utc: Mapped[datetime] = mapped_column(DateTime)
     source: Mapped[PunchSource] = mapped_column(Enum(PunchSource))
     device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True)
+    # Standortprüfung beim Stempeln im Web-Login (nur Ergebnis, nie Koordinaten; NULL = nicht geprüft)
+    location_check: Mapped[PunchLocationCheck | None] = mapped_column(Enum(PunchLocationCheck), nullable=True)
+    location_check_location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     corrected: Mapped[bool] = mapped_column(Boolean, default=False)
     correction_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Projektzeiterfassung: Projekt und Tätigkeitsnotiz der Spanne ab diesem "Kommen" bis zum nächsten
+    # "Gehen" (bisher nur bei selbst eingetragenen Zeiten; HR kann es bei Korrekturen ändern).
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    activity_note: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Client-generierte UUID zur Duplikat-Vermeidung bei der Offline-Queue, siehe Konzept Abschnitt 5.
     idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)

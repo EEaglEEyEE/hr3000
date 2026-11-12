@@ -20,7 +20,12 @@ const OPTIONAL_COLUMNS = [
   'wochenstunden',
   'arbeitstage',
   'tagesstunden',
+  'tagesstunden_woche2',
+  'tagesstunden_woche3',
+  'tagesstunden_woche4',
+  'turnus_beginn',
   'monatsgrenze',
+  'abgegoltene_ueberstunden',
 ]
 
 export function EmployeeBulkImportPage() {
@@ -83,6 +88,12 @@ export function EmployeeBulkImportPage() {
             ja/nein, Standardwert ja; Datumsfelder im Format JJJJ-MM-TT; Arbeitszeitmodell: Wochenstunden z. B. „38,5“
             und Arbeitstage z. B. „Mo-Fr“ oder „Mo,Mi,Fr“, oder für Teilzeit Tagesstunden z. B. „Mo:8,Di:8,Mi:4.5“; nur Wochenstunden ohne Arbeitstage = flexibel ohne feste Tage; Arbeitstage „nach Aufwand“ = Aushilfe ohne Soll, optional mit Monatsgrenze in Stunden – gilt ab
             Anstelldatum).
+          </p>
+          <p className="mt-1">
+            Mehrwöchiges Modell (Turnus über 2 bis 4 Wochen): Woche 1 in „tagesstunden“, die weiteren Wochen lückenlos in
+            „tagesstunden_woche2“ bis „tagesstunden_woche4“; „turnus_beginn“ (optional) nennt einen Tag der Woche 1, sonst
+            beginnt der Turnus in der Woche des Anstelldatums. „abgegoltene_ueberstunden“: Stunden je Monat, die mit dem
+            Gehalt abgegolten sind (z. B. „10“), nur zusammen mit einem Arbeitszeitmodell in derselben Zeile.
           </p>
         </div>
 

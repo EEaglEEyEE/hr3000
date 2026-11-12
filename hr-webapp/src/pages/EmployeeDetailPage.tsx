@@ -5,6 +5,7 @@ import { downloadEmployeeDataExport } from '../api/employeeDataExport'
 import { useAnonymizeEmployeeMutation, useEmployeeQuery } from '../api/queries/employees'
 import { useLocationsQuery } from '../api/queries/locations'
 import { useAuth } from '../auth/AuthContext'
+import { hasArea, type Area, type Level } from '../lib/access'
 import { ApiError } from '../api/client'
 import { AbsencesTab } from '../components/absences/AbsencesTab'
 import { EmployeeForm } from '../components/employees/EmployeeFormDialog'
@@ -28,7 +29,26 @@ export function EmployeeDetailPage() {
   const id = Number(employeeId)
   // ?reiter=einstellungen: direkt in den Reiter „Einstellungen“ (z. B. „Bearbeiten“ in der Mitarbeiterliste)
   const [searchParams] = useSearchParams()
-  const { isAdmin, isFullHr, canPayroll } = useAuth()
+  const { isAdmin, isFullHr, canPayroll, perms } = useAuth()
+  // Eigene Rolle: Reiter nur für freigegebene Bereiche, Bearbeiten nur mit Stufe „Bearbeiten“
+  const can = (area: Area, level: Level = 'VIEW') => hasArea(perms, area, level)
+  const fileTabs = {
+    masterdata: can('EMPLOYEES'),
+    attributes: can('EMPLOYEES'),
+    employment: can('EMPLOYEES'),
+    documents: can('DOCUMENTS'),
+    checklists: can('CHECKLISTS'),
+    history: can('EMPLOYEES'),
+  }
+  const tabs = {
+    punches: can('TIME'),
+    calendar: can('ABSENCES') || can('TIME'),
+    timesheet: can('TIME'),
+    absences: can('ABSENCES'),
+    worktime: can('TIME') || can('EMPLOYEES'),
+    file: isFullHr && Object.values(fileTabs).some(Boolean),
+    settings: isFullHr && can('EMPLOYEES', 'EDIT'),
+  }
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
   const employeeQuery = useEmployeeQuery(id)
@@ -87,8 +107,8 @@ export function EmployeeDetailPage() {
           </h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <MonthReportButton employeeId={id} />
-          {isFullHr && (
+          {(can('PERIOD_CLOSURE') || can('TIME')) && <MonthReportButton employeeId={id} />}
+          {isFullHr && !perms && (
             <Button variant="outline" size="sm" onClick={handleDataExport}>
               <Download className="h-4 w-4" />
               DSGVO-Datenexport
@@ -118,72 +138,107 @@ export function EmployeeDetailPage() {
       )}
 
       {/* Arbeitszeit = Modell + Schichtplanung, Personalakte = Stammdaten, Vertrag, Dokumente …, Einstellungen = Grunddaten, Login, Rolle */}
-      <Tabs defaultValue={isFullHr && searchParams.get('reiter') === 'einstellungen' ? 'settings' : 'punches'}>
+      <Tabs
+        defaultValue={
+          tabs.settings && searchParams.get('reiter') === 'einstellungen'
+            ? 'settings'
+            : (Object.keys(tabs) as (keyof typeof tabs)[]).find((key) => tabs[key])
+        }
+      >
         <TabsList>
-          <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
-          <TabsTrigger value="calendar">Kalender</TabsTrigger>
-          <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>
-          <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
-          <TabsTrigger value="worktime">Arbeitszeit</TabsTrigger>
-          {isFullHr && <TabsTrigger value="file">Personalakte</TabsTrigger>}
-          {isFullHr && <TabsTrigger value="settings">Einstellungen</TabsTrigger>}
+          {tabs.punches && <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>}
+          {tabs.calendar && <TabsTrigger value="calendar">Kalender</TabsTrigger>}
+          {tabs.timesheet && <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>}
+          {tabs.absences && <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>}
+          {tabs.worktime && <TabsTrigger value="worktime">Arbeitszeit</TabsTrigger>}
+          {tabs.file && <TabsTrigger value="file">Personalakte</TabsTrigger>}
+          {tabs.settings && <TabsTrigger value="settings">Einstellungen</TabsTrigger>}
         </TabsList>
-        <TabsContent value="punches">
-          <PunchHistoryTab employeeId={id} readOnly={!isFullHr} />
-        </TabsContent>
-        <TabsContent value="calendar">
-          <CalendarTab employeeId={id} />
-        </TabsContent>
-        <TabsContent value="timesheet">
-          <TimesheetTab employeeId={id} canAdjust={isFullHr} />
-        </TabsContent>
-        <TabsContent value="absences">
-          <AbsencesTab employeeId={id} entitlementReadOnly={!isFullHr} />
-        </TabsContent>
-        <TabsContent value="worktime">
-          <div className="flex flex-col gap-8">
-            <WorkTimeModelTab employeeId={id} canEdit={isFullHr} />
-            {shiftPlanningEnabled && (
-              <section className="flex flex-col gap-3 border-t border-slate-200 pt-6">
-                <h2 className="text-base font-semibold text-slate-900">Schichtplanung</h2>
-                <ShiftPlanTab employeeId={id} readOnly={!isFullHr} />
-              </section>
-            )}
-          </div>
-        </TabsContent>
-        {isFullHr && (
+        {tabs.punches && (
+          <TabsContent value="punches">
+            <PunchHistoryTab employeeId={id} readOnly={!isFullHr || !can('TIME', 'EDIT')} />
+          </TabsContent>
+        )}
+        {tabs.calendar && (
+          <TabsContent value="calendar">
+            <CalendarTab employeeId={id} />
+          </TabsContent>
+        )}
+        {tabs.timesheet && (
+          <TabsContent value="timesheet">
+            <TimesheetTab employeeId={id} canAdjust={isFullHr && can('TIME', 'EDIT')} />
+          </TabsContent>
+        )}
+        {tabs.absences && (
+          <TabsContent value="absences">
+            <AbsencesTab employeeId={id} entitlementReadOnly={!isFullHr || !can('ABSENCES', 'EDIT')} />
+          </TabsContent>
+        )}
+        {tabs.worktime && (
+          <TabsContent value="worktime">
+            <div className="flex flex-col gap-8">
+              <WorkTimeModelTab employeeId={id} canEdit={isFullHr && (can('TIME', 'EDIT') || can('EMPLOYEES', 'EDIT'))} />
+              {shiftPlanningEnabled && (can('SHIFT_PLANNING') || can('TIME')) && (
+                <section className="flex flex-col gap-3 border-t border-slate-200 pt-6">
+                  <h2 className="text-base font-semibold text-slate-900">Schichtplanung</h2>
+                  <ShiftPlanTab employeeId={id} readOnly={!isFullHr || !can('SHIFT_PLANNING', 'EDIT')} />
+                </section>
+              )}
+            </div>
+          </TabsContent>
+        )}
+        {tabs.file && (
           <TabsContent value="file">
-            <Tabs defaultValue="masterdata">
+            <Tabs defaultValue={(Object.keys(fileTabs) as (keyof typeof fileTabs)[]).find((key) => fileTabs[key])}>
               <TabsList>
-                <TabsTrigger value="masterdata">Stammdaten</TabsTrigger>
-                <TabsTrigger value="attributes">Weitere Angaben</TabsTrigger>
-                <TabsTrigger value="employment">Vertrag{canPayroll ? ' & Vergütung' : ''}</TabsTrigger>
-                <TabsTrigger value="documents">Dokumente</TabsTrigger>
-                <TabsTrigger value="checklists">On- & Offboarding</TabsTrigger>
-                <TabsTrigger value="history">Verlauf</TabsTrigger>
+                {fileTabs.masterdata && <TabsTrigger value="masterdata">Stammdaten</TabsTrigger>}
+                {fileTabs.attributes && <TabsTrigger value="attributes">Weitere Angaben</TabsTrigger>}
+                {fileTabs.employment && (
+                  <TabsTrigger value="employment">Vertrag{canPayroll ? ' & Vergütung' : ''}</TabsTrigger>
+                )}
+                {fileTabs.documents && <TabsTrigger value="documents">Dokumente</TabsTrigger>}
+                {fileTabs.checklists && <TabsTrigger value="checklists">On- & Offboarding</TabsTrigger>}
+                {fileTabs.history && <TabsTrigger value="history">Verlauf</TabsTrigger>}
               </TabsList>
-              <TabsContent value="masterdata">
-                <MasterDataTab employee={employee} />
-              </TabsContent>
-              <TabsContent value="employment">
-                <EmploymentTab employeeId={id} isAdmin={canPayroll} />
-              </TabsContent>
-              <TabsContent value="documents">
-                <DocumentsTab employeeId={id} isAdmin={isAdmin} />
-              </TabsContent>
-              <TabsContent value="checklists">
-                <EmployeeChecklistsTab employeeId={id} />
-              </TabsContent>
-              <TabsContent value="attributes">
-                <AttributesTab employeeId={id} />
-              </TabsContent>
-              <TabsContent value="history">
-                <EmployeeHistoryTab employeeId={id} />
-              </TabsContent>
+              {fileTabs.masterdata && (
+                <TabsContent value="masterdata">
+                  <MasterDataTab employee={employee} />
+                </TabsContent>
+              )}
+              {fileTabs.employment && (
+                <TabsContent value="employment">
+                  <EmploymentTab
+                    employeeId={id}
+                    isAdmin={canPayroll}
+                    canEditContract={can('EMPLOYEES', 'EDIT')}
+                    canEditPay={can('PAYROLL', 'EDIT')}
+                  />
+                </TabsContent>
+              )}
+              {fileTabs.documents && (
+                <TabsContent value="documents">
+                  <DocumentsTab employeeId={id} isAdmin={isAdmin} />
+                </TabsContent>
+              )}
+              {fileTabs.checklists && (
+                <TabsContent value="checklists">
+                  <EmployeeChecklistsTab employeeId={id} />
+                </TabsContent>
+              )}
+              {fileTabs.attributes && (
+                <TabsContent value="attributes">
+                  <AttributesTab employeeId={id} />
+                </TabsContent>
+              )}
+              {fileTabs.history && (
+                <TabsContent value="history">
+                  <EmployeeHistoryTab employeeId={id} />
+                </TabsContent>
+              )}
             </Tabs>
           </TabsContent>
         )}
-        {isFullHr && (
+        {tabs.settings && (
           <TabsContent value="settings">
             <EmployeeForm employee={employee} locations={locationsQuery.data ?? []} />
           </TabsContent>

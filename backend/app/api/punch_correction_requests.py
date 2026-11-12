@@ -11,6 +11,7 @@ from app.db import get_db
 from app.errors import AppError
 from app.models import (
     AuditAction,
+    CorrectionRequestKind,
     CorrectionRequestStatus,
     Employee,
     Punch,
@@ -24,7 +25,13 @@ from app.schemas.punch_correction_request import (
     CorrectionRequestResponse,
 )
 from app.services.audit_service import log_action
-from app.services.notification_service import notify_correction_decided, notify_correction_requested
+from app.services import project_service
+from app.services import time_entry_service as entries
+from app.services.notification_service import (
+    notify_correction_decided,
+    notify_correction_requested,
+    notify_time_entry_decided,
+)
 from app.services.period_service import ensure_period_open
 from app.services.scope_service import ensure_employee_visible
 from app.services.timesheet_service import employee_timezone, recalculate_day, refresh_auto_breaks, today_in
@@ -59,6 +66,7 @@ async def create_correction_request(
             select(PunchCorrectionRequest.id).where(
                 PunchCorrectionRequest.employee_id == employee.id,
                 PunchCorrectionRequest.work_date == payload.work_date,
+                PunchCorrectionRequest.kind == CorrectionRequestKind.CORRECTION,
                 PunchCorrectionRequest.status == CorrectionRequestStatus.PENDING,
             )
         )
@@ -102,7 +110,12 @@ async def list_correction_requests(
     if status is not None:
         stmt = stmt.where(PunchCorrectionRequest.status == status)
     stmt = stmt.order_by(PunchCorrectionRequest.work_date.desc(), PunchCorrectionRequest.id.desc()).limit(200)
-    return [_response(row, employee) for row, employee in (await db.execute(stmt)).all()]
+    responses = [_response(row, employee) for row, employee in (await db.execute(stmt)).all()]
+    used = {item.project_id for r in responses for item in r.items if item.project_id is not None}
+    names = await project_service.project_names(db, actor.tenant_id, used)
+    for response in responses:
+        response.project_names = {i.project_id: names[i.project_id] for i in response.items if i.project_id in names}
+    return responses
 
 
 @router.patch("/punch-correction-requests/{request_id}/decide", response_model=CorrectionRequestResponse)
@@ -125,7 +138,18 @@ async def decide_correction_request(
 
     tz = await employee_timezone(db, employee)
     created: list[Punch] = []
-    if payload.approve:
+    time_entry = row.kind == CorrectionRequestKind.TIME_ENTRY
+    if payload.approve and time_entry:
+        # Selbst eingetragene Zeiten: dieselben harten Regeln wie beim Eintragen (Überschneidung mit
+        # inzwischen gestempelten Zeiten, Monat offen …), aber ohne den Zeitraum „rückwirkend bis“.
+        items = json.loads(row.items)
+        try:
+            await entries.check_entry(db, employee, row.work_date, items, rules=None, exclude_request_id=row.id)
+            created = await entries.create_punches(db, employee, row.work_date, items, account_id=actor.account_id)
+        except AppError:
+            await db.rollback()
+            raise
+    elif payload.approve:
         for item in CorrectionRequestResponse.model_validate(row).items:
             hour, minute = (int(v) for v in item.time.split(":"))
             local = datetime.combine(row.work_date + timedelta(days=1 if item.next_day else 0), time(hour, minute), tz)
@@ -155,11 +179,14 @@ async def decide_correction_request(
         entity_type="punch_correction_request",
         entity_id=row.id,
         detail=(
-            f"{'Übernommen' if payload.approve else 'Abgelehnt'}: {employee.first_name} {employee.last_name}, "
-            f"{row.work_date.isoformat()}"
+            f"{'Zeiteintrag ' if time_entry else ''}{'Übernommen' if payload.approve else 'Abgelehnt'}: "
+            f"{employee.first_name} {employee.last_name}, {row.work_date.isoformat()}"
         ),
     )
-    await notify_correction_decided(db, actor.tenant_id, employee, row.work_date, payload.approve)
+    if time_entry:
+        await notify_time_entry_decided(db, actor.tenant_id, employee, row.work_date, payload.approve)
+    else:
+        await notify_correction_decided(db, actor.tenant_id, employee, row.work_date, payload.approve)
     await db.commit()
 
     if created:

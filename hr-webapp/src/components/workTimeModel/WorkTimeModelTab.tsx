@@ -43,6 +43,8 @@ import {
   formatHours,
   formatRange,
   hhmm,
+  rotationText,
+  rotationWeekIndex,
   shiftLabel,
   WEEKDAYS,
   type ModelSource,
@@ -73,8 +75,17 @@ function workdaysInMonth(day: Date, weekdays: number[]): number {
 
 // Arbeitstage: feste Tage, flexibel (Wochensoll ohne feste Tage) oder nach Aufwand (ohne Soll).
 type DaysKind = 'fixed' | 'flex' | 'onDemand'
-// Soll bei festen Tagen: Wochenstunden (gleichmäßig oder je Wochentag) oder festes Monatssoll.
-type Period = 'week' | 'month'
+// Soll bei festen Tagen: Wochenstunden (gleichmäßig oder je Wochentag), festes Monatssoll oder ein
+// mehrwöchiger Turnus (2–4 Wochen mit Stunden je Wochentag, wiederholt sich fortlaufend).
+type Period = 'week' | 'month' | 'rotation'
+
+const ROTATION_MIN_WEEKS = 2
+const ROTATION_MAX_WEEKS = 4
+const FULL_WEEK = ['8', '8', '8', '8', '8', '', '']
+
+function parseHours(value: string): number {
+  return value.trim() ? Number(value.replace(',', '.')) : 0
+}
 
 /** Was das Formular liefert (ohne „gültig ab“); die Toleranz nur bei Modellen. */
 export type ModelFormPayload = Omit<WorkTimeModelSetRequest, 'valid_from'> & {
@@ -133,6 +144,12 @@ export function WorkTimeModelForm({
   const [monthlyHours, setMonthlyHours] = useState('')
   const [capHours, setCapHours] = useState('')
   const [dailyHours, setDailyHours] = useState<string[]>(['8', '8', '8', '8', '8', '', ''])
+  // Mehrwöchiges Modell: Stunden je Wochentag für jede Woche des Turnus; Start = Montag der Woche 1
+  // ('' = Woche des „Gültig ab“-Datums)
+  const [rotationWeeks, setRotationWeeks] = useState<string[][]>([FULL_WEEK, FULL_WEEK])
+  const [rotationStart, setRotationStart] = useState('')
+  // Mit dem Gehalt abgegoltene Überstunden je Monat ('' = keine)
+  const [settledHours, setSettledHours] = useState('')
   // Pause: "rules" = keine eigene (Pause der Schichtvorlage bzw. Pausenregeln), "minutes", "window".
   const [breakKind, setBreakKind] = useState<'rules' | 'minutes' | 'window'>('rules')
   const [breakMinutes, setBreakMinutes] = useState('30')
@@ -152,11 +169,33 @@ export function WorkTimeModelForm({
   const [saved, setSaved] = useState(false)
 
   const mode =
-    daysKind === 'onDemand' ? 'onDemand' : daysKind === 'flex' ? 'flex' : period === 'month' ? 'monthly' : perDay ? 'perDay' : 'even'
+    daysKind === 'onDemand'
+      ? 'onDemand'
+      : daysKind === 'flex'
+        ? 'flex'
+        : period === 'month'
+          ? 'monthly'
+          : period === 'rotation'
+            ? 'rotation'
+            : perDay
+              ? 'perDay'
+              : 'even'
   const parsedDaily = dailyHours.map((value) => (value.trim() ? Number(value.replace(',', '.')) : 0))
   const dailyValid = parsedDaily.every((h) => Number.isFinite(h) && h >= 0 && h <= 10) && parsedDaily.some((h) => h > 0)
   const dailySum = parsedDaily.reduce((sum, h) => sum + (Number.isFinite(h) ? h : 0), 0)
+  const parsedRotation = rotationWeeks.map((week) => week.map(parseHours))
+  const rotationSums = parsedRotation.map((week) => week.reduce((sum, h) => sum + (Number.isFinite(h) ? h : 0), 0))
+  const rotationValid =
+    parsedRotation.length >= ROTATION_MIN_WEEKS &&
+    parsedRotation.length <= ROTATION_MAX_WEEKS &&
+    parsedRotation.every((week) => week.every((h) => Number.isFinite(h) && h >= 0 && h <= 10)) &&
+    parsedRotation.some((week) => week.some((h) => h > 0)) &&
+    rotationSums.every((sum) => sum <= 60)
+  const rotationAverage = rotationSums.reduce((sum, h) => sum + h, 0) / parsedRotation.length
+  const rotationDays = parsedRotation.reduce((sum, week) => sum + week.filter((h) => h > 0).length, 0) / parsedRotation.length
   const hours = Number(weeklyHours.replace(',', '.'))
+  const settled = settledHours.trim() ? Number(settledHours.replace(',', '.')) : null
+  const settledValid = settled === null || (Number.isFinite(settled) && settled >= 0 && settled <= 100)
   const cap = capHours.trim() ? Number(capHours.replace(',', '.')) : null
   const capValid = cap === null || (Number.isFinite(cap) && cap > 0 && cap <= 400)
   const monthly = Number(monthlyHours.replace(',', '.'))
@@ -165,6 +204,8 @@ export function WorkTimeModelForm({
       ? capValid
       : mode === 'perDay'
         ? dailyValid
+        : mode === 'rotation'
+        ? rotationValid
         : mode === 'monthly'
           ? monthlyHours.trim() !== '' && Number.isFinite(monthly) && monthly > 0 && monthly <= 260
           : Number.isFinite(hours) && hours > 0 && hours <= 60
@@ -212,6 +253,19 @@ export function WorkTimeModelForm({
   function toggleWeekday(day: number) {
     setWeekdays((current) =>
       current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort(),
+    )
+  }
+
+  function setRotationLength(length: number) {
+    // Neue Wochen übernehmen die Stunden der letzten Woche; beim Kürzen fallen die hinteren weg.
+    setRotationWeeks((current) =>
+      length <= current.length ? current.slice(0, length) : [...current, ...Array(length - current.length).fill(current.at(-1) ?? FULL_WEEK)],
+    )
+  }
+
+  function setRotationHours(week: number, day: number, value: string) {
+    setRotationWeeks((current) =>
+      current.map((hoursOfWeek, index) => (index === week ? hoursOfWeek.map((h, d) => (d === day ? value : h)) : hoursOfWeek)),
     )
   }
 
@@ -277,6 +331,7 @@ export function WorkTimeModelForm({
     setCoreTime(coreTimeFromApi(source))
     setFrame(flexFrameFromApi(source))
     setTolerance(source.late_tolerance_minutes != null ? String(source.late_tolerance_minutes) : '')
+    setSettledHours(source.settled_overtime_minutes ? decimal(source.settled_overtime_minutes / 60) : '')
     if (source.on_demand) {
       setDaysKind('onDemand')
       setCapHours(source.monthly_cap_minutes ? decimal(source.monthly_cap_minutes / 60) : '')
@@ -287,6 +342,14 @@ export function WorkTimeModelForm({
       setPeriod('month')
       setMonthlyHours(decimal(source.monthly_minutes / 60))
       if (source.weekdays.length > 0) setWeekdays(source.weekdays)
+      return
+    }
+    if (source.rotation_minutes && source.rotation_minutes.length > 0) {
+      setDaysKind('fixed')
+      setPeriod('rotation')
+      setRotationWeeks(source.rotation_minutes.map((week) => week.map((m) => (m > 0 ? decimal(m / 60) : ''))))
+      // Startpunkt übernehmen: eine neue Fassung setzt den bisherigen Rhythmus fort.
+      setRotationStart(source.rotation_start ?? '')
       return
     }
     if (source.weekly_minutes === null || source.weekly_minutes === undefined) return
@@ -311,12 +374,16 @@ export function WorkTimeModelForm({
         ? { daily_hours: parsedDaily, flexible: false, on_demand: false }
         : mode === 'monthly'
         ? { monthly_hours: monthly, weekdays, flexible: false, on_demand: false }
+        : mode === 'rotation'
+        ? { rotation_weeks: parsedRotation, rotation_start: rotationStart || null, flexible: false, on_demand: false }
         : mode === 'flex'
           ? { weekly_hours: hours, flexible: true, on_demand: false }
           : { weekly_hours: hours, weekdays, flexible: false, on_demand: false }
     const framePayload = { ...flexFramePayload(frame), ...(withTolerance ? { late_tolerance_minutes: toleranceNumber } : {}) }
     const payload: ModelFormPayload = {
       ...modelPayload,
+      // „Nach Aufwand“ hat kein Konto und damit keine abgegoltenen Überstunden
+      settled_overtime_hours: mode === 'onDemand' ? null : settled || null,
       ...breakPayload,
       shift_template_id: shiftTemplateId ? Number(shiftTemplateId) : null,
       ...coreTimePayload(coreTime),
@@ -330,7 +397,7 @@ export function WorkTimeModelForm({
       setError(
         err instanceof ApiError && err.status !== 422
           ? err.message
-          : 'Bitte Stunden (max. 10 je Tag, 60 je Woche bzw. 260 je Monat), mindestens einen Arbeitstag und ein Datum angeben.',
+          : 'Bitte Stunden (max. 10 je Tag, 60 je Woche bzw. 260 je Monat; Turnus 2 bis 4 Wochen), mindestens einen Arbeitstag und ein Datum angeben.',
       )
     }
   }
@@ -392,6 +459,15 @@ export function WorkTimeModelForm({
               onClick={() => setPeriod('month')}
             >
               Monatsstunden (fest)
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={period === 'rotation' ? 'default' : 'outline'}
+              aria-pressed={period === 'rotation'}
+              onClick={() => setPeriod('rotation')}
+            >
+              Mehrwöchig (Turnus)
             </Button>
           </div>
         </fieldset>
@@ -477,6 +553,88 @@ export function WorkTimeModelForm({
         </div>
       )}
 
+      {mode === 'rotation' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rotation-length">Wochen im Turnus</Label>
+            <select
+              id="rotation-length"
+              className="h-9 w-32 rounded-md border border-slate-300 bg-white px-2 text-sm"
+              value={rotationWeeks.length}
+              onChange={(event) => setRotationLength(Number(event.target.value))}
+            >
+              {[2, 3, 4].map((length) => (
+                <option key={length} value={length}>
+                  {length} Wochen
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Stunden je Wochentag und Woche (leer = frei)</Label>
+            <div className="overflow-x-auto">
+              <table className="text-sm">
+                <thead>
+                  <tr>
+                    <th className="pr-2 text-left text-xs font-medium text-slate-500">Woche</th>
+                    {WEEKDAYS.map((label) => (
+                      <th key={label} className="px-0.5 text-center text-xs font-medium text-slate-500">
+                        {label}
+                      </th>
+                    ))}
+                    <th className="pl-2 text-right text-xs font-medium text-slate-500">Summe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rotationWeeks.map((week, weekIndex) => (
+                    <tr key={weekIndex}>
+                      <th scope="row" className="whitespace-nowrap pr-2 text-left font-medium text-slate-700">
+                        Woche {weekIndex + 1}
+                      </th>
+                      {WEEKDAYS.map((label, day) => (
+                        <td key={label} className="px-0.5 py-0.5">
+                          <Input
+                            inputMode="decimal"
+                            aria-label={`Woche ${weekIndex + 1} Stunden ${label}`}
+                            className="w-12 px-1 text-center"
+                            value={week[day]}
+                            onChange={(event) => setRotationHours(weekIndex, day, event.target.value)}
+                          />
+                        </td>
+                      ))}
+                      <td className="whitespace-nowrap pl-2 text-right text-slate-600">
+                        {rotationSums[weekIndex].toLocaleString('de-DE', { maximumFractionDigits: 2 })} h
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rotationValid && (
+              <p className="text-sm text-slate-500">
+                = im Schnitt {rotationAverage.toLocaleString('de-DE', { maximumFractionDigits: 2 })} h pro Woche an im Schnitt{' '}
+                {rotationDays.toLocaleString('de-DE', { maximumFractionDigits: 2 })} Arbeitstagen. Der Turnus wiederholt sich
+                fortlaufend. Urlaub zählt nur an Tagen mit Stunden in der jeweiligen Woche, Feiertage und Abwesenheiten
+                werden mit den Stunden des jeweiligen Tages gutgeschrieben.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rotation-start">Turnus beginnt am (optional)</Label>
+            <Input
+              id="rotation-start"
+              type="date"
+              className="w-44"
+              value={rotationStart}
+              onChange={(event) => setRotationStart(event.target.value)}
+            />
+            <p className="text-sm text-slate-500">
+              Ein Tag der Woche 1 – sie beginnt am Montag dieser Woche. Leer = Woche 1 ist die Woche des „Gültig ab“-Datums.
+            </p>
+          </div>
+        </div>
+      )}
+
       {(mode === 'even' || mode === 'monthly') && (
         <>
           {mode === 'even' && (
@@ -527,6 +685,25 @@ export function WorkTimeModelForm({
             )}
           </div>
         </>
+      )}
+
+      {mode !== 'onDemand' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="settled-hours">Mit dem Gehalt abgegoltene Überstunden je Monat (Stunden)</Label>
+          <Input
+            id="settled-hours"
+            inputMode="decimal"
+            className="w-32"
+            placeholder="keine"
+            value={settledHours}
+            onChange={(event) => setSettledHours(event.target.value)}
+          />
+          <p className="text-sm text-slate-500">
+            Mehrarbeit eines Kalendermonats bis zu dieser Grenze ist mit dem Gehalt abgegolten und kommt nicht aufs
+            Gleitzeitkonto, erst der Teil darüber. Maßgeblich ist der Saldo des ganzen Monats; Minusstunden bleiben
+            unverändert. Leer oder 0 = keine (0–100 Stunden).
+          </p>
+        </div>
       )}
 
       {(shiftPlanningEnabled || shiftTemplateId !== '') && (
@@ -652,6 +829,7 @@ export function WorkTimeModelForm({
             pending ||
             !extraValid ||
             !hoursValid ||
+            !settledValid ||
             !breakValid ||
             !coreTimeValid(coreTime) ||
             !flexFrameValid(frame) ||
@@ -881,6 +1059,9 @@ export function WorkTimeModelSummary({ model, loading }: { model: WorkTimeModel 
                 : 'wie Pausenregeln'}
             </p>
             <p>Kernarbeitszeit: {core || 'wie in den Einstellungen'}</p>
+            {model.settled_overtime_minutes ? (
+              <p>Mit dem Gehalt abgegolten: bis {formatHours(model.settled_overtime_minutes)} Std. Überstunden je Monat</p>
+            ) : null}
             {flexFrameLabel(model) && <p>Gleitzeit-Rahmen: {flexFrameLabel(model)}</p>}
             {model.late_tolerance_minutes != null && <p>Toleranz der Pünktlichkeitsprüfung: {model.late_tolerance_minutes} Min.</p>}
             {model.profile_name && (
@@ -959,6 +1140,9 @@ function CurrentModel({ model }: { model: WorkTimeModel }) {
       </div>
     )
   }
+  if (model.rotation_minutes && model.rotation_minutes.length > 0) {
+    return <CurrentRotation model={model} weeks={model.rotation_minutes} />
+  }
   const kind = model.flexible
     ? 'Flexibel ohne feste Tage'
     : model.uneven
@@ -997,6 +1181,54 @@ function CurrentModel({ model }: { model: WorkTimeModel }) {
             )
           })}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Übersicht eines mehrwöchigen Modells: Durchschnitt und je Turnus-Woche das Soll je Wochentag; die
+ * laufende Woche ist markiert. */
+function CurrentRotation({ model, weeks }: { model: WorkTimeModel; weeks: number[][] }) {
+  const current = model.rotation_start ? rotationWeekIndex(model.rotation_start, weeks.length, new Date()) : null
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <span className="text-2xl font-semibold text-slate-900">
+          {model.weekly_minutes != null ? `${formatHours(model.weekly_minutes)} Std.` : '–'}
+        </span>
+        <span className="text-slate-500">pro Woche im Schnitt</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+          Mehrwöchig ({weeks.length} Wochen)
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5" aria-label={rotationText(weeks)}>
+        {weeks.map((week, index) => (
+          <div key={index} className="flex items-center gap-1.5">
+            <span className={cn('w-20 shrink-0 text-xs', index === current ? 'font-semibold text-slate-900' : 'text-slate-500')}>
+              Woche {index + 1}
+              {index === current ? ' (jetzt)' : ''}
+            </span>
+            <div className="grid flex-1 grid-cols-7 gap-1.5">
+              {WEEKDAYS.map((label, day) => (
+                <div
+                  key={label}
+                  className={cn(
+                    'flex flex-col items-center rounded-md border py-1',
+                    week[day] > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-slate-50 text-slate-400',
+                  )}
+                >
+                  <span className="text-xs font-medium">{label}</span>
+                  <span className="text-xs font-semibold sm:text-sm">{week[day] > 0 ? `${formatHours(week[day])} h` : 'frei'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {model.rotation_start && (
+        <p className="text-slate-500">
+          Woche 1 beginnt am {formatDate(model.rotation_start)}; der Turnus wiederholt sich fortlaufend.
+        </p>
       )}
     </div>
   )

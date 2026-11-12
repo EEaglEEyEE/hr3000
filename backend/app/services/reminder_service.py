@@ -15,9 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Employee, EmploymentContract, Notification, NotificationType, Tenant
+from app.services import recruiting_service
 from app.services.leave_service import leave_balance
 from app.services.notification_service import _employee_login, _mail, _notification_mail_config, full_hr_recipients
 from app.services.settings_service import get_or_create_settings
+from app.services.whistle_service import send_whistle_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +127,12 @@ async def run_reminders(session_factory: async_sessionmaker, interval_seconds: i
             for tenant_id in tenant_ids:
                 async with session_factory() as db:
                     await send_due_reminders(db, tenant_id, date.today())
+                # Fristen des Hinweisgebersystems: eigener Schalter, unabhängig von „Erinnerungen“
+                async with session_factory() as db:
+                    await send_whistle_reminders(db, tenant_id, date.today())
+                # Löschfristen im Recruiting – unabhängig von den Erinnerungen und vom Recruiting-Schalter
+                async with session_factory() as db:
+                    await recruiting_service.purge_due_applications(db, tenant_id, date.today())
         except Exception:
             logger.exception("Erinnerungen konnten nicht verschickt werden.")
         await asyncio.sleep(interval_seconds)

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.role_permissions import Area
 from app.api.deps import Actor, get_current_actor, get_current_full_hr_principal
 from app.db import get_db
 from app.errors import AppError
@@ -369,7 +370,7 @@ async def _send_email_step(db: AsyncSession, actor: Actor, employee: Employee, i
         supervisors = (await db.execute(select(Employee).where(Employee.id.in_(ids)))).scalars().all() if ids else []
         recipients = [supervisor.login_email for supervisor in supervisors]
     else:
-        recipients = [email for _, email in await full_hr_recipients(db, actor.tenant_id)]
+        recipients = [email for _, email in await full_hr_recipients(db, actor.tenant_id, area=Area.CHECKLISTS)]
     recipients = [r for r in recipients if r]
     if config is None or not recipients:
         item.note = "Nicht verschickt: kein Mailversand eingerichtet." if config is None else "Nicht verschickt: keine E-Mail-Adresse."

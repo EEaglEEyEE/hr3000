@@ -7,7 +7,7 @@ export function ProtectedRoute({
   area,
 }: {
   children: ReactNode
-  area: 'hr' | 'self-service' | 'super-admin'
+  area: 'hr' | 'self-service' | 'super-admin' | 'account'
 }) {
   const { isAuthenticated, hasHrAccess, isSuperAdmin, employeeId } = useAuth()
 
@@ -24,6 +24,10 @@ export function ProtectedRoute({
   // Bereichen (hr/self-service) gibt es für ihn nichts zu sehen.
   if (isSuperAdmin) {
     return <Navigate to="/mandanten" replace />
+  }
+  // Jedes angemeldete Konto der Firma (z. B. „Hinweise“: Beauftragte brauchen keine Verwaltungsrolle)
+  if (area === 'account') {
+    return <>{children}</>
   }
   if (area === 'hr' && !hasHrAccess) {
     return <Navigate to="/mein-bereich" replace />

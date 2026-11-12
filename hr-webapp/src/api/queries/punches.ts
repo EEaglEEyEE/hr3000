@@ -5,6 +5,7 @@ import type { components } from '../schema'
 export type Punch = components['schemas']['PunchResponse']
 export type PunchCorrectionRequest = components['schemas']['PunchCorrectionRequest']
 export type PunchCreateRequest = components['schemas']['PunchCreateRequest']
+export type OwnPunchRequest = components['schemas']['OwnPunchRequest']
 
 export function useEmployeePunchesQuery(employeeId: number) {
   return useQuery({
@@ -76,12 +77,12 @@ export function useCorrectPunchMutation(employeeId: number) {
   })
 }
 
-/** Stempeln über den Web-Login (Startseite) – Serverzeit, nur für sich selbst. */
+/** Stempeln über den Web-Login (Startseite) – Serverzeit, nur für sich selbst. Die Position wird nur
+ * mitgeschickt, wenn die Firma den Standort beim Stempeln prüft (sie wird nie gespeichert). */
 export function useOwnPunchMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (punchType: Punch['punch_type']) =>
-      unwrap(await apiClient.POST('/me/punches', { body: { punch_type: punchType } })),
+    mutationFn: async (body: OwnPunchRequest) => unwrap(await apiClient.POST('/me/punches', { body })),
     // Bis das Dashboard neu geladen ist, bleiben die Knöpfe gesperrt – sonst steht kurz noch der alte Status da.
     onSuccess: async () => {
       void queryClient.invalidateQueries({ queryKey: ['employees'] })

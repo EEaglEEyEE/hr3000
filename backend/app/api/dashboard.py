@@ -22,6 +22,7 @@ from app.services.absence_type_service import CATEGORY_LABELS, list_absence_type
 from app.services.holiday_service import location_scope
 from app.services.leave_service import leave_balance
 from app.services.monthly_cap_service import monthly_cap_status
+from app.services.punch_location_service import MODE_BLOCK, check_active
 from app.services.settings_service import get_or_create_settings
 from app.services.scope_service import visible_employee_ids
 from app.services.timesheet_service import (
@@ -75,8 +76,11 @@ async def _me(db: AsyncSession, employee: Employee) -> DashboardMe:
     ).scalar_one()
     cap = await monthly_cap_status(db, employee)
     settings_row = await get_or_create_settings(db, employee.tenant_id)
+    location_check = settings_row.portal_punching_enabled and await check_active(db, settings_row, employee.tenant_id)
     return DashboardMe(
         portal_punching=settings_row.portal_punching_enabled,
+        location_check=location_check,
+        location_check_required=location_check and settings_row.punch_location_mode == MODE_BLOCK,
         break_buttons=settings_row.kiosk_break_buttons,
         errand_buttons=settings_row.kiosk_errand_buttons,
         on_demand=cap.on_demand,
@@ -246,6 +250,7 @@ async def get_dashboard(
         events=events[:_MAX_EVENTS],
         horizon_date=horizon,
         portal_punching_enabled=settings_row.portal_punching_enabled,
+        self_time_entry_enabled=settings_row.self_time_entry_enabled,
         absence_requests_enabled=settings_row.absence_requests_enabled,
         team_calendar_for_employees=settings_row.team_calendar_for_employees,
         org_chart_for_employees=settings_row.org_chart_for_employees,

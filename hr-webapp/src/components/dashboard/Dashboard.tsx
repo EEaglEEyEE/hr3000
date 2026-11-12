@@ -15,7 +15,9 @@ import { ApiError } from '../../api/client'
 import { useOwnPunchMutation } from '../../api/queries/punches'
 import { useMonthlyCapsQuery, useOpenDaysCount } from '../../api/queries/timesheets'
 import { useAuth } from '../../auth/AuthContext'
+import { hasArea } from '../../lib/access'
 import { formatDate, formatMinutesAsHours } from '../../lib/format'
+import { currentPosition } from '../../lib/geolocation'
 import { DAY_STATUS_LABELS, PUNCH_TYPE_LABELS } from '../../lib/labels'
 import { cn } from '../../lib/utils'
 
@@ -144,15 +146,19 @@ function MyFigures({ me }: { me: NonNullable<DashboardData['me']> }) {
 }
 
 function HrTodo({ requestsEnabled }: { requestsEnabled: boolean }) {
-  const { isFullHr } = useAuth()
-  const openDays = useOpenDaysCount()
-  const pendingAbsences = usePendingAbsencesQuery().data?.length ?? 0
-  const corrections = useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0
-  const capsExceeded = (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length
+  const { isFullHr, perms } = useAuth()
+  // Eigene Rolle: nur Zähler der freigegebenen Bereiche (das Backend lehnt die übrigen ab)
+  const time = hasArea(perms, 'TIME')
+  const absences = hasArea(perms, 'ABSENCES')
+  const openDays = useOpenDaysCount(time)
+  const pendingAbsences = usePendingAbsencesQuery(absences).data?.length ?? 0
+  const corrections = useCorrectionRequestsQuery('PENDING', isFullHr && time).data?.length ?? 0
+  const capsExceeded = (useMonthlyCapsQuery(time).data ?? []).filter((row) => row.exceeded).length
   const items = [
-    { to: '/zu-klaeren', label: 'Zu klären', count: openDays + capsExceeded + (isFullHr ? corrections : 0) },
-    { to: '/zu-klaeren/urlaubsantraege', label: 'Urlaubsanträge', count: pendingAbsences },
-  ].filter((item) => item.label !== 'Urlaubsanträge' || requestsEnabled || item.count > 0)
+    { to: '/zu-klaeren', label: 'Zu klären', count: openDays + capsExceeded + (isFullHr ? corrections : 0), show: time },
+    { to: '/zu-klaeren/urlaubsantraege', label: 'Urlaubsanträge', count: pendingAbsences, show: absences },
+  ].filter((item) => item.show && (item.label !== 'Urlaubsanträge' || requestsEnabled || item.count > 0))
+  if (items.length === 0) return null
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {items.map((item) => (
@@ -324,6 +330,7 @@ function PortalPunchCard({ me }: { me: NonNullable<DashboardData['me']> }) {
   const punch = useOwnPunchMutation()
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [locating, setLocating] = useState(false)
   const status = me.today_status
   const actions: PunchKind[] =
     status === 'PRESENT'
@@ -339,12 +346,18 @@ function PortalPunchCard({ me }: { me: NonNullable<DashboardData['me']> }) {
   async function handle(kind: PunchKind) {
     setError(null)
     setMessage(null)
+    setLocating(me.location_check)
     try {
-      const result = await punch.mutateAsync(kind)
+      // Standort nur im Moment des Stempelns abfragen und nur, wenn die Firma ihn prüft.
+      const position = me.location_check ? await currentPosition() : null
+      setLocating(false)
+      const result = await punch.mutateAsync(position ? { punch_type: kind, position } : { punch_type: kind })
       const time = new Date(result.timestamp_utc.endsWith('Z') ? result.timestamp_utc : `${result.timestamp_utc}Z`)
       setMessage(`${PUNCH_TYPE_LABELS[kind]} um ${time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} erfasst.`)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Stempeln fehlgeschlagen.')
+    } finally {
+      setLocating(false)
     }
   }
 
@@ -362,7 +375,7 @@ function PortalPunchCard({ me }: { me: NonNullable<DashboardData['me']> }) {
           <button
             key={kind}
             type="button"
-            disabled={punch.isPending}
+            disabled={punch.isPending || locating}
             onClick={() => void handle(kind)}
             className={cn('rounded-lg px-5 py-3 text-base font-semibold text-white disabled:opacity-50', PUNCH_BUTTON_CLASS[kind])}
           >
@@ -373,9 +386,18 @@ function PortalPunchCard({ me }: { me: NonNullable<DashboardData['me']> }) {
       {status === 'ERROR' && (
         <p className="text-sm text-amber-700">Die heutigen Buchungen sind widersprüchlich – bitte eine Korrektur beantragen.</p>
       )}
+      {locating && <p className="text-sm text-slate-500">Standort wird ermittelt…</p>}
       {message && <p className="text-sm text-emerald-700">{message}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <p className="text-xs text-slate-400">Es gilt die aktuelle Uhrzeit des Servers.</p>
+      {me.location_check && (
+        <p className="text-xs text-slate-400">
+          {me.location_check_required
+            ? 'Stempeln ist nur am Firmenstandort möglich: Beim Klick fragt der Browser einmalig nach dem Standort.'
+            : 'Beim Klick fragt der Browser einmalig nach dem Standort.'}{' '}
+          Gespeichert wird nur, ob die Buchung innerhalb oder außerhalb des Standorts war – keine Koordinaten.
+        </p>
+      )}
     </div>
   )
 }

@@ -38,6 +38,8 @@ class PeriodClosure(Base):
     actual_minutes: Mapped[int] = mapped_column(Integer)
     delta_minutes: Mapped[int] = mapped_column(Integer)
     balance_end_minutes: Mapped[int] = mapped_column(Integer)
+    # davon mit dem Gehalt abgegoltene Überstunden des Monats (Stand bei der Vorlage)
+    settled_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     document_id: Mapped[int | None] = mapped_column(
         ForeignKey("employee_documents.id", ondelete="SET NULL"), nullable=True
     )

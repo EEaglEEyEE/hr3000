@@ -726,6 +726,18 @@ def assign_shift_days(punches: list[Punch], tz: ZoneInfo, max_span: timedelta = 
     return assignment
 
 
+_STARTS = (PunchType.COME, PunchType.BREAK_START, PunchType.ERRAND_START)
+
+
+def punch_order_key(punch: Punch) -> tuple[datetime, int, int]:
+    """Reihenfolge der Stempelungen für die Tagesberechnung: nach Zeitpunkt; zum selben Zeitpunkt ein
+    Ende (Gehen, Pause Ende, Dienstgang Ende) vor einem Beginn, sonst nach Anlage. So bleiben lückenlos
+    aufeinanderfolgende Spannen (08:00–12:00 und 12:00–16:00, z. B. selbst eingetragen mit
+    Projektwechsel) gültig, auch wenn die spätere Spanne zuerst angelegt wurde. Ein Beginn und ein Ende
+    zum selben Zeitpunkt in der Reihenfolge Beginn → Ende wäre eine Spanne der Länge null."""
+    return (_naive_utc(punch.timestamp_utc), 1 if punch.punch_type in _STARTS else 0, punch.id or 0)
+
+
 async def _punch_window(db: AsyncSession, employee_id: int, first: date, last: date) -> list[Punch]:
     # ±2 Tage Puffer: Zeitzonen-Versatz und Schichten über Mitternacht.
     result = await db.execute(
@@ -737,7 +749,7 @@ async def _punch_window(db: AsyncSession, employee_id: int, first: date, last: d
         )
         .order_by(Punch.timestamp_utc.asc(), Punch.id.asc())
     )
-    return list(result.scalars().all())
+    return sorted(result.scalars().all(), key=punch_order_key)
 
 
 def is_birthday(birth_date: date | None, day: date) -> bool:
@@ -1262,6 +1274,86 @@ async def balance_start(db: AsyncSession, employee: Employee) -> date | None:
 _RUNNING_STATUSES = (SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND)
 
 
+# --- Mit dem Gehalt abgegoltene Überstunden ----------------------------------------------------------
+#
+# Je Fassung kann eine Grenze "abgegoltene Überstunden je Monat" gelten (settled_overtime_minutes).
+# Maßgeblich ist der Monatssaldo: Summe der Tagessalden (Ist − Soll) aller Kontozeilen eines
+# Kalendermonats – die Wochenabrechnung flexibler Modelle zählt im Monat ihres Abrechnungstags
+# (Sonntag bzw. letzter Beschäftigungstag), wie im Konto. Abgegolten ist min(max(Monatssaldo, 0),
+# Grenze); nur der Rest geht ins Konto, Minusstunden bleiben unverändert. Die Abgeltung wirkt
+# fortlaufend: Jede Kontozeile trägt den abgegoltenen Stand des Monats bis zu diesem Tag
+# (OvertimeBalance.settled_minutes), das Konto zeigt also nie Stunden, die am Monatsende wieder
+# verschwinden. Die Grenze eines Monats ist die der Fassung, die am Monatsende gilt (bei Austritt im
+# Monat: am letzten Beschäftigungstag; gibt es dort keine, die letzte im Monat) – auch im laufenden
+# Monat schon die zum Monatsende eingetragene. Wechselt die Fassung im Monat, gilt deren Grenze für
+# den ganzen Monatssaldo. "Nach Aufwand" hat kein Konto und damit keine Abgeltung. Korrekturbuchungen
+# (BalanceAdjustment) zählen nicht zum Monatssaldo.
+
+
+def _month_end(day: date) -> date:
+    return date(day.year, day.month, calendar.monthrange(day.year, day.month)[1])
+
+
+def settled_limit_for_month(versions: list[EmployeeDefaultShift], termination: date | None, day: date) -> int:
+    """Grenze der abgegoltenen Überstunden (Minuten, 0 = keine) für den Kalendermonat von day."""
+    month_start = day.replace(day=1)
+    reference = _month_end(day)
+    if termination is not None and month_start <= termination < reference:
+        reference = termination
+    candidates = [
+        v for v in versions if v.valid_from <= reference and (v.valid_to is None or v.valid_to >= month_start)
+    ]
+    if not candidates:
+        return 0
+    version = max(candidates, key=lambda v: v.valid_from)
+    if version.on_demand:
+        return 0
+    return version.settled_overtime_minutes or 0
+
+
+class _Settlement:
+    """Laufender Monatssaldo und abgegoltener Teil beim Fortschreiben des Kontos."""
+
+    def __init__(self, versions: list[EmployeeDefaultShift], termination: date | None) -> None:
+        self._versions = versions
+        self._termination = termination
+        self._limits: dict[tuple[int, int], int] = {}
+        self.month: tuple[int, int] | None = None
+        self.raw = 0
+        self.settled = 0
+
+    def limit(self, day: date) -> int:
+        key = (day.year, day.month)
+        if key not in self._limits:
+            self._limits[key] = settled_limit_for_month(self._versions, self._termination, day)
+        return self._limits[key]
+
+    def resume(self, first: date, earlier: list[tuple[int, int]]) -> bool:
+        """Stand des Monats vor `first` aus den gespeicherten Zeilen (Tagessaldo, abgegolten) übernehmen.
+        False = die Zeilen passen nicht zur heutigen Grenze (Grenze/Fassung geändert) -> ab
+        Monatsanfang neu rechnen."""
+        limit = self.limit(first)
+        raw = settled = 0
+        for delta, stored in earlier:
+            raw += delta
+            settled = min(max(raw, 0), limit)
+            if settled != stored:
+                return False
+        self.month, self.raw, self.settled = (first.year, first.month), raw, settled
+        return True
+
+    def book(self, day: date, delta: int) -> int:
+        """Tagessaldo verbuchen; liefert den Teil, der ins Konto geht."""
+        key = (day.year, day.month)
+        if key != self.month:
+            self.month, self.raw, self.settled = key, 0, 0
+        self.raw += delta
+        settled = min(max(self.raw, 0), self.limit(day))
+        change = settled - self.settled
+        self.settled = settled
+        return delta - change
+
+
 async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
     """Rechnet das Konto ab dem ersten veralteten Tag (balance_through + 1, bzw. ab Beginn) bis
     heute neu und pflegt dabei den Tages-Cache (daily_summaries). Committet."""
@@ -1310,8 +1402,30 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
     ).scalar_one_or_none()
     if still_running is not None:
         first = max(start, min(first, still_running))
-    # Flexible Wochensolls werden je Woche abgerechnet -> immer ab Wochenbeginn neu rechnen.
-    first = max(start, first - timedelta(days=first.weekday()))
+    versions = list(
+        (await db.execute(select(EmployeeDefaultShift).where(EmployeeDefaultShift.employee_id == locked.id))).scalars().all()
+    )
+    settlement = _Settlement(versions, locked.termination_date)
+    while True:
+        # Flexible Wochensolls werden je Woche abgerechnet -> immer ab Wochenbeginn neu rechnen.
+        first = max(start, first - timedelta(days=first.weekday()))
+        # Abgegoltene Überstunden hängen am Monatssaldo: den Stand des Monats vor `first` übernehmen –
+        # passt er nicht mehr zur Grenze (Fassung geändert), ab Monatsanfang neu rechnen.
+        month_start = first.replace(day=1)
+        earlier = (
+            await db.execute(
+                select(OvertimeBalance.daily_delta_minutes, OvertimeBalance.settled_minutes)
+                .where(
+                    OvertimeBalance.employee_id == locked.id,
+                    OvertimeBalance.balance_date >= max(start, month_start),
+                    OvertimeBalance.balance_date < first,
+                )
+                .order_by(OvertimeBalance.balance_date)
+            )
+        ).all()
+        if settlement.resume(first, [(delta, settled or 0) for delta, settled in earlier]):
+            break
+        first = max(start, month_start)
 
     await db.execute(
         delete(OvertimeBalance).where(
@@ -1376,7 +1490,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
         if calc.target_minutes is not None and not in_progress:
             actual = calc.actual_minutes or 0
             delta = actual - calc.target_minutes
-            running += delta
+            running += settlement.book(day, delta)
             day_row = OvertimeBalance(
                 employee_id=locked.id,
                 balance_date=day,
@@ -1384,6 +1498,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
                 daily_actual_minutes=actual,
                 daily_delta_minutes=delta,
                 running_balance_minutes=running,
+                settled_minutes=settlement.settled,
             )
             db.add(day_row)
         if calc.flexible_share:
@@ -1393,12 +1508,13 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
         if flex_target and (day.weekday() == 6 or day == end) and day < today:
             target = round(flex_target)
             delta = flex_actual - target
-            running += delta
+            running += settlement.book(day, delta)
             if day_row is not None:  # Modellwechsel in der Woche: in die Tageszeile einrechnen
                 day_row.daily_target_minutes += target
                 day_row.daily_actual_minutes += flex_actual
                 day_row.daily_delta_minutes += delta
                 day_row.running_balance_minutes = running
+                day_row.settled_minutes = settlement.settled
             else:
                 db.add(
                     OvertimeBalance(
@@ -1408,6 +1524,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
                         daily_actual_minutes=flex_actual,
                         daily_delta_minutes=delta,
                         running_balance_minutes=running,
+                        settled_minutes=settlement.settled,
                     )
                 )
             flex_target, flex_actual = 0.0, 0
@@ -1435,6 +1552,14 @@ class BalanceInfo:
     def total_minutes(self) -> int:
         return self.running_minutes + self.adjustment_minutes
 
+    def settled_in_month(self, day: date) -> int:
+        """Abgegoltene Minuten des Kalendermonats von day bis zum letzten gerechneten Tag (0, wenn
+        der Monat noch keine Kontozeile hat)."""
+        row = self.last_row
+        if row is None or (row.balance_date.year, row.balance_date.month) != (day.year, day.month):
+            return 0
+        return row.settled_minutes or 0
+
 
 async def balance_as_of(db: AsyncSession, employee: Employee, as_of: date | None = None, *, refresh: bool = True) -> BalanceInfo:
     """Kontostand (gerechnete Tage + Korrekturbuchungen) zum Stichtag (Standard: heute)."""
@@ -1448,3 +1573,54 @@ async def balance_as_of(db: AsyncSession, employee: Employee, as_of: date | None
     last_row = (await db.execute(stmt.order_by(OvertimeBalance.balance_date.desc()).limit(1))).scalar_one_or_none()
     adjustments = int((await db.execute(adj)).scalar_one() or 0)
     return BalanceInfo(last_row.running_balance_minutes if last_row else 0, adjustments, last_row)
+
+
+async def settled_limit(db: AsyncSession, employee: Employee, day: date) -> int:
+    """Grenze der abgegoltenen Überstunden (Minuten, 0 = keine) im Kalendermonat von day."""
+    versions = (
+        await db.execute(select(EmployeeDefaultShift).where(EmployeeDefaultShift.employee_id == employee.id))
+    ).scalars().all()
+    return settled_limit_for_month(list(versions), employee.termination_date, day)
+
+
+async def settled_between(db: AsyncSession, employee: Employee, start: date, end: date, *, refresh: bool = True) -> int:
+    """Mit dem Gehalt abgegoltene Minuten im Zeitraum: je Kalendermonat der Stand am letzten
+    gerechneten Tag bis `end` minus der Stand am Vortag von `start` (wenn der Zeitraum mitten im Monat
+    beginnt). Für ganze Monate also die abgegoltenen Stunden des Monats (im laufenden Monat bis
+    heute)."""
+    if refresh:
+        await ensure_balance_current(db, employee)
+    rows = (
+        await db.execute(
+            select(OvertimeBalance.balance_date, OvertimeBalance.settled_minutes)
+            .where(
+                OvertimeBalance.employee_id == employee.id,
+                OvertimeBalance.balance_date >= start.replace(day=1),
+                OvertimeBalance.balance_date <= end,
+            )
+            .order_by(OvertimeBalance.balance_date)
+        )
+    ).all()
+    at_end: dict[tuple[int, int], int] = {}
+    before_start = 0
+    for balance_date, settled in rows:
+        at_end[(balance_date.year, balance_date.month)] = settled or 0
+        if balance_date < start:
+            before_start = settled or 0  # nur Zeilen im Monat von start liegen vor start
+    return sum(at_end.values()) - before_start
+
+
+async def has_settled_limit(db: AsyncSession, employee: Employee, start: date, end: date) -> bool:
+    """Gilt in einem der Kalendermonate des Zeitraums eine Grenze für abgegoltene Überstunden?"""
+    versions = list(
+        (await db.execute(select(EmployeeDefaultShift).where(EmployeeDefaultShift.employee_id == employee.id))).scalars().all()
+    )
+    if not any(v.settled_overtime_minutes for v in versions):
+        return False
+    month = start.replace(day=1)
+    while month <= end:
+        if settled_limit_for_month(versions, employee.termination_date, month):
+            return True
+        month = _month_end(month) + timedelta(days=1)
+    return False
+

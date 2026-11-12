@@ -43,7 +43,7 @@ function describeWhen(component: PayComponent): string {
   return `ab ${formatDate(component.valid_from!)}${component.valid_to ? ` bis ${formatDate(component.valid_to)}` : ', unbefristet'}`
 }
 
-export function PayComponentsSection({ employeeId }: { employeeId: number }) {
+export function PayComponentsSection({ employeeId, canEdit = true }: { employeeId: number; canEdit?: boolean }) {
   const query = usePayComponentsQuery(employeeId, true)
   const updateComponent = useUpdatePayComponentMutation(employeeId)
   const deleteComponent = useDeletePayComponentMutation(employeeId)
@@ -83,16 +83,20 @@ export function PayComponentsSection({ employeeId }: { employeeId: number }) {
             nach Kalendertagen, Zulagen je Stunde mit den Ist-Stunden.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setDialogKind('ALLOWANCE')}>
-            <Plus className="h-4 w-4" />
-            Neue Zulage
-          </Button>
-          <Button variant="outline" onClick={() => setDialogKind('ONE_TIME')}>
-            <Plus className="h-4 w-4" />
-            Neue Einmalzahlung
-          </Button>
-        </div>
+        {canEdit ? (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setDialogKind('ALLOWANCE')}>
+              <Plus className="h-4 w-4" />
+              Neue Zulage
+            </Button>
+            <Button variant="outline" onClick={() => setDialogKind('ONE_TIME')}>
+              <Plus className="h-4 w-4" />
+              Neue Einmalzahlung
+            </Button>
+          </div>
+        ) : (
+          <span className="text-sm text-slate-500">Nur Ansicht – deine Rolle darf hier nichts ändern.</span>
+        )}
       </div>
       {query.isLoading && <p className="text-slate-500">Lädt…</p>}
       {query.isError && <p className="text-red-600">Zulagen konnten nicht geladen werden.</p>}
@@ -117,12 +121,12 @@ export function PayComponentsSection({ employeeId }: { employeeId: number }) {
               <TableCell>{component.wage_type ?? '–'}</TableCell>
               <TableCell>{component.note ?? '–'}</TableCell>
               <TableCell className="whitespace-nowrap text-right">
-                {(component.kind === 'ALLOWANCE' || component.recurs_yearly) && !component.valid_to && ending?.id !== component.id && (
+                {canEdit && (component.kind === 'ALLOWANCE' || component.recurs_yearly) && !component.valid_to && ending?.id !== component.id && (
                   <Button variant="ghost" size="sm" onClick={() => setEnding({ id: component.id, date: todayIsoDate() })}>
                     Beenden
                   </Button>
                 )}
-                {ending?.id === component.id && (
+                {canEdit && ending?.id === component.id && (
                   <span className="inline-flex items-center gap-1">
                     <Input
                       type="date"
@@ -136,9 +140,11 @@ export function PayComponentsSection({ employeeId }: { employeeId: number }) {
                     </Button>
                   </span>
                 )}
-                <Button variant="ghost" size="icon" title="Löschen" onClick={() => remove(component)}>
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
+                {canEdit && (
+                  <Button variant="ghost" size="icon" title="Löschen" onClick={() => remove(component)}>
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}

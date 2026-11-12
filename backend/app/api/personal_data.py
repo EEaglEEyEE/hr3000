@@ -67,7 +67,7 @@ async def update_personal_data(
     if employee.anonymized_at is not None:
         raise AppError(400, "ALREADY_ANONYMIZED", "Anonymisierte Mitarbeiter können nicht mehr bearbeitet werden.")
     changes = payload.model_dump(exclude_unset=True)
-    if PAYROLL_FIELDS & changes.keys() and not actor.has_payroll_access:
+    if PAYROLL_FIELDS & changes.keys() and not actor.can_edit_payroll:
         raise AppError(403, "PAYROLL_PERMISSION_REQUIRED", "Bank, Steuer und Sozialversicherung nur mit „Vergütung & Lohn-Export“.")
     data = await personal_data_service.load(db, employee_id)
     changed = [key for key, value in changes.items() if data.get(key) != value]

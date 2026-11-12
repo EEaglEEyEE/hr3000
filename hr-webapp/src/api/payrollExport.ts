@@ -58,17 +58,18 @@ export async function downloadDatevExport(employeeIds: number[], month: string):
   saveBlob(await response.blob(), `datev-lodas_${month}.txt`)
 }
 
-async function authorizedFetch(url: string): Promise<Response> {
+/** Datei-Endpunkt mit Anmeldung abrufen; Fehlermeldung des Servers oder fallback. */
+export async function authorizedFetch(url: string, fallback = 'DATEV-Export fehlgeschlagen.'): Promise<Response> {
   const token = getAccessToken()
   const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { detail?: unknown } | null
-    throw new Error(typeof body?.detail === 'string' ? body.detail : 'DATEV-Export fehlgeschlagen.')
+    throw new Error(typeof body?.detail === 'string' ? body.detail : fallback)
   }
   return response
 }
 
-function saveBlob(blob: Blob, filename: string): void {
+export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

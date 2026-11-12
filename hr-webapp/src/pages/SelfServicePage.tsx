@@ -1,3 +1,4 @@
+import { WhistleLinks } from '../components/whistle/WhistleLinks'
 import { LogOut, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -12,6 +13,7 @@ import { NotificationBell } from '../components/layout/NotificationBell'
 import { ThemeToggle } from '../components/layout/ThemeToggle'
 import { PunchHistoryTab } from '../components/punches/PunchHistoryTab'
 import { CorrectionRequestSelfCard } from '../components/punches/CorrectionRequests'
+import { TimeSheetCard } from '../components/punches/TimeSheetCard'
 import { CalendarTab } from '../components/timesheet/CalendarTab'
 import { TeamCalendarPage } from './TeamCalendarPage'
 import { CalendarSubscribe } from '../components/calendar/CalendarSubscribe'
@@ -25,6 +27,8 @@ import { OrgChart } from '../components/org/OrgChart'
 import { OwnAttributes, OwnPersonalData } from '../components/employees/OwnPersonalData'
 import { ProposeChange } from '../components/employees/ChangeRequests'
 import { MyTasks } from '../components/checklists/MyTasks'
+import { useRecruitingAccessQuery } from '../api/queries/recruiting'
+import { RecruitingContent } from './RecruitingPage'
 
 export function SelfServicePage() {
   const { employeeId, logout, hasHrAccess } = useAuth()
@@ -35,6 +39,10 @@ export function SelfServicePage() {
   const shiftPlanningEnabled = dashboardFlags?.shift_planning_enabled ?? false
   const teamCalendarEnabled = dashboardFlags?.team_calendar_for_employees ?? false
   const orgChartEnabled = dashboardFlags?.org_chart_for_employees ?? false
+  const timeSheetEnabled = dashboardFlags?.self_time_entry_enabled ?? false
+  // Hiring Team ohne Verwaltungsrolle: Bewerbungen hier sehen und bewerten (Verwaltung über „Recruiting“)
+  const recruitingAccess = useRecruitingAccessQuery(!hasHrAccess).data
+  const recruitingTab = !hasHrAccess && Boolean(recruitingAccess?.enabled && recruitingAccess.member)
 
   if (employeeId === null) return null
   if (employeeQuery.isLoading) return <p className="p-6 text-slate-500">Lädt…</p>
@@ -58,6 +66,7 @@ export function SelfServicePage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <MonthReportButton employeeId={employeeId} />
+          <WhistleLinks />
           {hasHrAccess && (
             <Link to="/" className="text-sm text-sky-700 hover:underline">
               Zur HR-Ansicht
@@ -95,6 +104,7 @@ export function SelfServicePage() {
             <TabsTrigger value="periods">Monatsabschluss</TabsTrigger>
             <TabsTrigger value="documents">Dokumente</TabsTrigger>
             <TabsTrigger value="mydata">Meine Daten</TabsTrigger>
+            {recruitingTab && <TabsTrigger value="recruiting">Recruiting</TabsTrigger>}
           </TabsList>
           <TabsContent value="overview">
             <div className="flex flex-col gap-4">
@@ -104,6 +114,7 @@ export function SelfServicePage() {
           </TabsContent>
           <TabsContent value="punches">
             <div className="flex flex-col gap-4">
+              {timeSheetEnabled && <TimeSheetCard />}
               <CorrectionRequestSelfCard />
               <PunchHistoryTab employeeId={employeeId} readOnly />
             </div>
@@ -146,6 +157,11 @@ export function SelfServicePage() {
           <TabsContent value="documents">
             <DocumentsTab employeeId={employeeId} readOnly />
           </TabsContent>
+          {recruitingTab && (
+            <TabsContent value="recruiting">
+              <RecruitingContent />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </div>

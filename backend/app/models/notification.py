@@ -26,6 +26,10 @@ class NotificationType(str, enum.Enum):
     DATA_CHANGE_DECIDED = "DATA_CHANGE_DECIDED"
     # Mitarbeiter hat selbst ein Dokument hochgeladen
     DOCUMENT_UPLOADED = "DOCUMENT_UPLOADED"
+    # Hinweisgebersystem: neue Meldung/Nachricht oder Frist – nur an Meldestellen-Beauftragte
+    WHISTLEBLOWING = "WHISTLEBLOWING"
+    # Neue Bewerbung über die Karriereseite (an das Hiring Team der Stelle)
+    RECRUITING_APPLICATION = "RECRUITING_APPLICATION"
 
 
 class Notification(Base):

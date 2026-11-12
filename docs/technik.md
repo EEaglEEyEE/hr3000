@@ -43,6 +43,9 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Firmensuche (`/public/tenant-lookup`), Adress-Prüfung (`/public/subdomain-available`) und
     Registrierung (`/public/signup`), mit Limits je IP.
   - Sie werden nicht ins Zugriffsprotokoll geschrieben (`main.SkipPublicAccessLog`).
+  - Das gilt für alles unter `/public/`, also auch für die Meldeseite des Hinweisgebersystems
+    (`/public/whistle/…`). Caddy schreibt kein eigenes Zugriffsprotokoll (keine `log`-Direktive),
+    die nginx der Webapp protokolliert `/hinweis` nicht (`access_log off`).
 - **Neue Firmen** entstehen immer über `services/tenant_provisioning.provision_tenant`, egal ob
   durch den Super-Admin oder per Registrierung, und zwar in einer Transaktion: Mandant,
   Einstellungen, Pausenstaffel, Erst-Admin.
@@ -54,11 +57,73 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - „Jetzt“ kommt aus `_utcnow()`, in Tests über das Fixture `at_time`. Auch „heute“ (`today_in`,
     `utc_today` für mandantenweite Listen) leitet sich davon ab – nicht `date.today()` verwenden.
   - Ein offenes Kommen gilt nach der maximalen Schichtlänge als vergessenes Gehen.
+  - Reihenfolge der Stempelungen (`_punch_window` → `punch_order_key`): Zeitpunkt, bei gleichem
+    Zeitpunkt ein Ende (GO, BREAK_END, ERRAND_END) vor einem Beginn, sonst nach `id`. So bleiben
+    lückenlose Spannen gültig, auch wenn die spätere zuerst angelegt wurde.
+- **Zeiten selbst eintragen (Stundenzettel)** (Migration 0157, `services/time_entry_service.py`,
+  `api/time_entries.py`): kein eigenes Datenmodell. Eine Spanne (`TimeSpanIn`, WORK/BREAK, „HH:MM“
+  Ortszeit, `end_next_day`) wird zu Stempelungen COME/GO bzw. BREAK_START/BREAK_END mit
+  `PunchSource.SELF_ENTRY` (`spans_to_items`, gleiche Positionen wie Korrekturanträge). Schalter
+  `AppSettings.self_time_entry_enabled` / `_approval` / `_backdate_days` (0–62). Mit Genehmigung ein
+  `PunchCorrectionRequest` mit `kind = TIME_ENTRY` (neben `CORRECTION`); `decide` legt die Stempelungen
+  über `time_entry_service.create_punches` an (statt MANUAL_HR), prüft vorher erneut mit
+  `check_entry(rules=None)` (ohne Zeitraum). Ohne Genehmigung sofort, Audit `TIME_ENTRY_CREATED`;
+  Löschen eigener Spannen (`DELETE /me/time-entries/{punch_id}`, Kommen samt Gehen und Pausen, nicht
+  nach HR-Korrektur) Audit `TIME_ENTRY_DELETED`. Prüfungen (`check_entry`, 422 mit `code`): Zukunft
+  und noch laufende Zeiten (`_utcnow`), Zeitraum, Beschäftigung, Länge ≤ maximale Schichtlänge,
+  Überschneidung (`occupied`: Kommen–Gehen der Stempelungen, offenes Kommen bis zur maximalen
+  Schichtlänge, einzelne Stempelungen als Zeitpunkt, Arbeitsspannen offener TIME_ENTRY-Anträge;
+  Anschluss Ende = Beginn erlaubt); gesperrte Monate 409. Sicherheitsnetz in `create_punches`: wird der
+  Tag durch die neuen Stempelungen widersprüchlich (ERROR), 422 `TIME_ENTRY_CONFLICT`. Danach
+  `refresh_auto_breaks` + `recalculate_day`. Benachrichtigungen mit den Typen der Korrekturanträge
+  (`notify_time_entry_requested/decided`). Endpunkte (`ROUTE_RULES`: `ALWAYS`, nur eigene Daten):
+  `GET /me/time-entries?from&to` (≤ 31 Tage, je Tag Spannen mit Quelle/`deletable`, offene Anträge,
+  Ist, `can_enter`), `POST /me/time-entries`, `DELETE /me/time-entries/requests/{id}` (offenen Antrag
+  zurückziehen), `DELETE /me/time-entries/{punch_id}`. Webhooks für Stempelungen gibt es nicht;
+  `GET /v1/punches` liefert genehmigte Spannen als normale Stempelungen.
+- **Projektzeiten** (Migration 0158, `models/project.py`, `services/project_service.py`,
+  `api/projects.py`): Tabellen `customers` (Name je Firma eindeutig, `active`) und `projects` (Name,
+  `number` je Firma eindeutig, `customer_id`, `cost_center_id` → vorhandene Kostenstellen, `billable`,
+  `active`, `valid_from`/`valid_to`); `punches.project_id` (FK, Index) und `punches.activity_note`
+  (200) am „Kommen“ – das Projekt gilt bis zum nächsten „Gehen“. Schalter
+  `AppSettings.project_times_enabled` / `project_required`, `FeaturesResponse.project_times_enabled`.
+  Beim Selbst-Eintragen tragen die Spannen `project_id`/`note` (nur WORK), `time_entries._project_extras`
+  prüft Schalter, Pflicht und `ensure_project_usable` (aktiv, Kunde aktiv, am Tag gültig; 422
+  `PROJECT_*`) und hängt sie an das COME-Item; `create_punches` übernimmt sie (`apply_item_extras`,
+  inzwischen gelöschte Projekte entfallen). `CorrectionItem` hat `project_id`/`note` (in
+  Korrekturanträgen ohne Wirkung), `CorrectionRequestResponse.project_names`. HR: `PATCH /punches/{id}`
+  mit `project_id`/`activity_note` (nur COME, 400 `PROJECT_ONLY_ON_COME`; explizites `null` = leeren,
+  `model_fields_set`). Auswertung `project_service.project_times` über `punches_by_day`
+  (`project_seconds`: COME→GO minus BREAK-Paare darin, offene Spannen nicht, keine Verteilung der
+  gesetzlichen Mindestpause) – `GET /reports/project-times?from&to&employee_id&project_id&customer_id`
+  (≤ 366 Tage, `get_current_hr_principal`, `visible_employee_ids`). Berichts-Builder: Quelle
+  `project_times` (`report_catalog._PROJECT_COLUMNS`, `load_project_rows`), im Katalog nur mit Schalter,
+  sonst 400 `REPORT_SOURCE_DISABLED`. Löschen: Projekt mit Stempelungen 409 `PROJECT_IN_USE`, Kunde mit
+  Projekten 409 `CUSTOMER_IN_USE`. Audit `PROJECT_CHANGED`. `ROUTE_RULES`: Pflege `MASTER_DATA`, Listen
+  `MASTER_DATA`/`TIME`/`REPORTS`, Auswertung `REPORTS`; Webapp: `PAGE_FEATURE_ACCESS['/auswertungen']`
+  ist jetzt eine Liste (`custom_reports_enabled`, `project_times_enabled`).
 - **Überstundenkonto:**
   - `daily_summaries` ist nur ein Cache; `Employee.balance_through` markiert, bis wann er
     aktuell ist.
   - Schreibende Stellen rufen `invalidate_balance` bzw. `invalidate_tenant_balances`, lesende
     `rebuild_balance`.
+  - Abgegoltene Überstunden (Migration 0141): `settled_overtime_minutes` an `EmployeeDefaultShift`
+    und `WorkTimeProfileVersion` (`CONTRACT_FIELDS`, Eingabe `settled_overtime_hours` 0–100, nicht
+    mit `on_demand`). `rebuild_balance` bucht jeden Tagessaldo über `_Settlement.book`: Monatssaldo
+    = Summe der `daily_delta_minutes` der Kontozeilen eines Kalendermonats (Wochenabrechnung
+    flexibler Modelle im Monat ihrer Zeile), abgegolten = min(max(Monatssaldo, 0), Grenze), ins
+    `running` geht nur die Änderung darüber hinaus. `OvertimeBalance.settled_minutes` = abgegolten im
+    Monat bis zu diesem Tag. Grenze je Monat: `settled_limit_for_month` (Fassung am Monatsende bzw.
+    am letzten Beschäftigungstag). Beim Neurechnen ab `first` übernimmt `_Settlement.resume` den
+    Monatsstand aus den gespeicherten Zeilen davor; passen sie nicht mehr zur Grenze (Fassung
+    geändert), wird ab Monatsanfang gerechnet. Lesend: `BalanceInfo.settled_in_month`,
+    `settled_limit`, `settled_between` (Zeitraum: je Monat Stand am Ende minus Stand vor dem
+    Beginn), `has_settled_limit`. Ausgaben: `GET …/overtime-balance` (`settled_limit_minutes`,
+    `settled_month_minutes`), `MonthReport.settled_minutes`/`settled_limit_minutes`,
+    `PeriodClosure.settled_minutes` (Schnappschuss bei der Vorlage), Lohn-Export-Spalte
+    „Abgegoltene Überstunden (Std.)“ ganz hinten, nur wenn im Zeitraum eine Grenze gilt. Sperren:
+    wie jede Modelländerung über `ensure_open_from(valid_from)` – die Grenze eines Monats hängt nur
+    an Fassungen, die in diesem Monat gelten.
 - **„Zu klären“:** `GET /timesheet/open-days`.
   - Zuerst rechnet es veraltete Tage nach (`_refresh_stale_day_cache`).
   - Sonderfälle sind `DayFlag`s, je Mandant abschaltbar (`disabled_day_flags`).
@@ -132,7 +197,8 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   (`u_lod_bwd_buchung_standard`, Bearbeitungsschlüssel 01 = Stunden, 02 = Betrag): je Zeitart in
   Stundenlohn-Abschnitten (`worked_minutes`, `credit_minutes` je Kategorie mit Lohnart; WORK_TIME
   ohne eigene Lohnart zählt als WORKED), Auszahlungen (OVERTIME_PAYOUT), Zuschlagsstunden und
-  Zulagen; ohne Lohnart als Hinweis. Endpunkte `GET /payroll-export/datev` (Datei, cp1252, CRLF)
+  Zulagen; ohne Lohnart als Hinweis. Mit dem Gehalt abgegoltene Überstunden (`settled_between`)
+  erscheinen nur als Hinweis, nie als Buchung. Endpunkte `GET /payroll-export/datev` (Datei, cp1252, CRLF)
   und `/payroll-export/datev/preview` (JSON), nur Admin; Berater-/Mandantennummer in
   `AppSettings.datev_*`. Grundlage: LODAS-Schnittstellenhandbuch.
 - **Arbeitszeitmodell und Schicht:** Eine Fassung (`EmployeeDefaultShift`, effektiv-datiert, je
@@ -155,6 +221,22 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (bewusst ohne Modell; beides zugleich = 422).
     `POST/PATCH/DELETE /employees/{id}/default-shifts` (Soll aus der Vorlage) sind veraltet
     (`deprecated`), die Oberfläche nutzt sie nicht mehr.
+  - Mehrwöchiges Modell (Turnus, Migration 0140): `rotation_minutes` (Text, Wochen durch „;“,
+    darin Minuten Mo..So durch „,“, 2–4 Wochen) und `rotation_start` (Montag der Woche 1, immer
+    als festes Datum gespeichert) auf `EmployeeDefaultShift` und `WorkTimeProfileVersion`; beide
+    sind `CONTRACT_FIELDS` und werden mit `sync_employee` nachgezogen. Auswertung gemeinsam im
+    `models/rotation.RotationMixin`: `day_minutes_on(day)` liefert die Minuten Mo..So der
+    Turnus-Woche des Tages (`((Montag(day) − Montag(start)) / 7) mod Wochen`, auch vor dem Start),
+    sonst `day_minutes_list`; `average_workdays` für den Urlaubsanspruch
+    (`leave_service._workdays_of`, `workdays_per_week` ist jetzt `float`). Nutzer:
+    `shift_planning_service._plan_from_version` (Tagessoll, damit Konto, „Zu klären“,
+    `is_leave_day`, Feiertage, Monatsbericht, Lohn-Export) und `reports._planned_workdays`.
+    `weekdays_mask` = Tage mit Soll in irgendeiner Woche (Ruhezeit-Prüfung konservativ),
+    `target_minutes` = Durchschnitt je Woche (`WEEKLY`). Eingabe `WorkTimeModelInput.rotation_weeks`
+    (Stunden, 0–24 je Tag, ≤ 60 je Woche, mindestens ein Tag > 0, nicht mit flexibel/nach
+    Aufwand/Monatsstunden) und `rotation_start` (auf Montag gelegt, nur mit Turnus); > 10 Std. an
+    einem Tag = 400 wie bisher. Ohne `rotation_start` setzt `api/work_time_model._contract` den
+    Montag der Woche von `valid_from` (Modell anlegen: laufende Woche).
   - Soll-/Pausenänderung einer Schichtvorlage ab Stichtag (`_version_for_target_change`) teilt nur
     Fassungen, die Soll bzw. Pause von der Vorlage erben; Fassungen mit eigenem Soll und eigener
     Pause wechseln nur auf die neue Vorlagen-Fassung.
@@ -227,6 +309,46 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 - **Pünktlichkeit:** kein eigener Schalter mehr – `LATE_ARRIVAL`/`EARLY_LEAVE`/`OUTSIDE_FLEX_FRAME`
   über `disabled_day_flags` (neue Mandanten: zu spät/zu früh aus). `AppSettings.punctuality_from`
   (bei jeder Regeländerung = heute) begrenzt die Hinweise auf Tage ab der Änderung.
+- **Recruiting:** `models/recruiting.py`, `services/recruiting_service.py`, `api/recruiting.py`
+  (Migrationen 0154–0156). Schalter `AppSettings.recruiting_enabled` (aus = 404 überall außer
+  `GET /recruiting/access`), dazu `recruiting_privacy_text/_url`, `recruiting_retention_months` (6)
+  und `recruiting_talent_pool_months` (12).
+  - Tabellen (alle mit `tenant_id`): `recruiting_jobs`, `recruiting_job_members` (Hiring Team, Konten),
+    `recruiting_applications`, `recruiting_attachments`, `recruiting_notes`, `recruiting_ratings`
+    (eine je Konto), `recruiting_stage_events` (Verlauf), `recruiting_stats` (anonyme Zählung
+    gelöschter Bewerbungen je Stelle und Phase). Anschreiben, Gehaltsvorstellung, Notizen und
+    Bewertungskommentare per `secret_box` verschlüsselt; Anhänge wie Dokumente
+    (`document_service.save_document_bytes`, Kontingent der Firma), nur PDF/PNG/JPEG nach Dateikopf.
+  - Sichtbarkeit: `recruiting_service.visible_job_ids` – Admin/HR alles, sonst nur Stellen mit
+    Mitgliedschaft (404 statt 403). Dependency `recruiting_actor` nimmt jedes Konto der Firma (auch ohne
+    Rolle), keine Tablets und keinen Super-Admin. Verwalten (Stellen, manuelle Bewerbung, Anhänge
+    hochladen/löschen, Daten ändern, löschen, übernehmen) nur Admin/HR; Gehaltsvorstellung nur mit
+    `has_payroll_access`.
+  - Endpoints intern: `GET /recruiting/access`, `GET/POST /recruiting/jobs`,
+    `GET/PUT/DELETE /recruiting/jobs/{id}`, `GET /recruiting/team-candidates`,
+    `GET/POST /recruiting/applications`, `GET /recruiting/applications/due-for-deletion`,
+    `GET/PATCH/DELETE /recruiting/applications/{id}`, `POST …/stage`, `POST …/notes`,
+    `DELETE …/notes/{id}`, `PUT/DELETE …/rating`, `POST …/attachments`,
+    `GET …/attachments/{id}/download?inline=`, `DELETE …/attachments/{id}`, `POST …/hire`.
+  - Öffentlich (Firma aus der Subdomain, ohne Anmeldung): `GET /public/careers`,
+    `GET /public/careers/jobs/{id}`, `POST /public/careers/jobs/{id}/applications` (multipart,
+    Felder über `PublicApplicationForm` geprüft; Limit 5 je IP und Stunde, Honeypot `website` =
+    Erfolg vortäuschen ohne Speichern). Öffentlich ist eine Stelle nur `PUBLISHED` und bis
+    einschließlich Bewerbungsschluss (`is_public`). Webapp-Routen `/karriere` und `/karriere/<id>-<slug>`.
+  - Übernahme (`POST …/hire`): prüft erst Anhänge, Vorlage und Dateien, ruft dann
+    `api.employees.create_employee` (Tarifgrenze, Audit), `personal_data_service.save` (private
+    E-Mail, Telefon), `document_service.store_document` und `api.checklists.start_checklist`.
+    `RecruitingApplication.employee_id` verhindert eine zweite Übernahme und sperrt die Phase.
+  - Löschlauf: `purge_due_applications` in der Schleife von `reminder_service.run_reminders` (je
+    Mandant, unabhängig von `reminders_enabled` und vom Recruiting-Schalter). Fällig ab
+    `closed_at` + Frist (Talentpool: verlängerte Frist); nur `REJECTED`/`WITHDRAWN`. Dateien erst nach
+    dem Commit löschen. Audit `RECRUITING_DELETED` ohne Namen. `tenant_lifecycle.purge_tenant` löscht
+    auch die Anhang-Dateien.
+  - Audit: `RECRUITING_JOB_CHANGED`, `RECRUITING_APPLICATION_CHANGED`, `RECRUITING_ATTACHMENT_ACCESSED`,
+    `RECRUITING_DELETED` (Details nur mit Feldnamen/IDs, keine Inhalte); Benachrichtigung
+    `RECRUITING_APPLICATION` an das Hiring Team (ohne Team an Admin/HR). Migration 0156 hängt die
+    Enum-Werte auf MySQL an die Liste an, die gerade in der Datenbank steht (statt einer festen
+    Liste), damit parallel ergänzte Werte erhalten bleiben.
 - **Erinnerungen:** `services/reminder_service.py`, Hintergrundaufgabe aus `main.lifespan`
   (`REMINDERS_INTERVAL_SECONDS`, Standard 3600, 0 = aus); je Mandant höchstens einmal pro Tag
   (`AppSettings.reminders_sent_on`), nur mit `reminders_enabled`. Ausgelöst genau am Tag „X Tage
@@ -273,12 +395,141 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     ungültig.
   - Diese Links gibt es nur mit Mailversand (`email_service.resolve_smtp_config`: Mailserver
     der Firma, sonst der Plattform).
+- **Abwesenheitsquote und Köpfe/FTE** (`services/workforce_stats_service.py`, `GET
+  /reports/absence-rate`, `GET /reports/headcount`, volle HR): wenige Sammelabfragen (Mitarbeitende,
+  Fassungen, Feiertage, Abwesenheiten), danach im Speicher; keine Abfrage je Mitarbeiter oder Tag.
+  Abfrage-Parameter als Pydantic-Modelle (`AbsenceRateQuery`, `HeadcountQuery` in
+  `schemas/reports.py`: höchstens 24 bzw. 36 Monate, `WORK_TIME`/`PUBLIC_HOLIDAY` abgelehnt).
+  - Soll-Arbeitstag (`is_planned_workday`): dieselbe Näherung wie `reports._planned_workdays`
+    (ohne Tagesausnahmen des Schichtplans und halbe Feiertage). Abwesenheitstag: 1, halber Tag 0,5,
+    Stundenangabe 0; nur `APPROVED`, nur bis heute (`through`).
+  - Köpfe: `employed_on(Monatsende)` über `hire_date`/`termination_date`; deaktiviert ohne
+    Austrittsdatum (`counts_in_history`) und anonymisiert zählen nie – `active` gibt es nur für heute.
+  - FTE: `weekly_minutes(Fassung)` / `full_time_week_minutes` (Summe `default_day_minutes`, sonst
+    2400). Monatssoll × 12 / 52, `DAILY` × Arbeitstage, `on_demand` 0, ohne Fassung 1,0.
+  - Abteilung immer die heutige (`Employee.department_id` hat keinen Verlauf).
+- **Eigene Berichte (Berichts-Builder)** (Migration 0149, `api/report_builder.py`,
+  `services/report_catalog.py`, `services/report_builder_service.py`, `schemas/report_builder.py`,
+  Tabelle `saved_reports`): nur mit `AppSettings.custom_reports_enabled` (Standard aus, sonst 403
+  `FEATURE_DISABLED`), für alle Verwaltungskonten (`get_current_hr_principal`).
+  - Kein freies SQL: Die Definition (`ReportDefinition`: Quelle, Spalten, Filter, Sortierung,
+    Gruppierung) ist validiertes JSON. Spaltenschlüssel kommen nur aus der Positivliste
+    `report_catalog.STATIC_COLUMNS` (je Spalte Typ, Zugriff `all`/`hr`/`payroll`, Operatoren) oder
+    sind eigene Felder `attr_<id>` (nicht archiviert, eigene Firma, Prüfung im Dienst). Schlüssel
+    gehen nie in eine Abfrage: Lader je Quelle holen die nötigen Spalten per Sammelabfrage, Filtern,
+    Sortieren (leer zuletzt), Gruppieren und Blättern laufen in Python. Ein `assert` im Katalog hält
+    die `payroll`-Spalten der persönlichen Daten gleich `PAYROLL_FIELDS`.
+  - Rechte (`resolve`): ad hoc und beim Speichern ist eine nicht erlaubte Spalte 403
+    `REPORT_COLUMN_FORBIDDEN`, eine unbekannte 400 `REPORT_COLUMN_UNKNOWN`, ein unpassender
+    Filterwert 422 `REPORT_FILTER_INVALID`. Gespeicherte Berichte ausführen (`lenient`): nicht
+    erlaubte oder gelöschte Ausgabespalten fallen weg (`omitted_columns`); Filter, Sortierung oder
+    Gruppierung auf einer nicht erlaubten Spalte bleiben 403 (sonst Rückschluss über den Filter).
+    Zeilen immer über `scope_service.visible_employee_ids` – geteilt wird die Definition, nicht das
+    Ergebnis. Geteilt = für alle Verwaltungskonten der Firma lesbar; ändern/löschen Besitzer oder
+    Admin (403 `REPORT_NOT_EDITABLE`); fremde, private und andere Mandanten 404. Verwaiste
+    Berichte (Besitzer-Konto gelöscht, `owner_account_id` → NULL per `ON DELETE SET NULL`) sehen
+    Admins. Nicht mehr lesbare Definitionen: 409 `REPORT_DEFINITION_OUTDATED`, die Liste lässt sie
+    weg.
+  - Grenzen: Zeitraum bei `absences`/`time_months` Pflicht (400 `REPORT_PERIOD_REQUIRED`),
+    höchstens 366 Tage; `time_months` auf ganze Monate erweitert. Höchstens `MAX_ROWS` = 20.000
+    Zeilen nach dem Filtern (400 `RESULT_TOO_LARGE`), Seite bis 200.
+  - „Zeit je Monat“ aus dem Konto-Cache: veraltete Konten (`balance_through` vor min(Ende,
+    gestern)) einmal je Person über `ensure_balance_current`, dann `overtime_balances` per SQL je
+    Mitarbeiter und Monat summiert; Kontostand = `running_balance` des letzten gerechneten Tags (sonst
+    Stand vor dem Zeitraum) + Korrekturbuchungen bis Monatsende. „Urlaub genommen“ mit der Näherung
+    oben; „Resturlaub“ über `leave_service.leave_balance` einmal je Person und Jahr (bewusste
+    Ausnahme, die Kontoregeln gibt es nur je Person).
+  - CSV (`to_csv`): UTF-8 mit BOM, Semikolon, Dezimalkomma, Datum TT.MM.JJJJ, Text mit `= + - @`,
+    Tab, CR am Anfang entschärft wie im Lohn-Export; bei Gruppierung oder Summen ein Summenblock.
+  - Audit: `REPORT_RUN` (Vorschau/Ausführen), `REPORT_EXPORTED` (CSV), `REPORT_CHANGED`
+    (Anlegen/Ändern/Löschen), `entity_type` `saved_report`, `entity_id` 0 bei Ad-hoc-Läufen;
+    nur Quelle, Spalten-/Zeilenzahl und Zeitraum. Vergütungsspalten zusätzlich
+    `COMPENSATION_VIEWED`. Migration 0149 erweitert das MySQL-Enum mit den Werten aus
+    `information_schema` (merge-sicher gegenüber parallelen Migrationen).
+  - Webapp: `components/reports/CustomReportsTab.tsx` (Liste, Baukasten, Vorschau), Reiter in
+    `ReportsPage`; Führungskräfte öffnen „Analysen“ über `PAGE_FEATURE_ACCESS` in `lib/access.ts`
+    (`pageAllowed`, `RequireAccess` mit `path`). Weggelassen: Diagramme/Metriken und gespeicherte
+    Zeitraum-Vorgaben.
+- **Standort beim Stempeln (A18)** (Migration 0161, `services/punch_location_service.py`): nur für
+  `POST /me/punches` (Quelle `PORTAL`); Kiosk (`POST /punches` mit Gerät) und HR-Nachträge werden nie
+  geprüft, ein mitgeschicktes `position` wird dort von Pydantic verworfen.
+  - Daten: `AppSettings.punch_location_check_enabled` (Standard aus) und `punch_location_mode`
+    (`RECORD` = nur vermerken, `BLOCK` = außerhalb nicht erlauben); je `Location` optional
+    `geo_latitude`/`geo_longitude` (DOUBLE) und `geo_radius_m` (50–5000, nur alle drei zusammen,
+    `clear_geofence` entfernt sie); an der Stempelung `Punch.location_check` (`PunchLocationCheck`:
+    INSIDE/OUTSIDE/UNKNOWN, NULL = nicht geprüft) und `location_check_location_id` (bei INSIDE der
+    Standort, dessen Kreis passt). Für Koordinaten von Mitarbeitern gibt es bewusst keine Spalte.
+  - Ablauf: `OwnPunchRequest.position` (`latitude` −90..90, `longitude` −180..180, `accuracy_m`
+    0..100 000, kein NaN/∞) → `check_own_punch` → `evaluate` (Haversine, mittlerer Erdradius
+    6 371 008,8 m, Entfernung auf cm gerundet, „genau auf dem Radius“ = innerhalb). Es zählen alle
+    Standorte der Firma mit Kreis (nicht nur der eigene), nie fremde Firmen. Ohne Kreis in der Firma
+    → keine Prüfung (`None`, nichts gespeichert, auch `BLOCK` lehnt nicht ab).
+  - Genauigkeitsregel je Kreis: `accuracy ≤ radius` → der gemessene Punkt zählt (innen, wenn
+    Entfernung ≤ Radius, sonst außen); `accuracy > radius` → nur eindeutig außen, wenn
+    Entfernung − accuracy > Radius, sonst unentschieden. Ergebnis: ein Kreis innen → INSIDE (nächster
+    Standort); sonst ein unentschiedener → UNKNOWN; sonst OUTSIDE. Ohne Position → UNKNOWN.
+  - `BLOCK`: alles außer INSIDE → 403 `PUNCH_LOCATION_OUTSIDE` / `PUNCH_LOCATION_REQUIRED` (keine
+    Position) / `PUNCH_LOCATION_INACCURATE`, Meldungen ohne Koordinaten, keine Zeile in `punches`.
+  - Koordinaten nie in DB, Audit, Logs oder Antworten: der 422-Handler in `main.py`
+    (`strip_position_inputs`) entfernt bei Fehlern in `position` das sonst zurückgegebene `input`; die
+    Position steht nur im Request-Body (Zugriffslog nur Pfad). Test
+    `test_coordinates_are_never_stored_logged_or_audited` durchsucht alle Tabellen und das Log.
+  - Ausgabe: `PunchResponse.location_check`/`location_check_location_id` (Buchungsliste, Datenauskunft),
+    `DashboardMe.location_check`/`location_check_required` (die Stempel-Karte fragt
+    `navigator.geolocation` nur dann und nur beim Klick ab, `hr-webapp/src/lib/geolocation.ts`,
+    `maximumAge: 0`), Monatsnachweis: `location_remarks` hängt „außerhalb: Kommen 08:02 · Standort
+    unbekannt: …“ an die Bemerkung. HR-Korrekturen behalten das Ergebnis. Die öffentliche API
+    (`/v1/punches`) gibt `location_check` und das Projekt (`project_id`, `project_number`,
+    `project_name`) aus, nie `activity_note` oder eine Position.
 - **Kündigung und Löschung:** `services/tenant_lifecycle.py`.
   - Der Löschplan wird generisch aus `Base.metadata` gebildet: Tabellen mit `tenant_id` direkt,
     alle übrigen über ihren Fremdschlüssel; abhängige Zeilen zuerst.
   - Der Test `test_every_table_is_covered` schlägt an, wenn eine neue Tabelle keinen Firmenbezug
     hat. `test_purge_removes_everything_of_one_company_and_nothing_else` prüft die Löschung mit
     zwei befüllten Firmen.
+- **Hinweisgebersystem** (`services/whistle_service.py`, `api/whistle_public.py`, `api/whistle.py`,
+  Modelle `models/whistle.py`, Migration 0151, Schalter `AppSettings.whistleblowing_enabled`):
+  - Tabellen `whistle_officers` (benannte Konten, `ON DELETE CASCADE` am Konto), `whistle_cases`,
+    `whistle_messages` (`REPORTER` / `OFFICE` / `NOTE`, `author_account_id` nur bei der Meldestelle)
+    und `whistle_attachments` (Datei im Dokumentenspeicher, `storage_key`). Für die meldende Person gibt
+    es keine Spalte mit IP, Konto oder Mitarbeiter.
+  - Inhalte (`description_encrypted`, `details_encrypted` als JSON mit Zeitpunkt/Ort/Kontakt,
+    `body_encrypted`, `closing_note_encrypted`, `filename_encrypted`) per `secret_box`, Anhänge per
+    `document_service.save_document_bytes`. Typprüfung über `sniff_content_type`, Dateiname über
+    `sanitize_filename`; 10 MB je Datei, 10 je Vorgang, 1 GB je Firma.
+  - Öffentlich (`/public/whistle/info`, `reports`, `status`, `messages`, `attachments`): Firma aus der
+    Subdomain (nicht in `_NO_TENANT_PATHS`), kein Auth-Dependency, `Cache-Control: no-store`.
+    Vorgangsnummer und Code stehen immer im Rumpf (POST). Schalter aus oder keine Firma → 404; ohne
+    Beauftragte nimmt `reports` nichts an.
+  - Zugangscode: 20 Zeichen aus 32 eindeutigen Zeichen (100 Bit, `secrets`), gespeichert nur
+    SHA-256 über `tenant_id:case_number:code`, Vergleich mit `hmac.compare_digest`. Kein bcrypt: Ein
+    langsamer Hash schützt schwache, selbst gewählte Passwörter; bei 100 Bit Zufall bringt er nichts,
+    wäre ohne Anmeldung aber ein Hebel für CPU-Last. Falsche Firma, unbekannte Nummer und falscher Code
+    antworten gleich (401 `WHISTLE_ACCESS_INVALID`). Fehlversuche je IP (10) und je Firma+Vorgang (5)
+    in 15 Minuten, Meldungen je IP (5/Std.) und je Firma (100/Tag) – alles nur im Speicher
+    (`rate_limiter`).
+  - Meldestelle (`/whistle/cases…`): `get_whistle_officer` prüft Schalter und Eintrag in
+    `whistle_officers`, sonst 404 – unabhängig von der Rolle; der Super-Admin hat keinen Mandanten und
+    bekommt ebenfalls 404. `GET /whistle/status` liefert jedem Konto nur `{enabled, officer}`.
+    Benennen über `/whistle/officers` (Admin, Audit `WHISTLE_OFFICER_CHANGED`, `entity_type="account"`).
+  - Audit: `WHISTLE_CASE_VIEWED` / `_CHANGED` / `_DELETED` mit `entity_type="whistle_case"` und Detail
+    „<Vorgangsnummer>: <was>“, nie Inhalte. `api/audit_log.py` blendet `whistle_case` aus; das
+    Protokoll im Vorgang filtert zusätzlich nach der Vorgangsnummer, weil SQLite gelöschte IDs neu
+    vergibt.
+  - Fristen: `ack_due` = Eingang + 7 Tage, `feedback_due` = Eingangsbestätigung (ohne: `ack_due`) + 3
+    Kalendermonate (Tag geklemmt, `add_months`), gerechnet mit dem UTC-Datum. `delete_after` =
+    Abschluss + 3 Jahre. Erinnerungen in `send_whistle_reminders` (aus `reminder_service.run_reminders`,
+    unabhängig von `reminders_enabled`), Stufen je Vorgang (`ack_reminder_stage`,
+    `feedback_reminder_stage`, `deletion_reminded`), Glocke `WHISTLEBLOWING` nur an Beauftragte, Mail
+    ohne Vorgang und Inhalt. Ohne Beauftragte bleiben die Stufen stehen.
+  - Löschen nur per Knopf ab `delete_after` (keine Automatik, damit eine erforderliche längere
+    Aufbewahrung möglich bleibt). `purge_tenant` löscht auch die Anhang-Dateien.
+  - Migration 0151 erweitert die MySQL-Enums `auditaction` und `notificationtype` aus dem Stand der
+    Datenbank (vorhandene Werte lesen, fehlende anhängen) statt aus einer festen Liste – so verträgt
+    sie parallel entstandene Migrationen, die ebenfalls Werte ergänzen.
+  - Webapp: `/hinweis` (öffentlich, `api/whistlePublic.ts` mit blankem `fetch` ohne Token,
+    `credentials: 'omit'`), `/hinweise` (Route `area="account"`, `WhistleLayout`: HR-Ansicht für
+    Konten mit Rolle, sonst schlichter Rahmen), Einstellungen „Hinweisgebersystem“.
 - **Datenbankzugriffe:**
   - `punches` hat den Index `ix_punches_employee_time` (`employee_id`, `timestamp_utc`, Migration
     0100) für die häufigste Abfrage: Stempelungen eines Mitarbeiters in einem Zeitraum.
@@ -290,7 +541,8 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 ## 4. Sicherheit
 
 - **Eingaben:** Pydantic-Validierung an jedem Endpoint. Fehler kommen einheitlich als
-  `{"detail": …, "code": …}`.
+  `{"detail": …, "code": …}`. Validierungsfehler (422) im FastAPI-Format, aber ohne `input` bei
+  Feldern unter `position` (Stempel-Standort, siehe „Standort beim Stempeln“).
 - **Server-Auslastung (Super-Admin):** `services/server_metrics.py` liest CPU (`/proc/stat`, Differenz
   zweier Messungen), Last (`/proc/loadavg`), Speicher (`MemTotal − MemAvailable`) und Datenträger
   (`shutil.disk_usage`). `run_sampler` läuft als Task aus `main.lifespan` (ein Uvicorn-Prozess, also
@@ -310,6 +562,74 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (`AppLayout`), Seitenschutz (`RequireAccess` in `App.tsx`) und die Bereiche der Einstellungen
     (`SettingsPage`, je Bereich eine Stufe) lesen alle daraus. Neue Seite oder neuer Bereich: Stufe
     passend zur Backend-Abhängigkeit eintragen.
+    Menü und Seitenschutz prüfen über `allowsPage(path, flags, features)`: Rolle (`PAGE_ACCESS`) oder
+    ein Schalter, der die Seite allen Verwaltungskonten öffnet (`PAGE_FEATURE_ACCESS`, z. B. „Analysen“
+    mit eigenen Berichten), dazu bei eigener Rolle der Bereich (`PAGE_AREAS`). Seiten in
+    `BACKEND_DECIDES` (`/hinweise`, `/recruiting`) haben keine Bereichsprüfung – dort meldet das Backend
+    je Konto, ob die Seite sichtbar ist (Benennung als Beauftragte:r, Bereich „Recruiting“ oder Hiring
+    Team; Regeln `ALWAYS` bzw. `mixed(Area.RECRUITING, without_employee=True)` in `ROUTE_RULES`).
+    `pageAllowed` ist ein Alias.
+  - **Eigene Rollen** (Migration 0136, `models/role.py`, `services/role_permissions.py`,
+    `api/roles.py`): Tabelle `roles` (je Firma, Name eindeutig, `permissions` als JSON {Bereich: Stufe},
+    Stufen `NONE`/`VIEW`/`EDIT`), `accounts.custom_role_id` (FK, `ON DELETE SET NULL`). Gilt nur für
+    Konten mit Rolle HR und schränkt nur ein: Die Abhängigkeiten der Endpoints bleiben, zusätzlich prüft
+    `deps.get_current_actor` (über ihn laufen alle Konto-Abhängigkeiten) für Konten mit eigener Rolle
+    `role_permissions.decide(method, request.scope["route"].path, …)` gegen die explizite Tabelle
+    `ROUTE_RULES` („METHODE /pfad“ → Regel). Regelarten: `PUBLIC` (ohne Konto-Anmeldung), `ALWAYS`
+    (Anmeldung, `/me/...`, Benachrichtigungen, allgemeine Listen), `ADMIN`, `NEVER` (Audit-Protokoll,
+    Datenexport, Migration, Tablet-Endpunkte), `AREA` (Bereich, Stufe aus der Methode: GET/HEAD =
+    `VIEW`, sonst `EDIT`; Ausnahmen ausdrücklich, z. B. Lohn-Export-GETs verlangen `EDIT`; Alternativen
+    und kombinierte Bereiche möglich, `lookup` = Nachschlagelisten, „Vergütung & Lohn“ zählt dort erst
+    ab `EDIT`) und `MIXED` (Route bedient auch „Mein Bereich“: ohne Recht setzt die Prüfung
+    `Actor.self_only`, `Actor.role` ist dann `None` und der Endpoint behandelt das Konto wie einen
+    Mitarbeiter). Nicht eingetragene Routen: 403 `ROLE_PERMISSION_REQUIRED` (deny by default).
+    `tests/test_role_route_coverage.py` geht alle registrierten Routen durch (FastAPI 0.143 kapselt
+    eingebundene Router als `_IncludedRouter` – rekursiv über `original_router.routes`) und scheitert bei
+    fehlender oder verwaister Regel, bei `ADMIN` ohne Admin-Abhängigkeit und bei `PUBLIC` mit
+    Konto-Anmeldung. **Neue Route: in `ROUTE_RULES` einordnen.** `Actor.has_payroll_access` = mit
+    eigener Rolle „Vergütung & Lohn“ ≥ `VIEW` (sonst wie bisher `payroll_access`), neues
+    `Actor.can_edit_payroll` (≥ `EDIT`) für Schreibzugriffe auf Lohnfelder (persönliche Daten,
+    Vorschläge). Token-Claim `perms` (vollständige Zuordnung oder `null`) statt eines eigenen
+    `/auth/me`; die Webapp liest ihn in `AuthContext` und filtert über `lib/access.ts` (`PAGE_AREAS`,
+    `allowsPage`, `hasArea`, deny by default) Menü, Seitenschutz, Einstellungs-Bereiche, Reiter und
+    Zähler-Abfragen. `notification_service.full_hr_recipients(area=…)` nimmt Konten mit eigener Rolle
+    nur auf, wenn die Rolle den Bereich der Nachricht mindestens ansehen darf. Zwei-Faktor-Gruppen:
+    Konten mit eigener Rolle zählen als HR (`two_factor_service.required_for` nach `Account.role`).
+    API (nur Admin): `GET /roles`, `GET /roles/meta` (Bereiche, Vorlage „Lohnbüro (nur lesen)“),
+    `POST /roles`, `PATCH /roles/{id}`, `DELETE /roles/{id}` (409 `ROLE_IN_USE`); Zuweisung über
+    `PATCH /employees/{id}/hr-role` und `POST`/`PATCH /hr-users/{id}` (`custom_role_id`, weggelassen =
+    unverändert, `null` = keine, nur bei HR – sonst 400 `CUSTOM_ROLE_REQUIRES_HR`, fremde Rolle 404).
+    Audit `ROLE_CHANGED` für Anlegen, Ändern, Löschen und Zuweisen.
+  - **Lohnbuchhaltung** (Migration 0137, `models/payroll_release.py`,
+    `services/payroll_accounting_service.py`, `api/payroll_accounting.py`, Schalter
+    `AppSettings.payroll_accounting_enabled`, Standard aus; aus = 404 `PAYROLL_ACCOUNTING_DISABLED`):
+    `build_month` stellt je Mitarbeiter des Monats (`employees_of_month`: Eintritt ≤ Monatsende, Austritt ≥
+    Monatsanfang, ohne Austrittsdatum nur aktive, nie anonymisierte; höchstens 200) Eintritt/Austritt,
+    Änderungen (Verträge, Vergütung, Zulagen, `employee_location_periods`, datierte `attribute_values`,
+    Audit-Einträge `PERSONAL_DATA_CHANGED`/`COST_CENTERS_CHANGED`/`EMPLOYEE_WORK_TIME_MODEL_SET` im
+    Monat), Vergütung (`pay_component_amounts`), Abwesenheiten, Stunden und Zuschläge (Rechenkern
+    `payroll_period`, wie Lohn-Export) und den Monatsabschluss als JSON-fähiges dict zusammen. Endpoints:
+    `GET /payroll-accounting/releases`, `GET /payroll-accounting/{JJJJ-MM}` (`compare=true` vergleicht
+    Schnappschuss und aktuellen Stand je Mitarbeiter, `changed_employees`), `POST
+    /payroll-accounting/{JJJJ-MM}/release` (`confirm_open_closures`; ohne bei offenen Abschlüssen 409
+    `OPEN_CLOSURES`, schon freigegeben 409, künftige Monate 400), `DELETE …/release` (nur Admin),
+    `GET …/files/{csv|datev}`. Lesen verlangt `get_current_payroll_principal`; aktueller Stand,
+    Vergleich und Freigeben zusätzlich `Actor.can_edit_payroll` – „Vergütung & Lohn: Ansehen“
+    (Lohnbüro) sieht nur freigegebene Monate. Die Freigabe speichert Schnappschuss, CSV
+    (`payroll_export.render_payroll_csv`, dieselbe Funktion wie `GET /payroll-export`) und – wenn
+    eingerichtet – DATEV (`build_datev_export(...).render`) mit `secret_box.encrypt_secret` in
+    `payroll_releases` (MEDIUMTEXT, eindeutig je Firma und Monat) und schreibt `PayrollExportLog`
+    (CSV/DATEV). Audit: `PAYROLL_RELEASED`, `PAYROLL_RELEASE_REVOKED`, `PAYROLL_ACCOUNTING_ACCESSED`
+    (jeder Abruf und Download, `entity_type` `payroll_month`, `entity_id` JJJJMM). Webapp:
+    `PayrollAccountingPage` (`/lohnbuchhaltung`, Menüpunkt nur mit Schalter, Startseite leitet Konten
+    mit eigener Rolle ohne Tagesgeschäft dorthin).
+  - Unbekannte Adressen: Auffang-Route `*` im HR-Bereich (`App.tsx`) zeigt `NotFoundPage` im
+    `AppLayout`; ohne Anmeldung leitet `ProtectedRoute` vorher zum Login.
+  - Reiter „Vertrag & Vergütung“: `EmploymentTab` bekommt `canEditContract` (`EMPLOYEES: EDIT`) und
+    `canEditPay` (`PAYROLL: EDIT`) aus `EmployeeDetailPage`; ohne eigene Rolle sind beide wahr.
+  - Mitarbeiter-Import: `services/employee_import_service.py` liest zusätzlich
+    `tagesstunden_woche2…4` + `turnus_beginn` (Turnus, Woche 1 = `tagesstunden`) und
+    `abgegoltene_ueberstunden`; geprüft wird über `WorkTimeModelInput` wie im Reiter „Arbeitszeit“.
   - Einstellungen: `/einstellungen/:seite` (alte Links auf „teams“ führen zu „abteilungen“); frühere eigene Seiten (Standorte, Feiertage,
     Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten, Audit-Protokoll) sind Bereiche dort,
     die alten Pfade leiten um (`MOVED_TO_SETTINGS`), alte Reiter `?bereich=` ebenso.
@@ -325,7 +645,7 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     und Firma mit `email`, `password_hash`, `role` (NULL = nur „Mein Bereich“), `payroll_access` und
     optional `employee_id`; Super-Admin mit `tenant_id` NULL. Ein Login `POST /auth/login`, ein
     Refresh `POST /auth/refresh`, Token-Arten `account_access`/`account_refresh` mit `sub` =
-    Konto-ID und den Claims `role`, `emp` (Mitarbeiter-ID), `payroll`, `pwv`. `Actor` hat `device`
+    Konto-ID und den Claims `role`, `emp` (Mitarbeiter-ID), `payroll`, `perms` (eigene Rolle), `pwv`. `Actor` hat `device`
     oder `account` (`actor.employee` = Mitarbeiter des Kontos). Alle „wer“-Spalten heißen
     `*_account_id` (`actor.account_id`). `Employee.login_email`, `password_hash`, `hr_role` und
     `hr_payroll_access` sind Eigenschaften, die das verknüpfte Konto lesen bzw. bei Bedarf anlegen.

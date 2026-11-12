@@ -27,6 +27,7 @@ from app.models import (
     ApiClient,
     Department,
     Employee,
+    Project,
     Punch,
     Webhook,
     WebhookDelivery,
@@ -450,6 +451,13 @@ class ApiPunch(BaseModel):
     type: str
     timestamp_utc: datetime
     source: str
+    # Projektzeiterfassung: Projekt der Spanne ab diesem „Kommen“ (sonst null)
+    project_id: int | None = None
+    project_number: str | None = None
+    project_name: str | None = None
+    # Standortprüfung beim Stempeln im Web-Login: INSIDE, OUTSIDE, UNKNOWN; null = nicht geprüft.
+    # Nur das Ergebnis – eine Position wird nie gespeichert.
+    location_check: str | None = None
 
 
 class PunchesPage(BaseModel):
@@ -477,10 +485,21 @@ async def api_punches(
     if employee_id is not None:
         stmt = stmt.where(Punch.employee_id == employee_id)
     total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = (await db.execute(stmt.order_by(Punch.timestamp_utc, Punch.id).limit(limit).offset(offset))).scalars()
+    rows = (await db.execute(stmt.order_by(Punch.timestamp_utc, Punch.id).limit(limit).offset(offset))).scalars().all()
+    project_ids = {p.project_id for p in rows if p.project_id is not None}
+    projects: dict[int, Project] = {}
+    if project_ids:
+        found = await db.execute(select(Project).where(Project.tenant_id == client.tenant_id, Project.id.in_(project_ids)))
+        projects = {project.id: project for project in found.scalars()}
     return PunchesPage(
         data=[
-            ApiPunch(id=p.id, employee_id=p.employee_id, type=p.punch_type.value, timestamp_utc=p.timestamp_utc, source=p.source.value)
+            ApiPunch(
+                id=p.id, employee_id=p.employee_id, type=p.punch_type.value, timestamp_utc=p.timestamp_utc,
+                source=p.source.value, project_id=p.project_id,
+                project_number=projects[p.project_id].number if p.project_id in projects else None,
+                project_name=projects[p.project_id].name if p.project_id in projects else None,
+                location_check=p.location_check.value if p.location_check is not None else None,
+            )
             for p in rows
         ],
         page=Page(limit=limit, offset=offset, total=total or 0),

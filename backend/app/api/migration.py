@@ -209,9 +209,12 @@ PORTABLE_SETTINGS = (
     "max_shift_span_hours", "core_time_start", "core_time_end", "core_time_days", "legal_break_minimum", "break_precise_from", "break_capped_from",
     "late_tolerance_minutes", "flex_frame_start", "flex_frame_end", "rfid_required", "kiosk_rfid_enabled",
     "kiosk_card_self_registration", "kiosk_pin_self_setup", "kiosk_show_balance", "kiosk_show_vacation",
-    "kiosk_break_buttons", "kiosk_errand_buttons", "portal_punching_enabled", "absence_requests_enabled", "absence_four_eyes",
-    "absence_overlaps_for_employees", "overtime_limit_max_hours", "overtime_limit_min_hours", "reminders_enabled",
+    "kiosk_break_buttons", "kiosk_errand_buttons", "portal_punching_enabled", "self_time_entry_enabled",
+    "self_time_entry_approval", "self_time_entry_backdate_days", "project_times_enabled", "project_required",
+    "absence_requests_enabled", "absence_four_eyes",
+    "absence_overlaps_for_employees", "overtime_limit_max_hours", "overtime_limit_min_hours", "reminders_enabled", "payroll_accounting_enabled",
     "kiosk_greeting", "kiosk_sort", "kiosk_theme", "kiosk_screen_on_from", "kiosk_screen_on_until",
+    "custom_reports_enabled", "punch_location_check_enabled", "punch_location_mode",
 )
 
 

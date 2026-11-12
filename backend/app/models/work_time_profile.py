@@ -4,6 +4,7 @@ from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, String, Time, U
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.rotation import RotationMixin
 from app.models.shift_template import BreakMode, TargetPeriod
 
 # Erste Fassung eines Modells gilt "von Anfang an", damit es auch rückwirkend (z.B. ab Eintritt)
@@ -28,7 +29,7 @@ class WorkTimeProfile(Base):
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class WorkTimeProfileVersion(Base):
+class WorkTimeProfileVersion(RotationMixin, Base):
     """Fassung eines Arbeitszeitmodells für einen Zeitraum – dieselben Angaben wie eine Fassung der
     Arbeitszeit eines Mitarbeiters (Arbeitstage, Art, Soll, Pause, Kernzeit, Schichtvorlage für die
     Uhrzeiten), dazu Gleitzeit-Rahmen und Pünktlichkeits-Toleranz."""
@@ -42,6 +43,15 @@ class WorkTimeProfileVersion(Base):
     shift_template_id: Mapped[int | None] = mapped_column(ForeignKey("shift_templates.id"), nullable=True)
     weekdays_mask: Mapped[int] = mapped_column(Integer)
     day_minutes: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Mehrwöchiges Modell (Turnus über 2–4 Wochen): Soll-Minuten je Woche und Wochentag, Wochen durch
+    # ";" getrennt ("480,480,0,0,0,0,0;0,0,480,480,0,0,0"), und der Montag der Woche 1. Dann gilt:
+    # day_minutes leer, weekdays_mask = alle Tage mit Soll in irgendeiner Woche, target_minutes =
+    # durchschnittliches Wochensoll. Siehe app/models/rotation.py.
+    rotation_minutes: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    rotation_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Mit dem Gehalt abgegoltene Überstunden je Kalendermonat (Minuten, NULL = keine): Mehrarbeit eines
+    # Monats bis zu dieser Grenze wird dem Gleitzeitkonto nicht gutgeschrieben (timesheet_service).
+    settled_overtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     flexible: Mapped[bool] = mapped_column(Boolean, default=False)
     on_demand: Mapped[bool] = mapped_column(Boolean, default=False)
     monthly_cap_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -63,10 +73,6 @@ class WorkTimeProfileVersion(Base):
     flex_frame_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     flex_frame_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     late_tolerance_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    @property
-    def day_minutes_list(self) -> list[int] | None:
-        return [int(v) for v in self.day_minutes.split(",")] if self.day_minutes else None
 
     def copy(self, **changes) -> "WorkTimeProfileVersion":
         """Neue Fassung mit allen Angaben dieser (z.B. beim Teilen ab Stichtag)."""

@@ -17,6 +17,7 @@ import { ApiError } from '../../api/client'
 import { ResetPasswordDialog } from '../shared/ResetPasswordDialog'
 import { OneTimeCredentialsDialog } from '../tenants/OneTimeCredentialsDialog'
 import { useAuth } from '../../auth/AuthContext'
+import { useRolesQuery } from '../../api/queries/roles'
 import { Button } from '../ui/button'
 import { randomCardUid } from '../../lib/cardUid'
 import { CardQrCode } from './CardQrCode'
@@ -50,6 +51,7 @@ function ifChosen(apply: (value: string) => void) {
 }
 
 const NO_HR_ROLE = 'NONE'
+const FULL_HR_ACCESS = 'FULL'
 const NONE = '__none__'
 
 const WEEKDAY_LABELS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -93,6 +95,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const createEmployee = useCreateEmployeeMutation()
   const updateEmployee = useUpdateEmployeeMutation()
   const updateHrRole = useUpdateEmployeeHrRoleMutation()
+  // Eigene Rollen (nur Admin pflegt die HR-Berechtigung)
+  const customRoles = useRolesQuery(isEditMode && isAdmin).data ?? []
   const resetPassword = useResetEmployeePasswordMutation()
   const resetTwoFactor = useResetEmployeeTwoFactorMutation()
   const [resetOpen, setResetOpen] = useState(false)
@@ -113,6 +117,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const [locationValidFrom, setLocationValidFrom] = useState(todayIsoDate())
   // Nur beim Anlegen: optionales Arbeitszeitmodell (gilt ab Eintritt bzw. heute).
   const [modelDailyHours, setModelDailyHours] = useState<string[]>(['', '', '', '', '', '', ''])
+  // Mit dem Gehalt abgegoltene Überstunden je Monat bei „Stunden je Wochentag“ ('' = keine)
+  const [modelSettledHours, setModelSettledHours] = useState('')
   const [modelChoice, setModelChoice] = useState<ModelChoice>('NONE')
   const [modelTouched, setModelTouched] = useState(false)
   const [departmentId, setDepartmentId] = useState<string>(NONE)
@@ -132,6 +138,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const [autoBreakEnabled, setAutoBreakEnabled] = useState(true)
   const [hrRole, setHrRole] = useState<string>(NO_HR_ROLE)
   const [payrollAccess, setPayrollAccess] = useState(false)
+  const [customRoleId, setCustomRoleId] = useState<string>(FULL_HR_ACCESS)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   // „Änderungen verwerfen“ im Reiter: Formular neu aus den gespeicherten Daten füllen.
@@ -149,6 +156,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
       (features?.default_day_minutes ?? Array(7).fill(0)).map((m: number) => (m > 0 ? String(m / 60).replace('.', ',') : '')),
     )
     setModelChoice(modelSummary(features?.default_day_minutes) ? 'DEFAULT' : 'NONE')
+    setModelSettledHours('')
     setModelTouched(false)
     setDepartmentId(employee?.department_id ? String(employee.department_id) : NONE)
     setSupervisorId(employee?.supervisor_id ? String(employee.supervisor_id) : NONE)
@@ -167,6 +175,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
     setAutoBreakEnabled(employee?.auto_break_enabled ?? features?.default_auto_break ?? true)
     setHrRole(employee?.hr_role ?? NO_HR_ROLE)
     setPayrollAccess(employee?.hr_payroll_access ?? false)
+    setCustomRoleId(employee?.hr_custom_role ? String(employee.hr_custom_role.id) : FULL_HR_ACCESS)
     setError(null)
     setSaved(false)
     setHrRoleError(null)
@@ -188,6 +197,9 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultModel])
 
+  const modelSettled = modelSettledHours.trim() ? Number(modelSettledHours.replace(',', '.')) : null
+  const modelSettledValid = modelSettled === null || (Number.isFinite(modelSettled) && modelSettled >= 0 && modelSettled <= 100)
+
   /** Arbeitszeitmodell beim Anlegen; „Standard“ sendet nichts (das Backend nimmt den Standard). */
   function modelPayload() {
     switch (modelChoice) {
@@ -198,6 +210,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
             daily_hours: modelDailyHours.map((h) => (h.trim() ? Number(h.replace(',', '.')) : 0)),
             flexible: false,
             on_demand: false,
+            ...(modelSettled ? { settled_overtime_hours: modelSettled } : {}),
           },
         }
       case 'ON_DEMAND':
@@ -246,6 +259,10 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
       setError('Bitte mindestens einen Wochentag mit Stunden eintragen – oder ein anderes Arbeitszeitmodell wählen.')
       return
     }
+    if (!isEditMode && modelChoice === 'DAYS' && !modelSettledValid) {
+      setError('Abgegoltene Überstunden: bitte eine Zahl zwischen 0 und 100 Stunden je Monat eintragen.')
+      return
+    }
 
     try {
       if (isEditMode) {
@@ -287,6 +304,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
         employeeId: employee.id,
         hrRole: value === NO_HR_ROLE ? null : (value as HrRole),
       })
+      if (value !== 'HR') setCustomRoleId(FULL_HR_ACCESS)
     } catch (err) {
       setHrRole(previous)
       setHrRoleError(
@@ -294,6 +312,23 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
           ? err.message
           : 'Berechtigung konnte nicht geändert werden.',
       )
+    }
+  }
+
+  async function handleCustomRoleChange(value: string) {
+    if (!isEditMode || hrRole !== 'HR') return
+    setHrRoleError(null)
+    const previous = customRoleId
+    setCustomRoleId(value)
+    try {
+      await updateHrRole.mutateAsync({
+        employeeId: employee.id,
+        hrRole: 'HR',
+        customRoleId: value === FULL_HR_ACCESS ? null : Number(value),
+      })
+    } catch {
+      setCustomRoleId(previous)
+      setHrRoleError('Rolle konnte nicht geändert werden.')
     }
   }
 
@@ -427,12 +462,27 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
                   ))}
                 </div>
               )}
+              {modelChoice === 'DAYS' && (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="model_settled_hours" className="text-xs font-normal text-slate-600">
+                    Mit dem Gehalt abgegoltene Überstunden je Monat (Stunden, optional)
+                  </Label>
+                  <Input
+                    id="model_settled_hours"
+                    inputMode="decimal"
+                    className="w-28"
+                    placeholder="z. B. 10"
+                    value={modelSettledHours}
+                    onChange={(e) => setModelSettledHours(e.target.value)}
+                  />
+                </div>
+              )}
               <p className="text-xs text-slate-500">
                 {modelChoice === 'DAYS' && 'Z. B. Vollzeit 8 an Mo–Fr, Teilzeit Mo 8 / Di 8 / Mi 4. '}
                 {modelChoice === 'NONE' && 'Ohne Soll – Tage ohne Stempelung sind dann nicht „zu klären“. '}
                 {modelChoice.startsWith('PROFILE-') && 'Folgt automatisch den Änderungen des Modells. '}
-                Gilt ab Anstelldatum (sonst ab heute); Wochen- oder Monatsstunden, Pausen und Kernzeit im Reiter
-                „Arbeitszeit“.
+                Gilt ab Anstelldatum (sonst ab heute); Wochen- oder Monatsstunden, mehrwöchiger Turnus, Pausen und
+                Kernzeit im Reiter „Arbeitszeit“.
               </p>
             </div>
           )}
@@ -713,7 +763,26 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
                   <SelectItem value="ADMIN">Admin</SelectItem>
                 </SelectContent>
               </Select>
-              {hrRole === 'HR' && (
+              {hrRole === 'HR' && (customRoles.length > 0 || customRoleId !== FULL_HR_ACCESS) && (
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="employee-custom-role">Eigene Rolle</Label>
+                  <select
+                    id="employee-custom-role"
+                    className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+                    value={customRoleId}
+                    onChange={(event) => void handleCustomRoleChange(event.target.value)}
+                  >
+                    <option value={FULL_HR_ACCESS}>Keine (voller HR-Zugriff)</option>
+                    {customRoles.map((role) => (
+                      <option key={role.id} value={String(role.id)}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500">Schränkt HR auf die Bereiche der Rolle ein (Einstellungen → Rollen).</p>
+                </div>
+              )}
+              {hrRole === 'HR' && customRoleId === FULL_HR_ACCESS && (
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"

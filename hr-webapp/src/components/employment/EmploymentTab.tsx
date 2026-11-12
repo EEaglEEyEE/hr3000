@@ -30,19 +30,35 @@ function formatAmount(compensation: Compensation): string {
   return `${value} ${compensation.currency}${compensation.pay_type === 'HOURLY' ? ' / h' : ' / Monat'}`
 }
 
-export function EmploymentTab({ employeeId, isAdmin }: { employeeId: number; isAdmin: boolean }) {
+/** canEditContract / canEditPay: bei eigener Rolle mit Stufe „Ansehen“ false – dann nur Lesen, ohne
+ * Anlegen-, Beenden- und Löschen-Schaltflächen (das Backend lehnt das Speichern ohnehin ab). */
+export function EmploymentTab({
+  employeeId,
+  isAdmin,
+  canEditContract = true,
+  canEditPay = true,
+}: {
+  employeeId: number
+  isAdmin: boolean
+  canEditContract?: boolean
+  canEditPay?: boolean
+}) {
   return (
     <div className="flex flex-col gap-8">
-      <ContractSection employeeId={employeeId} />
-      {isAdmin && <CompensationSection employeeId={employeeId} />}
-      {isAdmin && <PayComponentsSection employeeId={employeeId} />}
+      <ContractSection employeeId={employeeId} canEdit={canEditContract} />
+      {isAdmin && <CompensationSection employeeId={employeeId} canEdit={canEditPay} />}
+      {isAdmin && <PayComponentsSection employeeId={employeeId} canEdit={canEditPay} />}
     </div>
   )
 }
 
+function ReadOnlyNote() {
+  return <span className="text-sm text-slate-500">Nur Ansicht – deine Rolle darf hier nichts ändern.</span>
+}
+
 // --- Vertrag ----------------------------------------------------------------------------------
 
-function ContractSection({ employeeId }: { employeeId: number }) {
+function ContractSection({ employeeId, canEdit }: { employeeId: number; canEdit: boolean }) {
   const contractsQuery = useContractsQuery(employeeId)
   const deleteContract = useDeleteContractMutation(employeeId)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -62,10 +78,14 @@ function ContractSection({ employeeId }: { employeeId: number }) {
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-slate-900">Vertragsdaten</h2>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Neuer Vertragsabschnitt
-        </Button>
+        {canEdit ? (
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Neuer Vertragsabschnitt
+          </Button>
+        ) : (
+          <ReadOnlyNote />
+        )}
       </div>
       {contractsQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
       {contractsQuery.isError && <p className="text-red-600">Vertragsdaten konnten nicht geladen werden.</p>}
@@ -100,9 +120,11 @@ function ContractSection({ employeeId }: { employeeId: number }) {
                   : 'Standard'}
               </TableCell>
               <TableCell>
-                <Button variant="ghost" size="icon" onClick={() => void handleDelete(contract)}>
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
+                {canEdit && (
+                  <Button variant="ghost" size="icon" title="Löschen" onClick={() => void handleDelete(contract)}>
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -115,7 +137,7 @@ function ContractSection({ employeeId }: { employeeId: number }) {
           )}
         </TableBody>
       </Table>
-      <ContractDialog open={dialogOpen} onOpenChange={setDialogOpen} employeeId={employeeId} />
+      {canEdit && <ContractDialog open={dialogOpen} onOpenChange={setDialogOpen} employeeId={employeeId} />}
     </section>
   )
 }
@@ -242,7 +264,7 @@ function ContractDialog({
 
 // --- Vergütung (nur Admin) ---------------------------------------------------------------------
 
-function CompensationSection({ employeeId }: { employeeId: number }) {
+function CompensationSection({ employeeId, canEdit }: { employeeId: number; canEdit: boolean }) {
   const compensationQuery = useCompensationQuery(employeeId, true)
   const deleteCompensation = useDeleteCompensationMutation(employeeId)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -265,10 +287,14 @@ function CompensationSection({ employeeId }: { employeeId: number }) {
           <h2 className="text-lg font-semibold text-slate-900">Vergütung</h2>
           <p className="text-sm text-slate-500">Nur mit „Vergütung &amp; Lohn-Export“ sichtbar; jeder Abruf wird protokolliert.</p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Neue Vergütung
-        </Button>
+        {canEdit ? (
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Neue Vergütung
+          </Button>
+        ) : (
+          <ReadOnlyNote />
+        )}
       </div>
       {compensationQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
       {compensationQuery.isError && <p className="text-red-600">Vergütung konnte nicht geladen werden.</p>}
@@ -293,9 +319,11 @@ function CompensationSection({ employeeId }: { employeeId: number }) {
               <TableCell>{formatAmount(compensation)}</TableCell>
               <TableCell>{compensation.note ?? '–'}</TableCell>
               <TableCell>
-                <Button variant="ghost" size="icon" onClick={() => void handleDelete(compensation)}>
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
+                {canEdit && (
+                  <Button variant="ghost" size="icon" title="Löschen" onClick={() => void handleDelete(compensation)}>
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -308,7 +336,7 @@ function CompensationSection({ employeeId }: { employeeId: number }) {
           )}
         </TableBody>
       </Table>
-      <CompensationDialog open={dialogOpen} onOpenChange={setDialogOpen} employeeId={employeeId} />
+      {canEdit && <CompensationDialog open={dialogOpen} onOpenChange={setDialogOpen} employeeId={employeeId} />}
     </section>
   )
 }

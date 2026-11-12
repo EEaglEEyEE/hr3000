@@ -93,6 +93,53 @@ describe('Neuer Mitarbeiter', () => {
     await waitFor(() => expect(postBody(calls)).toMatchObject({ work_time_model: { daily_hours: [7.5, 0, 0, 0, 0, 0, 0] } }))
   })
 
+  it('sendet abgegoltene Überstunden nur, wenn sie eingetragen sind', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = mockApi(features(null))
+    const { unmount } = renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    await fillBasics()
+    // das Feld gibt es nur bei „Stunden je Wochentag“
+    expect(screen.queryByLabelText(/abgegoltene Überstunden/)).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Arbeitszeitmodell'), 'DAYS')
+    await userEvent.type(screen.getByLabelText('Stunden Mo'), '8')
+    await userEvent.type(screen.getByLabelText(/abgegoltene Überstunden/), '7,5')
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() =>
+      expect(postBody(calls)).toMatchObject({ work_time_model: { daily_hours: [8, 0, 0, 0, 0, 0, 0], settled_overtime_hours: 7.5 } }),
+    )
+    unmount()
+
+    const calls2 = mockApi(features(null))
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    await fillBasics()
+    await userEvent.selectOptions(screen.getByLabelText('Arbeitszeitmodell'), 'DAYS')
+    await userEvent.type(screen.getByLabelText('Stunden Mo'), '8')
+    await userEvent.type(screen.getByLabelText(/abgegoltene Überstunden/), '0')
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(postBody(calls2)).toBeDefined())
+    expect((postBody(calls2) as { work_time_model: object }).work_time_model).not.toHaveProperty('settled_overtime_hours')
+  })
+
+  it.each(['abc', '-1', '100,5'])('lehnt abgegoltene Überstunden „%s“ ab, bevor gespeichert wird', async (value) => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = mockApi(features(null))
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    await fillBasics()
+    await userEvent.selectOptions(screen.getByLabelText('Arbeitszeitmodell'), 'DAYS')
+    await userEvent.type(screen.getByLabelText('Stunden Mo'), '8')
+    await userEvent.type(screen.getByLabelText(/abgegoltene Überstunden/), value)
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    expect(await screen.findByText(/zwischen 0 und 100 Stunden je Monat/)).toBeInTheDocument()
+    expect(postBody(calls)).toBeUndefined()
+  })
+
+  it('nennt den mehrwöchigen Turnus als Möglichkeit im Reiter „Arbeitszeit“', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    mockApi(features(null))
+    renderWithProviders(<EmployeeFormDialog open onOpenChange={vi.fn()} locations={LOCATIONS} />)
+    expect(await screen.findByText(/mehrwöchiger Turnus/)).toBeInTheDocument()
+  })
+
   it('klappt Seltenes beim Anlegen ein und beim Bearbeiten auf', async () => {
     loginAs({ kind: 'hr', role: 'HR' })
     mockApi(features(null))

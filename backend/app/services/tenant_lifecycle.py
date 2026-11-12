@@ -22,7 +22,8 @@ from sqlalchemy import Table, delete, exists, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ColumnElement
 
-from app.models import Account, Base, EmployeeDocument, Tenant
+from app.models import Account, Base, EmployeeDocument, Tenant, WhistleAttachment
+from app.services import recruiting_service
 from app.services.document_service import delete_document_file
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,12 @@ async def purge_tenant(db: AsyncSession, tenant_id: int) -> dict[str, int]:
     storage_keys = list(
         (await db.scalars(select(EmployeeDocument.storage_key).where(EmployeeDocument.tenant_id == tenant_id))).all()
     )
+    # Anhänge des Hinweisgebersystems liegen im selben verschlüsselten Dokumentenspeicher.
+    storage_keys += list(
+        (await db.scalars(select(WhistleAttachment.storage_key).where(WhistleAttachment.tenant_id == tenant_id))).all()
+    )
+    # Anhänge von Bewerbungen liegen genauso verschlüsselt im Dokumentablage-Verzeichnis
+    storage_keys += await recruiting_service.attachment_storage_keys(db, tenant_id)
     counts = await tenant_row_counts(db, tenant_id)
     for scope in purge_plan(tenant_id):
         await db.execute(delete(scope.table).where(scope.condition))

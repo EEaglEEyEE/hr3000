@@ -4,10 +4,11 @@ from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.models.rotation import RotationMixin
 from app.models.shift_template import BreakMode, TargetPeriod
 
 
-class EmployeeDefaultShift(Base):
+class EmployeeDefaultShift(RotationMixin, Base):
     """Fassung der Arbeitszeit eines Mitarbeiters für einen effektiv-datierten Zeitraum (Oberfläche:
     "Arbeitszeitmodell", mit Schichtvorlage auch "Standard-Schicht"). Genau eine aktive Fassung pro
     Mitarbeiter zu jedem Zeitpunkt – keine überlappenden valid_from/valid_to. Wochentage stehen in
@@ -28,6 +29,15 @@ class EmployeeDefaultShift(Base):
     # Optional: Soll-Minuten je Wochentag (Mo..So, kommagetrennt, z.B. "480,480,240,0,0,0,0") für
     # Teilzeit mit ungleich verteilten Stunden. Überschreibt dann das Soll der Vorlage.
     day_minutes: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Mehrwöchiges Modell (Turnus über 2–4 Wochen): Soll-Minuten je Woche und Wochentag, Wochen durch
+    # ";" getrennt ("480,480,0,0,0,0,0;0,0,480,480,0,0,0"), und der Montag der Woche 1. Dann gilt:
+    # day_minutes leer, weekdays_mask = alle Tage mit Soll in irgendeiner Woche, target_minutes =
+    # durchschnittliches Wochensoll. Siehe app/models/rotation.py.
+    rotation_minutes: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    rotation_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Mit dem Gehalt abgegoltene Überstunden je Kalendermonat (Minuten, NULL = keine): Mehrarbeit eines
+    # Monats bis zu dieser Grenze wird dem Gleitzeitkonto nicht gutgeschrieben (timesheet_service).
+    settled_overtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Flexibel (z.B. Aushilfe): nur ein Wochensoll (Vorlagen-Soll), keine festen Arbeitstage.
     flexible: Mapped[bool] = mapped_column(Boolean, default=False)
     # Nach Aufwand (Aushilfe ohne feste Stunden): kein Soll, kein Überstundenkonto – abgerechnet werden
@@ -63,10 +73,6 @@ class EmployeeDefaultShift(Base):
     # Zugewiesenes Arbeitszeitmodell: Die Angaben oben kommen dann aus dessen Fassung und werden bei
     # Modelländerungen nachgezogen (leer = individuell eingetragen).
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("work_time_profiles.id"), nullable=True)
-
-    @property
-    def day_minutes_list(self) -> list[int] | None:
-        return [int(v) for v in self.day_minutes.split(",")] if self.day_minutes else None
 
     def copy(self, **changes) -> "EmployeeDefaultShift":
         """Neue Fassung mit allen Angaben dieser (z.B. beim Teilen ab Stichtag), geänderte Felder per kwargs."""

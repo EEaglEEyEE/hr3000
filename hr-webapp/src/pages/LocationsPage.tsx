@@ -39,6 +39,7 @@ export function LocationsPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Zeitzone</TableHead>
+              <TableHead title="Kreis für die Standortprüfung beim Stempeln">Kreis</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -47,6 +48,7 @@ export function LocationsPage() {
               <TableRow key={location.id}>
                 <TableCell>{location.name}</TableCell>
                 <TableCell>{location.timezone}</TableCell>
+                <TableCell className="whitespace-nowrap">{location.geo_radius_m != null ? `${location.geo_radius_m} m` : '–'}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="outline" size="sm" onClick={() => openEditDialog(location)}>
                     Bearbeiten
@@ -56,7 +58,7 @@ export function LocationsPage() {
             ))}
             {locationsQuery.data.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-center text-slate-500">
+                <TableCell colSpan={4} className="text-center text-slate-500">
                   Noch keine Standorte angelegt.
                 </TableCell>
               </TableRow>

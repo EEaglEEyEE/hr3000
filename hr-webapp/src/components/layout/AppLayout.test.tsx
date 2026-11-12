@@ -61,6 +61,23 @@ describe('Seitenleiste', () => {
     expect(screen.queryByRole('link', { name: 'Einstellungen' })).not.toBeInTheDocument()
   })
 
+  it('zeigt Führungskräften „Analysen“ nur bei eingeschalteten eigenen Berichten', async () => {
+    loginAs({ kind: 'hr', role: 'SUPERVISOR' })
+    mockApi({ ...features({ custom_reports_enabled: true }), ...hrTodoRoutes() })
+    renderLayout()
+    expect(await within(nav()).findByRole('link', { name: /Analysen/ })).toBeInTheDocument()
+    expect(within(nav()).queryByRole('link', { name: /Lohn-Export/ })).not.toBeInTheDocument()
+  })
+
+  it('blendet „Analysen“ für Führungskräfte ohne eigene Berichte aus', async () => {
+    loginAs({ kind: 'hr', role: 'SUPERVISOR' })
+    mockApi({ ...features({ custom_reports_enabled: false }), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    await waitFor(() => expect(within(nav()).getByRole('link', { name: /Zu klären/ })).toBeInTheDocument())
+    expect(within(nav()).queryByRole('link', { name: /Analysen/ })).not.toBeInTheDocument()
+  })
+
   it('blendet Schichtplanung nur ein, wenn sie aktiviert ist', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     mockApi({ ...features({ shift_planning_enabled: true }), ...hrTodoRoutes() })
@@ -142,5 +159,62 @@ describe('Berechtigung „Vergütung & Lohn-Export“', () => {
     await screen.findByText('Inhalt')
     expect(within(nav()).getByRole('link', { name: /Lohn-Export/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Einstellungen' })).toBeInTheDocument()
+  })
+})
+
+describe('Seitenleiste mit eigener Rolle', () => {
+  it('Lohnbüro (nur lesen) sieht nur die Lohnbuchhaltung und fragt keine Zähler ab', async () => {
+    loginAs({ kind: 'hr', role: 'HR', payroll: true, perms: { PAYROLL: 'VIEW' } })
+    const calls = mockApi({ ...features({ payroll_accounting_enabled: true }), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    expect(await within(nav()).findByRole('link', { name: /Lohnbuchhaltung/ })).toBeInTheDocument()
+    expect(within(nav()).getAllByRole('link')).toHaveLength(1)
+    for (const label of ['Startseite', 'Mitarbeiter', 'Zu klären', 'Monatsabschluss', 'Lohn-Export', 'Anwesenheit']) {
+      expect(within(nav()).queryByRole('link', { name: new RegExp(label) })).not.toBeInTheDocument()
+    }
+    expect(screen.queryByRole('link', { name: 'Einstellungen' })).not.toBeInTheDocument()
+    const paths = calls.map((c) => c.path)
+    for (const path of ['/timesheet/open-days', '/absences/pending', '/change-requests', '/punch-correction-requests']) {
+      expect(paths).not.toContain(path)
+    }
+  })
+
+  it('Zeiten-Rolle sieht Anwesenheit und Zu klären', async () => {
+    loginAs({ kind: 'hr', role: 'HR', perms: { TIME: 'EDIT' } })
+    const calls = mockApi({ ...features(), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    expect(within(nav()).getByRole('link', { name: /Anwesenheit/ })).toBeInTheDocument()
+    expect(within(nav()).getByRole('link', { name: /Zu klären/ })).toBeInTheDocument()
+    expect(within(nav()).queryByRole('link', { name: /Analysen/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(calls.map((c) => c.path)).toContain('/timesheet/open-days'))
+    expect(calls.map((c) => c.path)).not.toContain('/absences/pending')
+  })
+})
+
+describe('Menüpunkt Lohnbuchhaltung', () => {
+  it('erscheint nur, wenn die Lohnbuchhaltung eingeschaltet ist', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    mockApi({ ...features(), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    expect(within(nav()).queryByRole('link', { name: /Lohnbuchhaltung/ })).not.toBeInTheDocument()
+  })
+
+  it('zeigt Admins die Lohnbuchhaltung bei eingeschaltetem Schalter', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    mockApi({ ...features({ payroll_accounting_enabled: true }), ...hrTodoRoutes() })
+    renderLayout()
+    expect(await within(nav()).findByRole('link', { name: /Lohnbuchhaltung/ })).toBeInTheDocument()
+  })
+
+  it('nicht für HR ohne „Vergütung & Lohn-Export“', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    mockApi({ ...features({ payroll_accounting_enabled: true }), ...hrTodoRoutes() })
+    renderLayout()
+    await screen.findByText('Inhalt')
+    await waitFor(() => expect(within(nav()).getByRole('link', { name: /Lohn-Export/ })).toBeInTheDocument())
+    expect(within(nav()).queryByRole('link', { name: /Lohnbuchhaltung/ })).not.toBeInTheDocument()
   })
 })

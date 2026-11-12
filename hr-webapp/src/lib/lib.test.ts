@@ -62,6 +62,15 @@ describe('Datumsrechnung', () => {
     expect(formatDate('2026-10-21')).toBe('21.10.2026')
     expect(formatDate('2027-01-01')).toBe('1.1.2027')
   })
+
+  it('zeigt bei einem Zeitpunkt (naiv UTC, mit oder ohne Zone) das Datum statt „Invalid Date“', () => {
+    // Mittag UTC: in jeder Browser-Zeitzone von −11 bis +11 Stunden derselbe Tag
+    expect(formatDate('2026-11-11T12:00:00')).toBe('11.11.2026')
+    expect(formatDate('2026-11-11T12:00:00.123456')).toBe('11.11.2026')
+    expect(formatDate('2026-11-11T12:00:00Z')).toBe('11.11.2026')
+    expect(formatDate('2026-11-11T12:00:00+00:00')).toBe('11.11.2026')
+    expect(formatDate('2026-11-11T12:00:00')).not.toContain('Invalid')
+  })
 })
 
 describe('Tagesfarben', () => {

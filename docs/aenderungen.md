@@ -3,8 +3,167 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 12.11.2026
+
+- **Unbekannte Adressen zeigen „Seite nicht gefunden“:** Wer in der Verwaltung eine veraltete oder
+  vertippte Adresse aufruft, sieht jetzt einen Hinweis mit dem Link „Zur Startseite“ statt einer
+  leeren Seite. Menü und Kopfzeile bleiben stehen.
+- **Eigene Rolle mit „Ansehen“ im Reiter „Vertrag & Vergütung“:** Hat die Rolle bei „Vergütung & Lohn“
+  nur „Ansehen“, zeigt das Profil Vergütung, Zulagen und Einmalzahlungen ohne die Schaltflächen zum
+  Anlegen, Beenden und Löschen („Nur Ansicht – deine Rolle darf hier nichts ändern.“). Dasselbe gilt
+  für die Vertragsdaten bei „Mitarbeiter & Stammdaten: Ansehen“. Bisher lehnte erst der Server das
+  Speichern ab.
+- **Öffentliche API, Stempelungen:** `GET /api/v1/punches` nennt je Stempelung zusätzlich
+  `project_id`, `project_number`, `project_name` (Projektzeiten, sonst `null`) und `location_check`
+  (`INSIDE`, `OUTSIDE`, `UNKNOWN`; `null` = nicht geprüft). Koordinaten und Tätigkeitsnotizen gibt die
+  API nicht aus. Bestehende Felder sind unverändert.
+- **DATEV LODAS:** Die „Vorschau“ nennt je Mitarbeiter die mit dem Gehalt abgegoltenen Überstunden
+  des Monats als Hinweis („… Std. Überstunden mit dem Gehalt abgegolten – keine Buchung, nur zur
+  Information.“). Sie lösen keine Zahlung aus und stehen deshalb nicht in der Datei.
+- **Mitarbeiter-Import und „Neuer Mitarbeiter“:** Der CSV-Import kennt das mehrwöchige Modell
+  (Spalten `tagesstunden_woche2` bis `tagesstunden_woche4` zusätzlich zu `tagesstunden` als Woche 1,
+  optional `turnus_beginn`) und `abgegoltene_ueberstunden` (Stunden je Monat). Im Dialog „Neuer
+  Mitarbeiter“ lässt sich bei „Stunden je Wochentag“ die Grenze „Mit dem Gehalt abgegoltene
+  Überstunden je Monat“ gleich mit eintragen. Ein Turnus wird weiter im Reiter „Arbeitszeit“ oder
+  über ein Arbeitszeitmodell eingerichtet.
+
+## 11.11.2026
+
+- **Neue Funktionen greifen ineinander:** Das mehrwöchige Arbeitszeitmodell zählt jetzt auch in den
+  Analysen richtig: „Abwesenheitsquote“ und „Urlaub genommen“ in eigenen Berichten rechnen die
+  Soll-Arbeitstage nach der jeweiligen Turnus-Woche, „Köpfe und FTE“ und die Spalte „Wochenstunden“
+  nach dem Durchschnitt über den Turnus. Mit dem Gehalt abgegoltene Überstunden stehen in der
+  „Lohnbuchhaltung“ je Person („Mit dem Gehalt abgegolten“, auch im freigegebenen Schnappschuss) und
+  als Spalte „Davon mit dem Gehalt abgegolten (Std.)“ in eigenen Berichten („Zeit je Monat“).
+- **Eigene Rollen kennen die neuen Module:** Neuer Bereich „Recruiting“ in der Rollen-Matrix. Ohne
+  diesen Bereich sieht ein Konto mit eigener Rolle nur die Stellen, in deren Hiring Team es steht.
+  Eigene Berichte und die neuen Analysen gehören zum Bereich „Auswertungen“ (Vorschau und Export ab
+  „Ansehen“, Speichern ab „Bearbeiten“). Hinweise sieht weiterhin nur, wer als
+  Meldestellen-Beauftragte:r benannt ist – unabhängig von der Rolle.
+- **Datum mit Uhrzeit wurde als „Invalid Date“ angezeigt:** betroffen waren das Ablaufdatum bei
+  „Tablets per MDM verteilen“ und das Eingangsdatum von Bewerbungen. Behoben.
+- **Standort beim Stempeln (Web-Login, Standard aus):** Unter „Einstellungen“ → „Stempeln“ lässt sich
+  „Standort beim Stempeln prüfen (Web-Login)“ einschalten, mit „Nur vermerken“ (Standard) oder
+  „Außerhalb nicht erlauben“. Je Standort trägt man unter „Einstellungen“ → „Standorte“ optional einen
+  Kreis ein („Breite“, „Länge“, „Radius (m)“ 50–5000, Hilfe „Aktuellen Standort übernehmen“). Beim
+  Stempeln im Web-Login fragt der Browser dann einmalig nach dem Standort; gespeichert wird nur, ob die
+  Buchung innerhalb oder außerhalb eines Standorts der Firma war (oder „Standort unbekannt“, wenn die
+  Freigabe fehlt oder die Position zu ungenau ist) – keine Koordinaten. „Außerhalb nicht erlauben“
+  lehnt das Stempeln außerhalb, ohne Freigabe oder bei zu ungenauer Position mit einer Meldung ab.
+  Kennzeichen „außerhalb“/„Standort unbekannt“ im Reiter „Zeiterfassung“ (für HR, Führungskräfte und
+  die Mitarbeiter selbst) und im Monatsnachweis unter „Bemerkung“. Tablets und Nachträge durch HR sind
+  nicht betroffen. Neu in der API: `position` bei `POST /me/punches`, `location_check` an Stempelungen,
+  Kreis-Felder an `/locations`.
+- **Projektzeiten (Schalter, Standard aus):** Neuer Bereich „Einstellungen“ → „Projekte & Kunden“.
+  Admins schalten dort „Projektzeiten“ ein und optional „Projekt ist Pflicht“; Admin und HR pflegen
+  Kunden (Name, aktiv) und Projekte (Name, Nummer, Kunde, Kostenstelle, abrechenbar, aktiv, gültig
+  von/bis). Projekte mit zugeordneten Zeiten und Kunden mit Projekten lassen sich nur deaktivieren.
+  Im Stundenzettel („Mein Bereich“ → „Zeiterfassung“) wählt man je Arbeitszeit ein Projekt (nur
+  aktive und am Tag gültige) und optional eine Tätigkeit. Am Tablet und beim Stempeln gibt es bewusst
+  keine Projektauswahl. HR ändert Projekt und Tätigkeit beim „Korrigieren“ eines „Kommen“. Neue
+  Auswertung „Analysen“ → „Projektzeiten“: Zeitraum, Summe je Projekt, Kunde oder Mitarbeiter,
+  abrechenbar getrennt, „CSV exportieren“; Führungskräfte sehen sie für ihren Bereich. Im
+  Berichts-Builder gibt es die Datenquelle „Projektzeiten“ (Projekt, Projektnummer, Kunde,
+  Abrechenbar, Kostenstelle, Stunden). Neu in der API: `/customers`, `/projects`,
+  `GET /reports/project-times`.
+- **Zeiten selbst eintragen (Stundenzettel, Schalter, Standard aus):** Unter „Einstellungen“ →
+  „Stempeln“ → „Zeiten selbst eintragen (Stundenzettel)“ eingeschaltet, gibt es in „Mein Bereich“ →
+  „Zeiterfassung“ die Karte „Stundenzettel“: eine Woche Mo–So, je Tag die Zeiten mit Quelle und die
+  Ist-Zeit; mit „Eintragen“ trägt man für einen Tag eine oder mehrere Arbeitszeiten ein, auch mit
+  Pausen, über Mitternacht („Folgetag“) und für Tage ohne Stempelung. „Genehmigung nötig“ (Standard
+  an): Die Zeiten landen unter „Zu klären“ → „Korrekturanträge“ (Art „Zeiten eingetragen“) und zählen
+  erst nach „Übernehmen“; HR wird über die Glocke benachrichtigt, der Mitarbeiter über das Ergebnis.
+  Ohne Genehmigung zählen sie sofort, stehen im Audit-Protokoll und lassen sich im erlaubten Zeitraum
+  selbst wieder löschen. „Rückwirkend eintragen bis … Tage“ (Standard 7, 0 = nur heute, höchstens 62).
+  Abgelehnt werden Tage in der Zukunft und Zeiten, die noch nicht vorbei sind, Überschneidungen mit
+  vorhandenen Zeiten oder offenen Anträgen, Tage außerhalb der Beschäftigung und abgeschlossene Monate.
+  In der Zeiterfassung des Mitarbeiters steht die Quelle „Selbst eingetragen“. Die API
+  (`GET /v1/punches`) liefert genehmigte Zeiten mit `source` `SELF_ENTRY`, beantragte nicht.
+- **Gleichzeitige Stempelungen:** Liegen ein „Gehen“ und ein „Kommen“ auf derselben Minute (z. B.
+  08:00–12:00 und 12:00–16:00), zählt jetzt immer erst das Ende, dann der Beginn – auch wenn die
+  spätere Zeit zuerst erfasst wurde. Bisher wurde so ein Tag als widersprüchlich gemeldet.
+
 ## 10.11.2026
 
+- **Hinweisgebersystem (interne Meldestelle):** Neuer Schalter unter „Einstellungen“ →
+  „Hinweisgebersystem“ (Standard aus). Eingeschaltet gibt es die Seite `https://<firma>.hr3000.de/hinweis`:
+  Beschäftigte und Dritte geben dort ohne Anmeldung einen Hinweis ab – Kategorie, Beschreibung,
+  freiwillig Zeitpunkt, Ort und Anhänge, anonym oder mit Kontaktangabe. Danach erscheinen einmalig
+  eine Vorgangsnummer und ein Zugangscode; damit sieht die meldende Person unter „Stand abfragen“ den
+  Bearbeitungsstand, liest Nachrichten der Meldestelle, antwortet und reicht Dateien nach. Gespeichert
+  werden weder IP-Adresse noch eine Verbindung zum Konto, auch nicht, wenn die Person angemeldet ist;
+  Inhalte, Kontaktangaben und Anhänge liegen verschlüsselt. Hinweise sehen nur die vom Admin benannten
+  „Meldestellen-Beauftragten“ (nicht automatisch Admins oder HR) unter dem neuen Menüpunkt
+  „Hinweise“: Liste mit Status und Fristen (Eingangsbestätigung nach 7 Tagen, Rückmeldung nach drei
+  Monaten, Überfälliges rot, Erinnerung über die Glocke), Nachrichten an die meldende Person
+  („Als Eingangsbestätigung senden“, „Als Rückmeldung senden“), interne Notizen, Status mit
+  Abschlussvermerk und Löschdatum drei Jahre nach Abschluss. Ab dem Löschdatum steht der Vorgang
+  als „zur Löschung fällig“ in der Liste und lässt sich löschen. „Mein Bereich“ verlinkt die
+  Meldeseite. Neu in der API: `/public/whistle/…` (Meldeseite) und `/whistle/…` (Meldestelle,
+  Beauftragte).
+- **Neue Analysen „Abwesenheitsquote“ und „Köpfe und FTE“:** Unter „Analysen“ (Admin und HR) zeigt
+  „Abwesenheitsquote“ je Monat die Abwesenheitstage geteilt durch die Soll-Arbeitstage, gesamt und je
+  Abteilung. Die Kategorien sind wählbar, Standard ist Krankheit und Kind krank. „Köpfe und FTE“ zeigt
+  je Monatsende die Zahl der Beschäftigten und ihre Vollzeitstellen (Wochenstunden geteilt durch die
+  Standard-Arbeitszeit der Firma), dazu Zu- und Abgänge im Monat, gesamt und je Abteilung. Beide mit
+  „CSV exportieren“. Neu in der API: `GET /reports/absence-rate` und `GET /reports/headcount`.
+- **Eigene Berichte (Schalter, Standard aus):** Unter „Einstellungen“ → „Allgemein“ → „Eigene
+  Berichte“ eingeschaltet, gibt es unter „Analysen“ den Reiter „Eigene Berichte“. Dort stellt ihr
+  Auswertungen aus „Mitarbeitende“, „Abwesenheiten“ oder „Zeit je Monat“ zusammen: Spalten wählen und
+  ordnen, Filter, Sortierung, Gruppierung mit Summen, Vorschau, „CSV exportieren“. Berichte lassen sich
+  speichern und mit allen Verwaltungskonten teilen; ändern und löschen dürfen nur Besitzer und Admins.
+  Führungskräfte bekommen mit dem Schalter den Menüpunkt „Analysen“ mit nur diesem Reiter und sehen
+  in jedem Bericht nur ihren Bereich. Vergütung, Bank, Steuer und Sozialversicherung brauchen
+  „Vergütung & Lohn-Export“, persönliche Daten und eigene Felder Admin oder HR. Jeder Lauf und jeder
+  Export steht im Audit-Protokoll (ohne Inhalte). Neu in der API: `/report-builder/…`.
+
+- **Recruiting (neu, Standard aus):** Unter „Einstellungen“ → „Recruiting“ schalten Admins Stellen,
+  Bewerbungen und eine Karriereseite ein. Stellen mit Abteilung, Standort, Anstellungsart,
+  Bewerbungsschluss und „Hiring Team“; veröffentlichte Stellen stehen ohne Anmeldung unter
+  `/karriere` mit Bewerbungsformular (Lebenslauf und Anhänge als PDF/Bild, verschlüsselt abgelegt,
+  Pflicht-Häkchen zu den Datenschutzhinweisen, Grenze je Anschluss und Schutz gegen Bots). Im
+  neuen Menüpunkt „Recruiting“ laufen die Bewerbungen als Spalten nach Phase oder als Liste, mit
+  Notizen, Sternen je Person, Verlauf, Absagegrund und Anhängen; das Hiring Team sieht nur seine
+  Stellen (Mitarbeitende ohne Verwaltungsrolle in „Mein Bereich“ → „Recruiting“). „Als Mitarbeiter
+  übernehmen“ legt aus einer eingestellten Bewerbung den Mitarbeiter an, übernimmt gewählte Anhänge in
+  die Personalakte und startet auf Wunsch das Onboarding. Abgelehnte und zurückgezogene Bewerbungen
+  werden nach einer einstellbaren Frist (Standard 6 Monate, im Talentpool 12) automatisch gelöscht;
+  übrig bleibt nur eine anonyme Zählung je Stelle.
+- **Monatlich abgegoltene Überstunden:** Im Arbeitszeitmodell (am Mitarbeiter und in den
+  Arbeitszeitmodellen) gibt es das Feld „Mit dem Gehalt abgegoltene Überstunden je Monat (Stunden)“.
+  Mehrarbeit eines Kalendermonats bis zu dieser Grenze kommt nicht aufs Überstundenkonto, erst der
+  Teil darüber; maßgeblich ist der Saldo des ganzen Monats, Minusstunden bleiben unverändert. Im
+  laufenden Monat wirkt die Abgeltung fortlaufend. Der Reiter „Überstundenkonto“ zeigt „Davon
+  abgegolten in diesem Monat“, der Monatsnachweis eine Zeile „davon abgegolten“, der Lohn-Export die
+  Spalte „Abgegoltene Überstunden (Std.)“ ganz hinten (nur wenn eine Grenze gilt). Ohne Eintrag
+  ändert sich nichts. Neu in der API: `settled_overtime_hours` in der Eingabe,
+  `settled_overtime_minutes` in der Antwort, `settled_limit_minutes`/`settled_month_minutes` am
+  Überstundenkonto, `settled_minutes` am Monatsabschluss.
+- **Mehrwöchiges Arbeitszeitmodell (Turnus):** Unter „Soll“ gibt es neben „Wochenstunden“ und
+  „Monatsstunden (fest)“ die Variante „Mehrwöchig (Turnus)“ – am Mitarbeiter und in den
+  Arbeitszeitmodellen. Je Woche eines Rhythmus über 2 bis 4 Wochen werden die Stunden je Wochentag
+  eingetragen (z. B. Woche 1 Mo–Mi, Woche 2 Do–Fr); der Dialog zeigt die durchschnittlichen
+  Wochenstunden und Arbeitstage. Woche 1 beginnt in der Woche des „Gültig ab“-Datums oder am
+  optionalen „Turnus beginnt am“, danach wiederholt sich der Turnus fortlaufend. Tagessoll,
+  Gleitzeitkonto, „Zu klären“, Urlaubs- und Feiertage, Monatsbericht und Lohn-Export folgen der
+  jeweiligen Woche; der berechnete Urlaubsanspruch nutzt die durchschnittlichen Arbeitstage (z. B.
+  2,5). Bestehende Modelle ändern sich nicht. Neu in der API: `rotation_weeks`/`rotation_start` in
+  der Eingabe, `rotation_minutes`/`rotation_start` in der Antwort.
+- **Vorbereitende Lohnbuchhaltung:** Neue Seite „Lohnbuchhaltung“ (einschalten unter „Einstellungen“
+  → „Lohnbuchhaltung“, Standard aus) für alle mit „Vergütung & Lohn“: je Monat Neuzugänge, Austritte,
+  Änderungen im Monat, Vergütung und Zulagen, Abwesenheiten je Art, Stunden und Zuschläge wie im
+  Lohn-Export und der Stand des Monatsabschlusses. „Freigeben“ friert den Monat samt CSV und – wenn
+  eingerichtet – DATEV-LODAS-Datei verschlüsselt ein; spätere Änderungen werden als „Seit der Freigabe
+  geändert“ markiert. „Freigabe zurücknehmen“ nur für Admins. Mit der Rolle „Lohnbüro (nur lesen)“
+  sieht die Steuerberatung nur die freigegebenen Monate und lädt deren Dateien; jeder Abruf steht im
+  Audit-Protokoll. Die Seite „Lohn-Export“ bleibt unverändert.
+- **Eigene Rollen:** Unter „Einstellungen“ → „Rollen“ legen Admins Rollen mit Rechten je Bereich an
+  („Kein Zugriff“, „Ansehen“, „Bearbeiten“) – etwa für ein externes Lohnbüro (Vorlage „Lohnbüro (nur
+  lesen)“) oder eine Person, die nur Abwesenheiten pflegt. Eine eigene Rolle schränkt die
+  Verwaltungsrolle „HR“ ein, sie erweitert sie nie; Admin-Funktionen bleiben bei Admins. Zuweisen beim
+  Mitarbeiter unter „HR-Berechtigung“ oder bei den neuen „Verwaltungskonten“ (Zugänge ohne
+  Mitarbeiter, z. B. für die Steuerberatung). Menü, Seiten und Reiter zeigen nur die freigegebenen
+  Bereiche, der Server prüft jede Anfrage. Für bestehende Konten ändert sich nichts.
 - **Abwesenheiten mit Benachrichtigung wieder löschbar:** Eine Abwesenheit ließ sich nicht löschen,
   sobald es eine Benachrichtigung zu ihr gab – nach jeder Entscheidung über einen Antrag (wenn die
   Person einen Zugang hat) und wenn eine Vertretung benachrichtigt wurde. Die Web-App zeigte dann

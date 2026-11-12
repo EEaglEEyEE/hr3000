@@ -5,9 +5,10 @@ import type { components } from '../schema'
 export type WorkTimeModel = components['schemas']['WorkTimeModelResponse']
 export type WorkTimeModelSetRequest = components['schemas']['WorkTimeModelSetRequest']
 
-export function useFeaturesQuery() {
+export function useFeaturesQuery(enabled = true) {
   return useQuery({
     queryKey: ['features'],
+    enabled,
     queryFn: async () => unwrap(await apiClient.GET('/features')),
     staleTime: 60_000,
   })

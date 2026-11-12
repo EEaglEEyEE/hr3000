@@ -68,3 +68,31 @@ describe('Zu klären (Posteingang)', () => {
     expect(screen.getByRole('tab', { name: /Tage/ })).toHaveAttribute('aria-selected', 'true')
   })
 })
+
+describe('Zu klären mit eigener Rolle', () => {
+  it('zeigt einer Urlaubs-Rolle nur den Reiter Urlaubsanträge', async () => {
+    loginAs({ kind: 'hr', role: 'HR', perms: { ABSENCES: 'EDIT' } })
+    const calls = mockApi({
+      ...hrTodoRoutes({ pendingAbsences: [absence] }),
+      'GET /locations': [],
+      'GET /employees': [{ id: 3, first_name: 'Erika', last_name: 'Muster' }],
+      'GET /absence-types': [],
+    })
+    renderInbox('/zu-klaeren')
+    expect(await screen.findByText('Erika Muster')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Urlaubsanträge/ })).toBeInTheDocument()
+    for (const name of [/^Tage/, /Korrekturanträge/, /Grenzen/, /Datenänderungen/]) {
+      expect(screen.queryByRole('tab', { name })).not.toBeInTheDocument()
+    }
+    const paths = calls.map((c) => c.path)
+    expect(paths).not.toContain('/timesheet/open-days')
+    expect(paths).not.toContain('/change-requests')
+  })
+
+  it('ohne passenden Bereich: Hinweis statt Reitern', async () => {
+    loginAs({ kind: 'hr', role: 'HR', perms: { REPORTS: 'VIEW' } })
+    mockApi({})
+    renderInbox('/zu-klaeren')
+    expect(await screen.findByText('Für diese Seite fehlt die Berechtigung.')).toBeInTheDocument()
+  })
+})

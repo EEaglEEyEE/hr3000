@@ -4,12 +4,14 @@ import { ApiError } from '../api/client'
 import { useSettingsQuery, useUpdateSettingsMutation, type Bundesland, type Settings } from '../api/queries/settings'
 import { useFeaturesQuery } from '../api/queries/workTimeModel'
 import { useAuth } from '../auth/AuthContext'
-import { allows, type Access } from '../lib/access'
+import { allows, allowsAreas, type Access, type AreaNeed } from '../lib/access'
 import { BUNDESLAND_LABELS } from '../lib/labels'
 import { cn } from '../lib/utils'
 import { SmtpSettingsCard } from '../components/settings/SmtpSettingsCard'
 import { LogoSettingsCard } from '../components/settings/LogoSettingsCard'
 import { TwoFactorPolicyCard } from '../components/settings/TwoFactorPolicyCard'
+import { WhistleSettings } from '../components/settings/WhistleSettings'
+import { TimeSheetSettingsCard } from '../components/settings/TimeSheetSettingsCard'
 import {
   CoreTimeCard,
   EmployeeDefaultsCard,
@@ -30,21 +32,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { PlanCard } from '../components/plan/PlanNotice'
 import { AccountCancellationCard } from '../components/account/AccountCancellation'
 import { SettingsTransferCard } from '../components/migration/SettingsTransferCard'
+import { RecruitingSettingsSection } from '../components/settings/RecruitingSettingsSection'
 import { AuditLogPage } from './AuditLogPage'
 import { BreakRulesPage } from './BreakRulesPage'
 import { DevicesPage } from './DevicesPage'
 import { HolidaysPage } from './HolidaysPage'
 import { LocationsPage } from './LocationsPage'
+import { PunchLocationSettings } from '../components/settings/PunchLocationSettings'
 import { ShiftTemplatesPage } from './ShiftTemplatesPage'
 import { WorkTimeProfilesPage } from './WorkTimeProfilesPage'
 import { SurchargeRulesPage } from './SurchargeRulesPage'
 import { DepartmentsPage } from './DepartmentsPage'
 import { CostCentersPage } from './CostCentersPage'
+import { ProjectsPage } from './ProjectsPage'
 import { AttributeSettingsPage } from './AttributeSettingsPage'
 import { DocumentCategoriesPage } from './DocumentCategoriesPage'
 import { DocumentTemplatesPage } from './DocumentTemplatesPage'
 import { IntegrationsPage } from './IntegrationsPage'
 import { WageTypesPage } from './WageTypesPage'
+import { RolesPage } from './RolesPage'
+import { AdminAccountsPage } from './AdminAccountsPage'
 
 // Zwei Spalten ab großer Breite – lange Einstellungsseiten bleiben überschaubar.
 const GRID = 'grid grid-cols-1 items-start gap-4 xl:grid-cols-2'
@@ -54,12 +61,15 @@ interface SectionContext {
   settings: Settings | undefined
   isAdmin: boolean
   shiftPlanningEnabled: boolean
+  projectTimesEnabled: boolean
 }
 
 interface Section {
   key: string
   label: string
   access: Access
+  /** Bereiche für Konten mit eigener Rolle (ohne Angabe: für sie nicht sichtbar). */
+  areas?: AreaNeed
   /** Zusätzliche Bedingung (z. B. Schichtplanung eingeschaltet). */
   visible?: (context: SectionContext) => boolean
   /** Braucht die Firmen-Einstellungen (GET /settings). */
@@ -74,25 +84,43 @@ const GROUPS: { title: string; sections: Section[] }[] = [
     title: 'Unternehmen',
     sections: [
       { key: 'firma', label: 'Allgemein', access: 'admin', needsSettings: true, render: ({ settings }) => <CompanySection settings={settings!} /> },
-      { key: 'standorte', label: 'Standorte', access: 'hr', render: () => <LocationsPage /> },
-      { key: 'abteilungen', label: 'Abteilungen', access: 'hr', render: () => <DepartmentsPage /> },
-      { key: 'kostenstellen', label: 'Kostenstellen', access: 'hr', render: () => <CostCentersPage /> },
+      { key: 'standorte', label: 'Standorte', access: 'hr', areas: ['MASTER_DATA'], render: () => <LocationsPage /> },
+      { key: 'abteilungen', label: 'Abteilungen', access: 'hr', areas: ['ORGANIZATION'], render: () => <DepartmentsPage /> },
+      { key: 'kostenstellen', label: 'Kostenstellen', access: 'hr', areas: ['MASTER_DATA'], render: () => <CostCentersPage /> },
       { key: 'personalakte-felder', label: 'Felder der Personalakte', access: 'admin', render: () => <AttributeSettingsPage /> },
       { key: 'dokumentkategorien', label: 'Dokumentkategorien', access: 'admin', render: () => <DocumentCategoriesPage /> },
       { key: 'dokumentvorlagen', label: 'Dokumentvorlagen', access: 'admin', render: () => <DocumentTemplatesPage /> },
-      { key: 'feiertage', label: 'Feiertagskalender', access: 'hr', render: () => <HolidaysPage /> },
+      { key: 'feiertage', label: 'Feiertagskalender', access: 'hr', areas: ['MASTER_DATA'], render: () => <HolidaysPage /> },
+      {
+        key: 'hinweisgebersystem',
+        label: 'Hinweisgebersystem',
+        access: 'admin',
+        needsSettings: true,
+        render: ({ settings }) => <WhistleSettings settings={settings!} />,
+      },
+      { key: 'recruiting', label: 'Recruiting', access: 'admin', needsSettings: true, render: ({ settings }) => <RecruitingSettingsSection settings={settings!} /> },
     ],
   },
   {
     title: 'Arbeitszeit & Pausen',
     sections: [
       { key: 'arbeitszeit', label: 'Arbeitszeit', access: 'admin', needsSettings: true, render: ({ settings }) => <WorkingTimeSection settings={settings!} /> },
-      { key: 'arbeitszeitmodelle', label: 'Arbeitszeitmodelle', access: 'hr', render: () => <WorkTimeProfilesPage /> },
+      { key: 'arbeitszeitmodelle', label: 'Arbeitszeitmodelle', access: 'hr', areas: ['MASTER_DATA'], render: () => <WorkTimeProfilesPage /> },
+      // Schalter nur für Admins (Einstellungen), Kunden und Projekte pflegen Admin und HR (sichtbar, sobald eingeschaltet)
+      {
+        key: 'projekte',
+        label: 'Projekte & Kunden',
+        access: 'hr',
+        areas: ['MASTER_DATA'],
+        visible: ({ isAdmin, projectTimesEnabled }) => isAdmin || projectTimesEnabled,
+        render: ({ settings }) => <ProjectsPage settings={settings} />,
+      },
       { key: 'pausen', label: 'Pausenregeln', access: 'admin', render: () => <BreakRulesPage /> },
       {
         key: 'schichtplanung',
         label: 'Schichtplanung',
         access: 'hr',
+        areas: ['SHIFT_PLANNING'],
         // HR pflegt die Schichtvorlagen, das Ein- und Ausschalten bleibt beim Admin.
         visible: ({ isAdmin, shiftPlanningEnabled }) => isAdmin || shiftPlanningEnabled,
         render: (context) => <ShiftPlanningSection {...context} />,
@@ -132,7 +160,7 @@ const GROUPS: { title: string; sections: Section[] }[] = [
           </div>
         ),
       },
-      { key: 'tablets', label: 'Tablets', access: 'hr', render: () => <DevicesPage /> },
+      { key: 'tablets', label: 'Tablets', access: 'hr', areas: ['MASTER_DATA'], render: () => <DevicesPage /> },
     ],
   },
   {
@@ -155,7 +183,21 @@ const GROUPS: { title: string; sections: Section[] }[] = [
     title: 'Abrechnung',
     sections: [
       { key: 'zuschlaege', label: 'Zuschläge', access: 'admin', render: () => <SurchargeRulesPage /> },
-      { key: 'lohnarten', label: 'Lohnarten', access: 'payroll', render: () => <WageTypesPage /> },
+      {
+        key: 'lohnbuchhaltung',
+        label: 'Lohnbuchhaltung',
+        access: 'admin',
+        needsSettings: true,
+        render: ({ settings }) => <PayrollAccountingSection settings={settings!} />,
+      },
+      { key: 'lohnarten', label: 'Lohnarten', access: 'payroll', areas: [['PAYROLL', 'EDIT']], render: () => <WageTypesPage /> },
+    ],
+  },
+  {
+    title: 'Zugänge & Rechte',
+    sections: [
+      { key: 'rollen', label: 'Rollen', access: 'admin', render: () => <RolesPage /> },
+      { key: 'verwaltungskonten', label: 'Verwaltungskonten', access: 'admin', render: () => <AdminAccountsPage /> },
     ],
   },
   {
@@ -203,7 +245,7 @@ const LEGACY_SECTIONS: Record<string, string> = {
 }
 
 export function SettingsPage() {
-  const { isAdmin, isFullHr, canPayroll } = useAuth()
+  const { isAdmin, isFullHr, canPayroll, perms } = useAuth()
   const { seite } = useParams()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -213,12 +255,16 @@ export function SettingsPage() {
     settings: settingsQuery.data,
     isAdmin,
     shiftPlanningEnabled: featuresQuery.data?.shift_planning_enabled ?? false,
+    projectTimesEnabled: featuresQuery.data?.project_times_enabled ?? false,
   }
 
   const groups = GROUPS.map((group) => ({
     ...group,
     sections: group.sections.filter(
-      (section) => allows(section.access, { isAdmin, isFullHr, canPayroll }) && (section.visible?.(context) ?? true),
+      (section) =>
+        allows(section.access, { isAdmin, isFullHr, canPayroll }) &&
+        allowsAreas(section.areas, perms) &&
+        (section.visible?.(context) ?? true),
     ),
   })).filter((group) => group.sections.length > 0)
   const sections = groups.flatMap((group) => group.sections)
@@ -306,6 +352,27 @@ function InlineError({ error }: { error: string | null }) {
   return error ? <p className="text-sm text-red-600">{error}</p> : null
 }
 
+function PayrollAccountingSection({ settings }: { settings: Settings }) {
+  const { update, pending, error } = useInlineSettings()
+  return (
+    <>
+      <InlineError error={error} />
+      <div className={GRID}>
+        <SettingsToggle
+          checked={settings.payroll_accounting_enabled ?? false}
+          disabled={pending}
+          onChange={(checked) => update.mutate({ payroll_accounting_enabled: checked })}
+          title="Lohnbuchhaltung"
+        >
+          Menüpunkt „Lohnbuchhaltung“ für alle mit „Vergütung &amp; Lohn“: je Monat Neuzugänge, Austritte, Änderungen,
+          Vergütung, Abwesenheiten und Stunden. „Freigeben“ friert den Monat samt CSV und DATEV-Datei ein; ein
+          Lohnbüro mit der Rolle „Lohnbüro (nur lesen)“ sieht nur freigegebene Monate.
+        </SettingsToggle>
+      </div>
+    </>
+  )
+}
+
 function CompanySection({ settings }: { settings: Settings }) {
   const { update, pending, error } = useInlineSettings()
   return (
@@ -360,6 +427,16 @@ function CompanySection({ settings }: { settings: Settings }) {
           >
             Reiter „Organigramm“ in „Mein Bereich“ mit Name, Position, Abteilung und Führungskraft aller aktiven
             Mitarbeiter. Admin, HR und Führungskräfte sehen es immer.
+          </SettingsToggle>
+          <SettingsToggle
+            checked={settings.custom_reports_enabled}
+            disabled={pending}
+            onChange={(checked) => update.mutate({ custom_reports_enabled: checked })}
+            title="Eigene Berichte"
+          >
+            Reiter „Eigene Berichte“ unter „Analysen“: Auswertungen aus Mitarbeitenden, Abwesenheiten oder Zeit je Monat
+            selbst zusammenstellen, speichern, teilen und als CSV exportieren. Dann auch für Führungskräfte – jeweils nur
+            mit ihrem Bereich.
           </SettingsToggle>
           <TwoFactorPolicyCard
             roles={settings.two_factor_roles}
@@ -507,6 +584,8 @@ function PunchingSection({ settings }: { settings: Settings }) {
             Eintragen ist so nicht möglich; die Stempelung ist mit der Quelle „Web-Login“ gekennzeichnet. Pausen- und
             Dienstgang-Buttons richten sich nach „Anzeige am Tablet“.
           </SettingsToggle>
+          <PunchLocationSettings settings={settings} />
+          <TimeSheetSettingsCard settings={settings} />
         </div>
         <KioskLoginCard settings={settings} />
       </div>

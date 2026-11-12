@@ -18,8 +18,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import settings  # noqa: E402
 from app.db import AsyncSessionLocal, engine  # noqa: E402
-from app.models import AppSettings, Base, Device, Employee, HrRole, HrUser, Location, Tenant  # noqa: E402
+from app.models import Account, AppSettings, Base, Device, Employee, HrRole, Location, Tenant  # noqa: E402
 from app.services.auth_service import hash_password  # noqa: E402
+from app.services.pairing_service import token_hash  # noqa: E402
 
 
 async def main() -> None:
@@ -39,7 +40,7 @@ async def main() -> None:
         location = Location(tenant_id=tenant.id, name="Zentrale", timezone="Europe/Berlin")
         db.add(location)
         await db.flush()
-        db.add(HrUser(tenant_id=tenant.id, email="admin@example.com", password_hash=hash_password(password), role=HrRole.ADMIN))
+        db.add(Account(tenant_id=tenant.id, email="admin@example.com", password_hash=hash_password(password), role=HrRole.ADMIN))
         for index, (first, last) in enumerate([("Erika", "Muster"), ("Max", "Beispiel"), ("Anna", "Zeit")]):
             db.add(
                 Employee(
@@ -52,7 +53,7 @@ async def main() -> None:
                     password_hash=hash_password(password) if index == 0 else None,
                 )
             )
-        db.add(Device(tenant_id=tenant.id, name="Test-Tablet", location_id=location.id, device_token="local-test-device-token"))
+        db.add(Device(tenant_id=tenant.id, name="Test-Tablet", location_id=location.id, token_hash=token_hash("local-test-device-token")))
         db.add(AppSettings(tenant_id=tenant.id))
         await db.commit()
     with open(credentials_file, "w") as fh:

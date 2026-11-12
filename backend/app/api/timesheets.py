@@ -34,6 +34,7 @@ from app.services.timesheet_service import (
     punches_for_day,
     rebuild_balance,
     review_valid,
+    settled_limit,
     today_in,
     utc_today,
     week_start,
@@ -435,6 +436,8 @@ async def get_overtime_balance(
 
     info = await balance_as_of(db, employee)
     row = info.last_row
+    today = today_in(await employee_timezone(db, employee))
+    limit = await settled_limit(db, employee, today)
     return OvertimeBalanceResponse(
         employee_id=employee_id,
         balance_date=row.balance_date if row else None,
@@ -444,4 +447,6 @@ async def get_overtime_balance(
         running_balance_minutes=info.total_minutes,
         adjustment_minutes=info.adjustment_minutes,
         balance_start=await balance_start(db, employee),
+        settled_limit_minutes=limit or None,
+        settled_month_minutes=info.settled_in_month(today),
     )

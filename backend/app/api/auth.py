@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.errors import AppError
-from app.api.deps import Actor, get_current_actor
+from app.api.deps import Actor, account_custom_permissions, get_current_actor
 from app.models import Account, AccountTokenPurpose, AuditAction, Device, HrRole, Tenant
 from app.services.audit_service import log_action
 from app.schemas.device import DeviceEnrollRequest, DeviceEnrollResponse, DevicePairRequest, DevicePairResponse
@@ -300,7 +300,7 @@ def _matches_request_tenant(request: Request, row_tenant_id: int | None, is_supe
 
 
 def _issue_token_pair(account: Account) -> TokenResponse:
-    """Claims für die Anzeige in der Webapp (role, emp, payroll) – geprüft wird immer im Backend."""
+    """Claims für die Anzeige in der Webapp (role, emp, payroll, perms) – geprüft wird immer im Backend."""
     access = create_token(
         subject=str(account.id),
         token_type="account_access",
@@ -308,7 +308,13 @@ def _issue_token_pair(account: Account) -> TokenResponse:
         extra_claims={
             "role": account.role.value if account.role else None,
             "emp": account.employee_id,
-            "payroll": account.role == HrRole.ADMIN or (account.role == HrRole.HR and account.payroll_access),
+            "payroll": Actor(account=account).has_payroll_access,
+            # Eigene Rolle: {Bereich: Stufe} für Navigation und Seitenschutz der Webapp; null = keine
+            "perms": (
+                {area.value: level.value for area, level in permissions.items()}
+                if (permissions := account_custom_permissions(account)) is not None
+                else None
+            ),
             "tenant_id": account.tenant_id,
             "pwv": session_fingerprint(account),
         },

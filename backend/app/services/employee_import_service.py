@@ -32,6 +32,12 @@ class ParsedEmployeeRow:
     flexible: bool = False
     on_demand: bool = False
     monthly_cap_hours: float | None = None
+    # Mehrwöchiges Modell: Stunden je Wochentag für jede Turnus-Woche (Spalten tagesstunden,
+    # tagesstunden_woche2 … _woche4) und der Beginn des Turnus (Spalte turnus_beginn, optional)
+    rotation_weeks: list[list[float]] | None = None
+    rotation_start: dt.date | None = None
+    # Mit dem Gehalt abgegoltene Überstunden je Monat (Spalte abgegoltene_ueberstunden, Stunden)
+    settled_overtime_hours: float | None = None
     # Zeile in der CSV-Datei (für Fehlermeldungen nach dem Parsen, z.B. Tarifgrenze)
     line: int = 0
 
@@ -85,6 +91,40 @@ def _parse_daily_hours(raw: str) -> list[float]:
         except ValueError as exc:
             raise ValueError(f"Ungültige Stunden '{value}' in Tagesstunden.") from exc
     return hours
+
+
+ROTATION_COLUMNS = ("tagesstunden_woche2", "tagesstunden_woche3", "tagesstunden_woche4")
+
+
+def _parse_rotation(first_week: str, row: dict[str, str]) -> list[list[float]] | None:
+    """Turnus aus `tagesstunden` (Woche 1) und `tagesstunden_woche2` … `_woche4`; None = kein Turnus.
+    Die Wochen müssen lückenlos sein (Woche 3 nur mit Woche 2)."""
+    further = [row.get(column, "") for column in ROTATION_COLUMNS]
+    if not any(further):
+        return None
+    if not first_week:
+        raise ValueError("Mehrwöchiges Modell: Woche 1 fehlt – bitte die Spalte „tagesstunden“ füllen.")
+    weeks = [_parse_daily_hours(first_week)]
+    for number, raw in enumerate(further, start=2):
+        if not raw:
+            if any(further[number - 1:]):
+                raise ValueError(f"Mehrwöchiges Modell: Woche {number} fehlt (die Wochen müssen lückenlos sein).")
+            break
+        weeks.append(_parse_daily_hours(raw))
+    return weeks
+
+
+def _parse_settled_overtime(raw: str) -> float | None:
+    """'10' oder '7,5' -> Stunden je Monat; leer oder 0 = keine."""
+    if not raw:
+        return None
+    try:
+        value = float(raw.replace(",", "."))
+    except ValueError as exc:
+        raise ValueError(f"Ungültige abgegoltene Überstunden '{raw}' (Stunden je Monat, z. B. 10).") from exc
+    if not 0 <= value <= 100:
+        raise ValueError(f"Abgegoltene Überstunden '{raw}' müssen zwischen 0 und 100 Stunden je Monat liegen.")
+    return value or None
 
 
 def _parse_date(raw: str, field_label: str) -> dt.date:
@@ -184,8 +224,18 @@ def parse_bulk_import_csv(
             daily_raw = row.get("tagesstunden", "")
             weekly_hours = weekdays = daily_hours = monthly_cap_hours = None
             flexible = on_demand = False
+            settled = _parse_settled_overtime(row.get("abgegoltene_ueberstunden", ""))
+            rotation_weeks = _parse_rotation(daily_raw, row)
+            rotation_start_raw = row.get("turnus_beginn", "")
+            rotation_start = _parse_date(rotation_start_raw, "Turnus-Beginn") if rotation_start_raw else None
+            if rotation_start is not None and rotation_weeks is None:
+                raise ValueError("„turnus_beginn“ gibt es nur beim mehrwöchigen Modell (tagesstunden_woche2 …).")
             if days_raw.strip().lower() in ("nach aufwand", "aufwand"):
                 # Aushilfe ohne feste Stunden: kein Soll, optional Monatsgrenze in Stunden.
+                if rotation_weeks is not None:
+                    raise ValueError("Ein mehrwöchiges Modell lässt sich nicht mit „nach Aufwand“ verbinden.")
+                if settled:
+                    raise ValueError("Bei „nach Aufwand“ gibt es keine abgegoltenen Überstunden (kein Überstundenkonto).")
                 on_demand = True
                 cap_raw = row.get("monatsgrenze", "").strip()
                 if cap_raw:
@@ -194,10 +244,20 @@ def parse_bulk_import_csv(
                         WorkTimeModelInput(on_demand=True, monthly_cap_hours=monthly_cap_hours)
                     except (ValueError, ValidationError) as exc:
                         raise ValueError(f"Ungültige Monatsgrenze '{cap_raw}'.") from exc
+            elif rotation_weeks is not None:
+                try:
+                    model = WorkTimeModelInput(
+                        rotation_weeks=rotation_weeks, rotation_start=rotation_start, settled_overtime_hours=settled
+                    )
+                except ValidationError as exc:
+                    raise ValueError(f"Arbeitszeitmodell ungültig: {exc.errors()[0]['msg']}") from exc
+                if model.exceeds_daily_maximum:
+                    raise ValueError("Tagesstunden über 10 Std. (§3 ArbZG).")
+                rotation_start = model.rotation_start  # auf den Montag der Woche gelegt
             elif daily_raw:
                 daily_hours = _parse_daily_hours(daily_raw)
                 try:
-                    model = WorkTimeModelInput(daily_hours=daily_hours)
+                    model = WorkTimeModelInput(daily_hours=daily_hours, settled_overtime_hours=settled)
                 except ValidationError as exc:
                     raise ValueError(f"Arbeitszeitmodell ungültig: {exc.errors()[0]['msg']}") from exc
                 if model.exceeds_daily_maximum:
@@ -206,7 +266,7 @@ def parse_bulk_import_csv(
                 # Nur Wochenstunden: flexibles Modell ohne feste Tage (z.B. Aushilfe).
                 try:
                     weekly_hours = float(hours_raw.replace(",", "."))
-                    WorkTimeModelInput(weekly_hours=weekly_hours, flexible=True)
+                    WorkTimeModelInput(weekly_hours=weekly_hours, flexible=True, settled_overtime_hours=settled)
                 except (ValueError, ValidationError) as exc:
                     raise ValueError(f"Ungültige Wochenstunden '{hours_raw}'.") from exc
                 flexible = True
@@ -219,11 +279,16 @@ def parse_bulk_import_csv(
                     raise ValueError(f"Ungültige Wochenstunden '{hours_raw}'.") from exc
                 weekdays = _parse_weekdays(days_raw)
                 try:
-                    model = WorkTimeModelInput(weekly_hours=weekly_hours, weekdays=weekdays)
+                    model = WorkTimeModelInput(weekly_hours=weekly_hours, weekdays=weekdays, settled_overtime_hours=settled)
                 except ValidationError as exc:
                     raise ValueError(f"Arbeitszeitmodell ungültig: {exc.errors()[0]['msg']}") from exc
                 if model.exceeds_daily_maximum:
                     raise ValueError("Arbeitszeitmodell ergibt mehr als 10 Std. pro Arbeitstag (§3 ArbZG).")
+            elif settled:
+                raise ValueError(
+                    "Abgegoltene Überstunden nur zusammen mit einem Arbeitszeitmodell in derselben Zeile "
+                    "(Wochenstunden oder Tagesstunden)."
+                )
         except ValueError as exc:
             errors.append(BulkImportRowError(row=line_number, message=str(exc)))
             continue
@@ -245,6 +310,9 @@ def parse_bulk_import_csv(
                 flexible=flexible,
                 on_demand=on_demand,
                 monthly_cap_hours=monthly_cap_hours,
+                rotation_weeks=rotation_weeks,
+                rotation_start=rotation_start,
+                settled_overtime_hours=settled,
                 birth_date=birth_date,
                 line=line_number,
             )

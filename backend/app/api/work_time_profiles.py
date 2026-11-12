@@ -68,9 +68,12 @@ async def _response(db: AsyncSession, profile: WorkTimeProfile) -> WorkTimeProfi
 
 
 async def _version_fields(
-    db: AsyncSession, tenant_id: int, payload: WorkTimeProfileInput, inherit: WorkTimeProfileVersion | None
+    db: AsyncSession, tenant_id: int, payload: WorkTimeProfileInput, inherit: WorkTimeProfileVersion | None,
+    valid_from: date | None = None,
 ) -> tuple[dict, str]:
-    fields, soll_label = _contract(payload)
+    # valid_from None (Anlegen: die erste Fassung gilt "von Anfang an"): ein mehrwöchiger Turnus
+    # beginnt ohne Angabe in der laufenden Woche.
+    fields, soll_label = _contract(payload, valid_from)
     fields.update(_core_time_fields(payload, inherit))
     fields.update(_flex_frame_fields(payload, inherit))
     template = await _times_template(
@@ -146,7 +149,7 @@ async def set_work_time_profile_model(
         raise AppError(400, "INVALID_RANGE", f"Ein Modell gilt frühestens ab {PROFILE_START:%d.%m.%Y}.")
     versions = await profile_versions(db, profile.id)
     inherit = _version_at(versions, payload.valid_from)
-    fields, label = await _version_fields(db, actor.tenant_id, payload, inherit)
+    fields, label = await _version_fields(db, actor.tenant_id, payload, inherit, payload.valid_from)
 
     # Alle zugewiesenen Mitarbeiter müssen ab dem Stichtag (bzw. ab Beginn ihrer Zuweisung) offen sein.
     rows = (

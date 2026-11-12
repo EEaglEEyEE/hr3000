@@ -21,7 +21,7 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 |---|---|
 | Admin | alles, auch alle Bereiche der „Einstellungen“ und „Vergütung & Lohn-Export“ (siehe unten) |
 | HR | Mitarbeiter, Abwesenheiten, „Zu klären“, „Monatsabschluss“, „Analysen“, „Lohn-Export“ (CSV ohne Beträge), „On- & Offboarding“, „Schichtplan-Kalender“; unter „Einstellungen“ „Standorte“, „Abteilungen“, „Feiertagskalender“, „Schichtplanung“ (Schichtvorlagen), „Tablets“ und „Audit-Protokoll“; Vergütung und „Lohnarten“ nur mit „Vergütung & Lohn-Export“ |
-| Führungskraft | „Tagesgeschäft“ für den eigenen Bereich: sich selbst und alle direkt und indirekt Unterstellten (als Leitung oder – je nach Rechten – Stellvertretung einer Abteilung bzw. als abweichend eingetragene Führungskraft) |
+| Führungskraft | „Tagesgeschäft“ für den eigenen Bereich: sich selbst und alle direkt und indirekt Unterstellten (als Leitung oder – je nach Rechten – Stellvertretung einer Abteilung bzw. als abweichend eingetragene Führungskraft); mit eingeschalteten „Eigenen Berichten“ bzw. „Projektzeiten“ auch „Analysen“ → „Eigene Berichte“ bzw. „Projektzeiten“ für diesen Bereich |
 | Keine (nur Mein Bereich) | nur die eigene Ansicht, siehe Mitarbeiter-Handbuch |
 
 - **„Vergütung & Lohn-Export“:** Admins haben es immer; HR bekommt es per Häkchen unter
@@ -30,6 +30,40 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   Lohn-Export, „DATEV LODAS“ und die Seite „Lohnarten“. Zuschlagsregeln selbst ändern bleibt Admins
   vorbehalten. Nach der Freigabe sieht die Person die neuen Bereiche spätestens nach der nächsten
   Anmeldung.
+- **Eigene Rollen:** Admins legen unter „Einstellungen“ → „Rollen“ eigene Rollen an, z. B. für ein
+  externes Lohnbüro oder eine Person, die nur Abwesenheiten pflegt. Je Bereich gibt es drei Stufen:
+  „Kein Zugriff“, „Ansehen“ und „Bearbeiten“. Die Bereiche: „Mitarbeiter & Stammdaten“, „Personalakte:
+  Dokumente“, „Vergütung & Lohn“, „Zeiterfassung & „Zu klären““, „Abwesenheiten“, „Schichtplanung“,
+  „Monatsabschluss“, „Auswertungen“ (auch eigene Berichte: Vorschau und Export ab „Ansehen“, Speichern
+  ab „Bearbeiten“), „Organisation“ (Abteilungen, Organigramm), „Checklisten“, „Stammdaten der Firma“
+  (Standorte, Tablets, Feiertage, Kostenstellen, Arbeitszeitmodelle) und „Recruiting“ (Stellen und
+  Bewerbungen; ohne diesen Bereich sieht das Konto nur Stellen, in deren Hiring Team es steht).
+  Hinweise des Hinweisgebersystems hängen nicht an der Rolle: Sie sieht nur, wer als
+  Meldestellen-Beauftragte:r benannt ist.
+  - Eine eigene Rolle **schränkt HR ein**, sie gibt nie mehr Rechte: Zuweisen lässt sie sich nur bei
+    der Rolle „HR“, beim Mitarbeiter unter „HR-Berechtigung“ → „Eigene Rolle“ oder bei
+    Verwaltungskonten. Was nur Admins dürfen (z. B. „Einstellungen“ → „Allgemein“, Rollen vergeben),
+    bleibt bei Admins. Admins und Führungskräfte bekommen keine eigene Rolle.
+  - Mit eigener Rolle zählt das Häkchen „Vergütung & Lohn-Export“ nicht; es entscheidet der Bereich
+    „Vergütung & Lohn“. „Ansehen“ zeigt die freigegebenen Monate der „Lohnbuchhaltung“, die Lohnarten
+    und – zusammen mit „Mitarbeiter & Stammdaten“ – Gehalt und Zulagen im Profil. „Bearbeiten“ braucht
+    es für den „Lohn-Export“, den aktuellen Stand und das Freigeben in der „Lohnbuchhaltung“ und zum
+    Ändern von Gehalt, Zulagen, Bank-, Steuer- und Sozialversicherungsdaten.
+  - Im Reiter „Vertrag & Vergütung“ gilt „Ansehen“ als reine Ansicht: Vergütung, Zulagen und
+    Einmalzahlungen (Bereich „Vergütung & Lohn“) sowie die Vertragsdaten (Bereich „Mitarbeiter &
+    Stammdaten“) erscheinen dann ohne Schaltflächen zum Anlegen, Beenden und Löschen.
+  - Menü, Seiten und Reiter blenden aus, was die Rolle nicht erlaubt. Ist die Person auch Mitarbeiter,
+    bleibt „Mein Bereich“ wie gewohnt; in nicht freigegebenen Bereichen sieht sie nur ihre eigenen
+    Daten. Benachrichtigungen (z. B. neue Urlaubsanträge) bekommt sie nur zu freigegebenen Bereichen.
+    Das „Audit-Protokoll“ und der „DSGVO-Datenexport“ bleiben Admins und HR ohne eigene Rolle
+    vorbehalten.
+  - Eine Stufe „Vorschlagen“ gibt es bewusst nicht: Änderungen an den eigenen Daten schlagen
+    Mitarbeiter über „Mein Bereich“ vor („Vorschläge“).
+  - Vorlage „Lohnbüro (nur lesen)“ per Klick: nur „Vergütung & Lohn“ auf „Ansehen“.
+  - Änderungen greifen sofort; Menü und Seiten passen sich spätestens nach der nächsten Anmeldung an.
+    Rollen, die einem Konto zugewiesen sind, lassen sich nicht löschen. Anlegen, Ändern, Löschen und
+    jede Zuweisung stehen im „Audit-Protokoll“ („Rolle geändert (eigene Rolle)“).
+  - Zwei-Faktor-Pflicht: Konten mit eigener Rolle gehören zur Gruppe „HR“.
 
 - **Passwörter:**
   - **Selbst ändern:** in der Seitenleiste „Passwort ändern“ (in „Mein Bereich“ oben). Danach
@@ -62,6 +96,11 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 2. **„Einstellungen“:** unter „Arbeitszeit“ „Überstundenkonten führen ab“, unter „Urlaub &
    Anträge“ den „Standard-Jahresurlaub“, unter „Allgemein“ das „Standard-Bundesland“.
 3. **„Mitarbeiter“** → „Neuer Mitarbeiter“ oder „CSV-Import“.
+   - Der CSV-Import nennt alle Spalten auf der Seite selbst. Das Arbeitszeitmodell kommt aus
+     `wochenstunden` und `arbeitstage` oder aus `tagesstunden`; ein mehrwöchiges Modell aus
+     `tagesstunden` (Woche 1) und `tagesstunden_woche2` bis `tagesstunden_woche4` (lückenlos, optional
+     `turnus_beginn`); `abgegoltene_ueberstunden` trägt die mit dem Gehalt abgegoltenen Stunden je
+     Monat ein. Im Dialog „Neuer Mitarbeiter“ gibt es dieses Feld bei „Stunden je Wochentag“.
    - Umstieg von einem anderen System: auf derselben Seite unter „Werte aus dem Altsystem
      übernehmen“ eine zweite CSV hochladen (Pflichtspalte `personalnummer`). Optional sind
      `saldo_stunden` (Überstunden-Übertrag, auch negativ), `urlaubsanspruch_tage` und
@@ -87,13 +126,16 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
 - **Tagesgeschäft:** „Startseite“, „Mitarbeiter“, „Anwesenheit“, „Kalender“, „Organigramm“, „Zu
   klären“ (der Posteingang mit Urlaubs- und Korrekturanträgen; die rote Zahl zählt alles Offene)
 - **Planung & Abrechnung:** „Schichtplan-Kalender“ (nur mit eingeschalteter Schichtplanung),
-  „Monatsabschluss“, „Analysen“, „Lohn-Export“, „On- & Offboarding“
+  „Monatsabschluss“, „Analysen“, „Lohn-Export“, „On- & Offboarding“, „Recruiting“ (nur mit eingeschaltetem
+  Recruiting, für Admin und HR sowie für Konten im Hiring Team einer Stelle; Abschnitt 12)
 - **Unten:** „Mein Bereich“ (wenn der Login zu einem Mitarbeiter gehört), „Einstellungen“ (Admin
   und HR, je nach Rolle mit unterschiedlichen Bereichen), „Darstellung“ (Hell/Dunkel/Wie System),
   „Abmelden“
 - Standorte, Abteilungen, Kostenstellen, Feiertage, Tablets, Pausenregeln, Schichtvorlagen, Zuschläge, Lohnarten und
   das Audit-Protokoll stehen unter „Einstellungen“ (siehe Abschnitt 9); alte Links und Lesezeichen
   führen dorthin.
+- **Hinweise:** nur für benannte Meldestellen-Beauftragte, wenn das Hinweisgebersystem an ist
+  (siehe „Hinweisgebersystem“ in Abschnitt 9)
 - **Glocke:** Benachrichtigungen, mit „Alle als gelesen markieren“; unten jeder für sich
   „Benachrichtigungen auch per E-Mail“ (wirkt nur, wenn die Firma einen Mailversand eingerichtet hat)
 
@@ -131,8 +173,11 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     oder ändert sich das Soll, erscheint der Tag wieder.
   - Dieselbe Regel „offen“ gilt überall: „Zu klären“, „Monatsabschluss“ (offene Tage), Monatsbericht
     und Lohn-Export („Offene/fehlerhafte Tage“, DATEV-Hinweis).
-- **„Korrekturanträge“:** von Mitarbeitern beantragte Korrekturen ihrer Stempelungen,
-  „Übernehmen“ / „Ablehnen“.
+- **„Korrekturanträge“:** von Mitarbeitern beantragte Korrekturen ihrer Stempelungen (Art
+  „Korrektur“) und selbst eingetragene Zeiten aus dem Stundenzettel, wenn „Genehmigung nötig“ an ist
+  (Art „Zeiten eingetragen“), „Übernehmen“ / „Ablehnen“. Übernommene eingetragene Zeiten erscheinen mit
+  der Quelle „Selbst eingetragen“. Überschneiden sie sich inzwischen mit anderen Zeiten oder ist der
+  Monat abgeschlossen, lässt sich der Antrag nicht übernehmen, nur ablehnen.
 - **„Datenänderungen“:** Vorschläge der Mitarbeiter zu ihren eigenen Daten (Adresse, Bank, Steuer,
   eigene Felder aus Abschnitten mit „schlagen Änderungen vor“), je Feld alt → neu, „Übernehmen“ oder
   „Ablehnen“ mit optionalem Hinweis. Mit Bank-, Steuer- oder SV-Angaben entscheidet nur, wer
@@ -204,7 +249,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     jeder Fassung „gilt ab“ hat.
 - **Detailseite:** Knöpfe „Monatsbericht“, „DSGVO-Datenexport“, „Anonymisieren“ (nur bei
   Ausgeschiedenen). Reiter:
-  - „Zeiterfassung“: „Stempelung nachtragen“, „Korrigieren“, „Endgültig löschen“
+  - „Zeiterfassung“: „Stempelung nachtragen“, „Korrigieren“, „Endgültig löschen“. Die Spalte
+    „Quelle“ zeigt, woher eine Stempelung kommt: „Tablet“, „Web-Login“, „Selbst eingetragen“
+    (Stundenzettel), „HR manuell“ (nachgetragen oder Korrekturantrag) oder „Automatisch (Pause)“.
   - „Kalender“
   - „Überstundenkonto“: Überstundenkonto, Wochen- und Tagesansicht, „Korrekturbuchungen
     Überstundenkonto“ mit der „Aktion“:
@@ -258,6 +305,41 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
       hat. Das Soll wird gleichmäßig auf die Arbeitstage des Monats verteilt, das Tagessoll
       schwankt daher leicht. Feiertage und Abwesenheiten werden mit dem Tagessoll des jeweiligen
       Monats gutgeschrieben.
+    - „Mehrwöchig (Turnus)“ (ebenfalls bei „Soll“): ein Rhythmus über 2 bis 4 Wochen, z. B. Woche 1
+      Mo–Mi und Woche 2 Do–Fr. Unter „Wochen im Turnus“ die Zahl der Wochen wählen und in der
+      Tabelle je Woche die Stunden je Wochentag eintragen (leer = frei, höchstens 10 Std. je Tag
+      und 60 je Woche, mindestens ein Tag mit Stunden). Darunter stehen die durchschnittlichen
+      Wochenstunden und Arbeitstage. Woche 1 ist die Kalenderwoche (ab Montag) des „Gültig ab“-Datums;
+      mit „Turnus beginnt am (optional)“ legt ihr den Start abweichend fest – ein beliebiger Tag der
+      gewünschten Woche 1, gezählt wird ab deren Montag. Der Turnus wiederholt sich fortlaufend.
+      Eine neue Fassung übernimmt den Startpunkt der bisherigen, der Rhythmus läuft also weiter;
+      wer ihn leert, beginnt mit Woche 1 in der Woche des „Gültig ab“. Bei einem Arbeitszeitmodell
+      gilt der Startpunkt für alle Zugewiesenen gleich, egal wann sie zugewiesen wurden; ohne Angabe
+      beginnt Woche 1 beim Anlegen in der laufenden Woche, bei „Ändern ab Stichtag“ in der Woche
+      des Stichtags. Tagessoll, „fehlt“ und „außerplanmäßig“, Feiertagsgutschrift, Urlaubstage und
+      Monatsbericht folgen der Woche des jeweiligen Tages: Urlaub zählt nur an Tagen mit Stunden in
+      dieser Woche. Der berechnete Urlaubsanspruch nutzt die durchschnittlichen Arbeitstage je
+      Woche (2,5 Tage im Beispiel = halber Anspruch der 5-Tage-Woche). „Aktuell gültig“ zeigt alle
+      Wochen und markiert die laufende mit „(jetzt)“. Eine Tagesausnahme im Schichtplan hat wie
+      bisher Vorrang.
+    - „Mit dem Gehalt abgegoltene Überstunden je Monat (Stunden)“ (optional, leer oder 0 = keine,
+      höchstens 100; nicht bei „Nach Aufwand“): Mehrarbeit eines Kalendermonats bis zu dieser Grenze
+      ist mit dem Gehalt abgegolten und kommt nicht aufs Überstundenkonto, erst der Teil darüber.
+      Maßgeblich ist der Saldo des ganzen Monats (Ist − Soll), nicht der einzelne Tag; Minusstunden
+      bleiben unverändert. Beispiel: Grenze 10 Std., der Monat endet mit +14 Std. – 10 Std. sind
+      abgegolten, 4 Std. kommen aufs Konto; endet er mit −3 Std., zählen die −3 Std. Im laufenden
+      Monat wirkt die Abgeltung fortlaufend auf den bisherigen Monatssaldo, das Konto zeigt also nie
+      Stunden, die am Monatsende wieder wegfallen (ein späterer Minustag verringert zuerst die
+      abgegoltenen Stunden). Bei „Flexibel ohne feste Tage“ zählt die Wochenabrechnung im Monat
+      ihres Sonntags (bzw. des letzten Beschäftigungstags), wie im Konto. Für einen Monat gilt die
+      Grenze der Fassung, die am Monatsende gilt (bei Austritt im Monat: am letzten
+      Beschäftigungstag) – wechselt die Fassung im Monat, gilt deren Grenze für den ganzen Monat,
+      auch im laufenden Monat schon die zum Monatsende eingetragene. Eine geänderte Grenze rechnet
+      das Konto ab dem Monat des Stichtags neu; vorgelegte oder abgeschlossene Monate lassen sich
+      so nicht mehr ändern. Korrekturbuchungen und „Überstunden auszahlen“ bleiben unberührt. Wo
+      sie erscheint: „Aktuell gültig“ („Mit dem Gehalt abgegolten: bis … Std. Überstunden je
+      Monat“), Reiter „Überstundenkonto“ („Davon abgegolten in diesem Monat: … von … Std.“),
+      Monatsbericht/Monatsnachweis („davon abgegolten“ unter „Saldo im Monat“) und Lohn-Export.
     - „Schichtvorlage (Uhrzeiten, optional)“: feste Uhrzeiten aus einer Schichtvorlage, z. B.
       „Früh (06:00–14:30)“, für Schichtplan, Pünktlichkeit und Ruhezeit-Prüfung. Das Soll bleibt
       das des Arbeitszeitmodells.
@@ -382,7 +464,58 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     Aufbewahrungsfrist – nur Hinweis, gelöscht wird nichts automatisch), Fehlzeiten, Urlaub,
     Überstunden, Lohnkosten (nur mit „Vergütung & Lohn-Export“; mit Spalte „Zulagen“ für Zulagen und
     Einmalzahlungen im Zeitraum)
+  - Abwesenheitsquote: Monate „Von“ bis „bis“ (höchstens 24), Kategorien zum Anhaken (Standard
+    Krankheit und Kind krank). Je Monat und gesamt, für die ganze Firma und je Abteilung:
+    genehmigte Abwesenheitstage der Kategorien geteilt durch die Soll-Arbeitstage laut
+    Arbeitszeitmodell ohne Feiertage (ohne Modell und bei flexiblem Modell Mo–Fr, „nach Aufwand“
+    keine). Halbe Tage zählen halb, Stundenangaben nicht. Gezählt wird höchstens bis heute. Die Zahlen
+    dahinter zeigt der Mauszeiger über einer Zelle.
+  - Köpfe und FTE: Monate „Von“ bis „bis“ (höchstens 36). Je Monatsende die Beschäftigten laut Ein-
+    und Austritt (Köpfe) und ihre Vollzeitstellen (FTE = Wochenstunden / Wochenstunden des
+    Standard-Arbeitszeitmodells unter „Einstellungen“, ohne solches 40 Stunden). „Nach Aufwand“ zählt
+    als Kopf mit 0 FTE, ohne Arbeitszeitmodell als volle Stelle. Dazu Zugänge (Eintritt im Monat)
+    und Abgänge (Austritt im Monat) und eine Tabelle je Abteilung (Köpfe / FTE). Deaktivierte ohne
+    Austrittsdatum und anonymisierte Mitarbeiter zählen nicht.
+  - In beiden gilt die heutige Abteilung (Wechsel haben keinen Verlauf).
+  - Eigene Berichte (nur mit dem Schalter „Eigene Berichte“, siehe unten)
+  - Projektzeiten (nur mit dem Schalter „Projektzeiten“; auch für Führungskräfte, dann nur ihr
+    Bereich): „Von“ und „Bis“ (Standard der laufende Monat, höchstens 366 Tage), „Gruppieren nach“
+    Projekt, Kunde oder Mitarbeiter. Je Gruppe die Stunden und wie viel davon abrechenbar ist, oben
+    „Gesamt“, „Abrechenbar“ und „Nicht abrechenbar“. Gezählt wird jede selbst eingetragene Arbeitszeit
+    mit Projekt (Arbeitstag ihres Beginns) ohne die Pausen darin; die gesetzliche Mindestpause der
+    Tagesberechnung wird nicht auf Projekte verteilt, die Summe kann deshalb über der Ist-Zeit liegen.
+    Zeiten ohne Projekt erscheinen nicht.
   - jeweils „CSV exportieren“
+- **„Eigene Berichte“** (Reiter unter „Analysen“, wenn unter „Einstellungen“ → „Allgemein“ „Eigene
+  Berichte“ an ist; für Admin, HR und Führungskräfte):
+  - Liste: eigene und geteilte Berichte mit Datenquelle und Besitzer. „Neuer Bericht“ öffnet den
+    Baukasten, ein Klick auf den Namen öffnet einen gespeicherten Bericht.
+  - „Datenquelle“: „Mitarbeitende“ (Stammdaten mit Abteilung, Führungskraft, Standort, Ein- und
+    Austritt, Status, Arbeitszeitmodell, Wochenstunden, FTE; dazu Vertrag, persönliche Daten und
+    eigene Felder der Personalakte), „Abwesenheiten“ (Von, Bis, Art, Kategorie, Tage im Zeitraum,
+    Stunden, halber Tag, Status), „Zeit je Monat“ (Soll, Ist, Saldo, Kontostand zum Monatsende,
+    Urlaub genommen, Resturlaub des Jahres) oder – mit eingeschalteten Projektzeiten – „Projektzeiten“
+    (Projekt, Projektnummer, Kunde, Abrechenbar, Kostenstelle, Stunden je Mitarbeiter und Projekt).
+  - „Spalten“ (höchstens 30) hinzufügen, mit ↑ ↓ ordnen, mit ✕ entfernen. „Filter hinzufügen“
+    (höchstens 10): Spalte, Vergleich (z. B. „enthält“, „größer oder gleich“, „ist eines von“, „ist
+    leer“) und Wert. Bis zu drei Sortierungen, „Gruppieren nach“ einer Spalte: Anzahl und Summen je
+    Gruppe.
+  - Abwesenheiten und Zeit je Monat brauchen einen „Zeitraum“ (höchstens 366 Tage; Zeit je Monat
+    rechnet ganze Monate). Bei „Mitarbeitende“ gilt der heutige Stand.
+  - „Vorschau“ zeigt 50 Zeilen je Seite mit Summen; „CSV exportieren“ liefert alle Zeilen (wie der
+    Lohn-Export: Semikolon, Umlaute für Excel, Formeln entschärft; bei Gruppierung mit Summenblock).
+    Ein Bericht hat höchstens 20.000 Zeilen, sonst bitte filtern.
+  - „Speichern“ mit Name (und Beschreibung); „Mit allen Verwaltungskonten teilen“ macht den Bericht
+    für alle Verwaltungskonten der Firma lesbar und ausführbar. Ändern und „Löschen“ dürfen nur der
+    Besitzer und Admins; alle anderen können „Als neuen Bericht speichern“.
+  - Rechte: Geteilt wird die Zusammenstellung, nicht das Ergebnis. Jede Person sieht nur, was sie
+    sehen darf: Führungskräfte nur ihren Bereich; Geburtsdatum, Vertrag, persönliche Daten und eigene
+    Felder nur Admin und HR; Bank, Steuer, Sozialversicherung und Vergütung nur mit „Vergütung &
+    Lohn-Export“. Wer einen geteilten Bericht mit solchen Spalten ausführt, bekommt sie weggelassen
+    (Hinweis über der Tabelle). Filtert, sortiert oder gruppiert der Bericht nach einer solchen
+    Spalte, lässt er sich ohne die Berechtigung nicht ausführen.
+  - Das Audit-Protokoll vermerkt jedes Ausführen und jeden Export (Quelle, Spalten- und Zeilenzahl,
+    Zeitraum, ohne Inhalte), Ausgabe von Vergütung zusätzlich als „Vergütung eingesehen“.
 - **„Lohn-Export“:** Monat (vorbelegt: Vormonat) und Standort wählen, CSV für das Lohnbüro.
   Exportiert werden alle, die im Monat beschäftigt waren – auch wer im Monat ausgetreten ist. Mit
   „Vergütung & Lohn-Export“ kommt je Zulage bzw. Einmalzahlung eine Spalte mit dem Betrag im Zeitraum
@@ -390,10 +523,35 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   Spalten.
   „Ausgezahlte Überstunden (Std.)“ zeigt die Auszahlungen aus den „Korrekturbuchungen
   Überstundenkonto“ mit Datum im Zeitraum; gab es eine Auszahlung mit Faktor, kommt die Spalte
-  „Ausgezahlte Überstunden gewichtet (Std.)“ dazu (DATEV: Stunden ungewichtet, mit Hinweis). Über dem Export steht der Stand des „Monatsabschluss“
+  „Ausgezahlte Überstunden gewichtet (Std.)“ dazu (DATEV: Stunden ungewichtet, mit Hinweis). Gilt
+  für einen der Mitarbeiter im Zeitraum eine Grenze für abgegoltene Überstunden, kommt ganz hinten
+  die Spalte „Abgegoltene Überstunden (Std.)“ dazu (die mit dem Gehalt abgegoltenen Stunden im
+  Zeitraum; „Saldo (Std.)“ bleibt Ist − Soll). Über dem Export steht der Stand des „Monatsabschluss“
   (z. B. „1 von 2 abgeschlossen, 1 offen“ – solange nicht alles abgeschlossen ist, können sich die
   Werte noch ändern) und „Schon exportiert“ mit Zeitpunkt und Person (DATEV-Exporte nur mit
   „Vergütung & Lohn-Export“).
+- **„Lohnbuchhaltung“** (vorbereitende Lohnbuchhaltung, mit „Vergütung & Lohn“; einschalten unter
+  „Einstellungen“ → „Lohnbuchhaltung“, Standard aus): alles für den Lohnlauf eines Monats auf einer
+  Seite, je Mitarbeiter, der im Monat beschäftigt war.
+  - Angezeigt werden: „Neuzugang“ und „Austritt“, „Änderungen im Monat“ (neuer oder endender Vertrag,
+    Vergütung ab, Zulage ab bzw. endet, Standortwechsel, eigene Felder mit „Gilt ab“ im Monat sowie im
+    Monat geänderte persönliche Daten, Kostenstellen und Arbeitszeitmodell), „Vergütung“ (Gehalt bzw.
+    Stundenlohn und die Zulagen und Einmalzahlungen des Monats), „Abwesenheiten“ (Tage je Art),
+    „Stunden“ (Soll, Ist, Saldo, ausgezahlte Überstunden, Feiertage, offene Tage, Zuschläge – wie im
+    Lohn-Export) und der Stand des „Monatsabschluss“.
+  - „Freigeben“ friert den Monat ein: Die Übersicht und die Exportdateien (die CSV des Lohn-Exports
+    und, wenn Berater- und Mandantennummer hinterlegt sind, die DATEV-LODAS-Datei) werden verschlüsselt
+    gespeichert und bleiben danach unverändert abrufbar („CSV herunterladen“, „DATEV LODAS
+    herunterladen“). Ist der Monatsabschluss noch nicht bei allen abgeschlossen, fragt „Freigeben“
+    nach – freigeben geht trotzdem. Die Freigabe zählt beim „Lohn-Export“ unter „Schon exportiert“.
+  - Ändert sich danach etwas, markiert die Seite die betroffenen Mitarbeiter mit „Seit der Freigabe
+    geändert“; die freigegebenen Werte bleiben stehen.
+  - „Freigabe zurücknehmen“ (nur Admins) löscht die eingefrorenen Daten; der Monat zeigt dann wieder
+    den aktuellen Stand und lässt sich neu freigeben.
+  - **Steuerberatung bzw. Lohnbüro:** unter „Einstellungen“ → „Rollen“ die Vorlage „Lohnbüro (nur
+    lesen)“ anlegen und unter „Verwaltungskonten“ einen Zugang mit Rolle „HR“ und dieser eigenen Rolle
+    einrichten. Das Lohnbüro sieht dann nur die „Lohnbuchhaltung“ mit den freigegebenen Monaten und
+    deren Dateien, keinen aktuellen Stand. Jeder Abruf und jeder Download steht im „Audit-Protokoll“.
 - **„DATEV LODAS“** (auf der Seite „Lohn-Export“, mit „Vergütung & Lohn-Export“): Importdatei mit den
   Bewegungsdaten des gewählten Monats für das Lohnbüro (LODAS: ASCII-Import).
   - Einmalig „Beraternummer“ (4–7 Ziffern) und „Mandantennummer“ (1–5 Ziffern) eintragen und
@@ -405,6 +563,8 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     Einmalzahlungen als Betrag. Was ohne Lohnart bleibt, nennt die „Vorschau“ je Mitarbeiter, damit
     das Lohnbüro es z. B. als Fehlzeiten erfasst. Mitarbeiter ohne hinterlegte Vergütung erscheinen
     als Hinweis.
+  - Mit dem Gehalt abgegoltene Überstunden (Grenze im Arbeitszeitmodell) lösen keine Zahlung aus und
+    stehen nicht in der Datei. Die „Vorschau“ nennt sie je Mitarbeiter als Hinweis.
   - Die Personalnummer muss rein aus Ziffern bestehen (wie in LODAS).
   - „Vorschau“ zeigt die Buchungen und Hinweise (z. B. fehlende Lohnart, offene Tage),
     „DATEV-Datei herunterladen“ speichert die Datei.
@@ -493,7 +653,45 @@ Alle Seiten dieses Abschnitts stehen unter „Einstellungen“, der „Schichtpl
   Hälfte wird normal gestempelt; ein Urlaubstag zählt dort als halber Tag. Bei Stundenlohn wird die
   freie Hälfte nicht als Feiertag vergütet (sonst eine Abwesenheit der Kategorie „Feiertag“ mit
   Stunden eintragen).
+- **„Standorte“** (Admin und HR): Name, Zeitzone, Bundesland (Feiertage) und optional ein „Kreis für die
+  Standortprüfung beim Stempeln“. In der Liste zeigt „Kreis“ den Radius.
+- **Standort beim Stempeln** (nur Stempeln im Web-Login, nicht am Tablet und nicht für Nachträge
+  durch HR):
+  - Einrichten: unter „Standorte“ je Standort „Breite“ und „Länge“ des Mittelpunkts (in Grad, z. B.
+    aus einem Kartendienst kopiert, Komma oder Punkt) und „Radius (m)“ (50–5000) eintragen. Vor Ort
+    hilft „Aktuellen Standort übernehmen“ (fragt den Browser des eigenen Geräts). „Kreis entfernen“
+    leert die drei Felder. Danach unter „Einstellungen“ → „Stempeln“ „Standort beim Stempeln prüfen
+    (Web-Login)“ einschalten und wählen: „Nur vermerken“ (Standard; Stempeln ist immer möglich, die
+    Buchung bekommt einen Vermerk) oder „Außerhalb nicht erlauben“ (außerhalb, ohne Standortfreigabe
+    oder bei zu ungenauer Position wird das Stempeln mit einer Meldung abgelehnt).
+  - Es zählen alle Standorte der Firma mit Kreis, nicht nur der des Mitarbeiters. Solange kein
+    Standort einen Kreis hat, wird nicht geprüft (auch nichts abgelehnt); die Seite „Stempeln“ weist
+    darauf hin.
+  - Datenschutz: Der Browser schickt die Position nur im Moment des Klicks. Gespeichert wird nur das
+    Ergebnis an der Buchung („innerhalb“ mit Standort, „außerhalb“ oder „Standort unbekannt“), keine
+    Koordinaten – auch nicht in Protokollen oder Fehlermeldungen. Mitarbeiter sehen das im Handbuch
+    und auf der Stempel-Karte.
+  - Genauigkeit: Der Browser meldet, wie ungenau die Position ist. Ist sie ungenauer als der Radius,
+    gilt die Buchung als „Standort unbekannt“ – außer die Position liegt selbst mit dieser
+    Ungenauigkeit eindeutig außerhalb, dann „außerhalb“. Für Büros ohne GPS (WLAN-Ortung, oft
+    50–150 m) einen Radius von mindestens 150–200 m wählen.
+  - Anzeige: Im Reiter „Zeiterfassung“ des Mitarbeiters steht neben der Quelle „außerhalb“ bzw.
+    „Standort unbekannt“ („innerhalb“ ohne Kennzeichen), im Monatsnachweis (PDF) unter „Bemerkung“,
+    z. B. „außerhalb: Kommen 08:02“. Korrigiert HR die Buchung, bleibt der Vermerk.
 - **„Kostenstellen“:** Nummer und Bezeichnung; benutzte archivieren statt löschen.
+- **„Projekte & Kunden“** (Admin und HR; mit eigener Rolle „Stammdaten der Firma“):
+  - Nur Admin: „Projektzeiten“ (Standard aus) schaltet die Projektzeiterfassung ein, „Projekt ist
+    Pflicht“ verlangt bei jeder selbst eingetragenen Arbeitszeit ein Projekt. Projekte gibt es bisher
+    nur beim Selbst-Eintragen (Stundenzettel, siehe „Stempeln“ → „Zeiten selbst eintragen“); am
+    Tablet und beim Stempeln im Web-Login gibt es bewusst keine Projektauswahl.
+  - „Kunden“: Name; „Deaktivieren“ nimmt die Projekte des Kunden aus der Auswahl. Löschen nur ohne
+    Projekte.
+  - „Projekte“: Name, „Nummer (optional)“ (eindeutig), „Kunde (optional)“, „Kostenstelle (optional)“
+    (die Kostenstellen von oben), „Gültig von“/„Gültig bis“ (nur dann auswählbar), „Abrechenbar“.
+    „Bearbeiten“, „Deaktivieren“; „Löschen“ nur, solange dem Projekt keine Zeiten zugeordnet sind.
+  - Projekt und Tätigkeit einer Zeit ändert HR in der „Zeiterfassung“ des Mitarbeiters mit
+    „Korrigieren“ am „Kommen“ (Felder „Projekt“ und „Tätigkeit“); dort steht das Projekt auch unter
+    der Art.
 - **„Dokumentkategorien“** (nur Admin): eigene Kategorien neben den festen, je mit „Mitarbeiter dürfen
   hochladen“, „für Mitarbeiter sichtbar (Vorgabe)“ und „vertraulich (nur Admins)“. Beim Hochladen in
   der Personalakte stehen sie in der Auswahl „Kategorie“ und setzen Sichtbarkeit und Vertraulichkeit
@@ -566,12 +764,25 @@ für bestehende Firmen nichts ändert.
   wenn die Schichtplanung an ist), „Tablets“ und „Audit-Protokoll“, mit „Vergütung & Lohn-Export“ auch
   „Lohnarten“. Kann eine Änderung nicht gespeichert werden (z. B. weil ein Monat schon vorgelegt
   oder abgeschlossen ist), steht der Grund oben im Bereich.
+  Mit eigener Rolle sieht HR nur die Bereiche, die zur Rolle passen (siehe Abschnitt 1).
+- **Zugänge & Rechte** (nur Admin):
+  - „Rollen“: eigene Rollen anlegen, bearbeiten und löschen (siehe Abschnitt 1).
+  - „Verwaltungskonten“: Zugänge ohne Mitarbeiter, z. B. für die Steuerberatung. Anlegen mit E-Mail,
+    Passwort (mindestens 8 Zeichen), Verwaltungsrolle (HR oder Admin) und bei HR optional eigener
+    Rolle. „Zugang entfernen“ nimmt E-Mail-Login und Rolle weg; das Konto bleibt für den Verlauf
+    bestehen.
 - **Unternehmen:**
   - „Allgemein“: „Standard-Bundesland“, „Geburtstage im Kalender anzeigen“, „Firmenlogo“ (max.
     256 KB), „Erinnerungen an Admin und HR“ (Standard aus): einmal am Tag als Benachrichtigung und –
     mit Mailversand – per E-Mail: Probezeit endet in 14 Tagen, Befristung endet in 30 Tagen, Austritt
-    in 14 Tagen, Resturlaub aus dem Vorjahr verfällt in 30 Tagen (das auch an die Person selbst)
+    in 14 Tagen, Resturlaub aus dem Vorjahr verfällt in 30 Tagen (das auch an die Person selbst),
+    „Eigene Berichte“ (Standard aus): Reiter „Eigene Berichte“ unter „Analysen“, auch für
+    Führungskräfte (siehe Abschnitt 7)
   - „Standorte“, „Abteilungen“, „Feiertagskalender“ (siehe Abschnitt 8)
+  - „Hinweisgebersystem“ (nur Admin, Standard aus): siehe unten „Hinweisgebersystem“
+  - „Recruiting“ (nur Admins): „Recruiting einschalten“ (Standard aus), „Löschfristen“ („Frist in
+    Monaten“, Standard 6, und „Talentpool in Monaten“, Standard 12) und „Datenschutzhinweise für
+    Bewerber“ (Text und/oder Link); siehe Abschnitt 12
 - **Arbeitszeit & Pausen:**
   - „Arbeitszeit“:
     - „Überstundenkonten führen ab“: Datum. Leer heißt ab der ersten Stempelung; eine Änderung
@@ -620,6 +831,15 @@ für bestehende Firmen nichts ändert.
   - „Stempeln“:
     - „Stempeln über den Web-Login (Home-Office)“: Stempel-Karte in „Mein Bereich“, mit
       Serverzeit
+    - „Standort beim Stempeln prüfen (Web-Login)“ (Standard aus) mit „Nur vermerken“ oder „Außerhalb
+      nicht erlauben“: siehe Abschnitt 8 „Standort beim Stempeln“
+    - „Zeiten selbst eintragen (Stundenzettel)“ (Standard aus): „Zeiten selbst eintragen erlauben“
+      gibt Mitarbeitern in „Mein Bereich“ → „Zeiterfassung“ den Stundenzettel. „Genehmigung nötig“
+      (Standard an): Einträge kommen unter „Zu klären“ → „Korrekturanträge“ und zählen erst nach
+      „Übernehmen“; aus: sie zählen sofort (Audit-Protokoll „Zeiten selbst eingetragen“) und
+      Mitarbeiter können sie im erlaubten Zeitraum selbst löschen. „Rückwirkend eintragen bis … Tage“
+      (Standard 7, 0 = nur heute, höchstens 62). Gilt für die ganze Firma – eine Abweichung je
+      Arbeitszeitmodell oder Mitarbeiter gibt es bewusst nicht.
     - „Anmeldung am Tablet“ – eine Auswahl: „Kachel antippen“, „Kachel antippen + PIN“, „Kachel
       antippen oder Chip vorhalten“ (ein Chip öffnet den Mitarbeiter direkt, oben die Leiste „Aktion
       wählen, dann Chip vorhalten“), „Chip vorhalten oder Kachel + PIN“ (ein gültiger Chip ersetzt
@@ -677,7 +897,10 @@ Zutrittskontrolle oder Auswertungen.
      - `GET /api/v1/absence-types`
      - `GET /api/v1/absences?from=2026-01-01&to=2026-01-31&employee_id=…`: Zeitraum höchstens ein Jahr,
        mit Status (APPROVED, PENDING, REJECTED)
-     - `GET /api/v1/punches?from=…&to=…&employee_id=…`: Stempelungen, Zeitpunkte in UTC
+     - `GET /api/v1/punches?from=…&to=…&employee_id=…`: Stempelungen, Zeitpunkte in UTC; mit
+       Projektzeiten `project_id`, `project_number`, `project_name`, mit Standortprüfung
+       `location_check` (`INSIDE`, `OUTSIDE`, `UNKNOWN`), sonst jeweils `null`. Koordinaten gibt es
+       nicht.
   Antworten mit `data` und `page` (`limit`, `offset`, `total`). Die API liest nur. Je Zugang höchstens
   1200 Anfragen in 10 Minuten.
 - **Webhooks:** https-Adresse und Ereignisse („Mitarbeiter angelegt“, „Mitarbeiter geändert“,
@@ -689,6 +912,55 @@ Zutrittskontrolle oder Auswertungen.
   Empfänger nicht mit 2xx, versucht HR3000 es nach 1, 5 und 30 Minuten sowie nach 2 und 6 Stunden
   erneut. Interne Adressen (z. B. 10.x, localhost) sind nicht erlaubt. „Test senden“, „Pausieren“,
   „Löschen“; der letzte Stand steht an jedem Webhook.
+
+### Hinweisgebersystem
+
+Interne Meldestelle für Hinweise auf Verstöße (z. B. nach dem Hinweisgeberschutzgesetz). HR3000
+liefert das Werkzeug; wie die Meldestelle rechtlich ausgestaltet ist (wer sie besetzt, welche Fälle
+sie annimmt, wie sie Folgemaßnahmen ergreift), verantwortet die Firma selbst. Externe Meldestellen
+der Behörden bleiben davon unberührt; Beschäftigte dürfen sich weiterhin direkt an sie wenden.
+
+- **Einrichten:** „Einstellungen“ → „Hinweisgebersystem“. Zuerst unter „Meldestellen-Beauftragte“
+  ein oder mehrere Konten auswählen und „Benennen“, dann den Schalter „Hinweisgebersystem“
+  einschalten. Benennbar ist jedes Konto der Firma mit Zugang, auch ein Mitarbeiter ohne
+  Verwaltungsrolle. Ohne Beauftragte nimmt die Meldeseite keine Hinweise an. „Abberufen“ entzieht
+  den Zugriff sofort. Benennen und Abberufen stehen im Audit-Protokoll.
+- **Vertraulichkeit:** Hinweise sehen ausschließlich die Beauftragten – Admins, HR und
+  Führungskräfte ohne Benennung sehen weder Inhalte noch die Liste noch die Anzahl; auch die
+  Plattformverwaltung von HR3000 zeigt nichts davon. Wer einen Hinweis öffnet, bearbeitet oder einen Anhang lädt,
+  steht im Protokoll des Vorgangs (nur für die Beauftragten sichtbar, ohne Inhalte); im allgemeinen
+  Audit-Protokoll erscheinen diese Einträge nicht. Zur meldenden Person speichert HR3000 nur, was sie
+  selbst angibt – keine IP-Adresse, kein Konto. Inhalte, Kontaktangaben und Anhänge liegen
+  verschlüsselt.
+- **Link bekannt geben:** Die Seite steht unter „Link zur Meldeseite“
+  (`https://<firma>.hr3000.de/hinweis`), z. B. im Intranet oder als Aushang. In „Mein Bereich“ sehen
+  alle Mitarbeiter den Link „Hinweis abgeben“. Melden kann jeder, der den Link kennt, auch ohne Konto.
+- **Was die meldende Person bekommt:** nach dem Absenden einmalig eine Vorgangsnummer und einen
+  Zugangscode. Geht der Code verloren, lässt er sich nicht wiederherstellen; dann hilft nur eine neue
+  Meldung. Mit beiden Angaben sieht sie unter „Stand abfragen“ Status und Nachrichten der
+  Meldestelle, antwortet und reicht Dateien nach (PDF, PNG, JPEG, DOCX, XLSX, je höchstens 10 MB,
+  bis zu 10 je Vorgang). Interne Notizen und der Abschlussvermerk bleiben für sie unsichtbar.
+- **Bearbeiten („Hinweise“):** Filter „Offen“ / „Abgeschlossen“ / „Alle“; „neu“ markiert Vorgänge
+  mit Eingängen seit dem letzten Öffnen. Im Vorgang: Meldung mit Anhängen, „Verlauf“, darunter
+  „Nachricht an die meldende Person“ oder „Interne Notiz“. Die meldende Person bekommt keine E-Mail;
+  sie liest Nachrichten mit ihrem Zugangscode.
+- **Fristen:** Rechts unter „Fristen“ und in der Liste. „Eingangsbestätigung bis“ = 7 Tage nach
+  Eingang; „Als Eingangsbestätigung senden“ setzt das Datum und den Status „In Prüfung“.
+  „Rückmeldung bis“ = drei Monate nach der Eingangsbestätigung (ohne Bestätigung drei Monate nach
+  Ablauf der 7 Tage); „Als Rückmeldung senden“ setzt das Datum und den Status „Rückmeldung erteilt“.
+  Überfällige Fristen stehen rot. Die Glocke erinnert die Beauftragten zwei Tage vor und nach Ablauf
+  der Eingangsbestätigung sowie 14 Tage vor und nach Ablauf der Rückmeldung (die E-Mail dazu nennt
+  keinen Vorgang). Das läuft unabhängig vom Schalter „Erinnerungen an Admin und HR“.
+- **Status:** „Eingegangen“, „In Prüfung“, „Rückmeldung erteilt“, „Abgeschlossen“. Zum Abschließen
+  ist ein „Abschlussvermerk“ nötig. Wird ein Vorgang wieder geöffnet, bleibt der bisherige Vermerk als
+  interne Notiz erhalten.
+- **Aufbewahrung und Löschen:** Mit dem Abschluss steht das „Löschdatum“ fest: drei Jahre nach
+  Abschluss. Ab dann steht der Vorgang als „zur Löschung fällig“ in der Liste, die Glocke erinnert
+  einmal, und im Vorgang gibt es „Vorgang löschen“ → „Endgültig löschen“. Gelöscht wird bewusst nicht
+  automatisch: Ist eine längere Aufbewahrung erforderlich (z. B. wegen eines laufenden Verfahrens),
+  bleibt der Vorgang einfach stehen. Vor dem Löschdatum lässt sich nichts löschen.
+- **Ausschalten:** Der Schalter blendet Meldeseite und Menüpunkt aus; vorhandene Hinweise bleiben
+  gespeichert und sind nach dem Einschalten wieder da.
 
 ## 10. Tablets im Betrieb
 
@@ -788,3 +1060,51 @@ Regeln:
 - **Zurücknehmen:** bis zur Löschung jederzeit mit „Kündigung zurücknehmen“ an derselben
   Stelle.
 
+## 12. Recruiting
+
+Eingeschaltet unter „Einstellungen“ → „Recruiting“ → „Recruiting einschalten“ (Standard aus). Aus
+heißt: kein Menüpunkt, die Karriereseite und alle Recruiting-Adressen antworten mit „nicht gefunden“.
+Gespeicherte Bewerbungen bleiben erhalten und werden weiter nach Frist gelöscht.
+
+- **Wer sieht was:** Admin und HR sehen alle Stellen und Bewerbungen. Alle anderen Konten
+  (Führungskräfte und Mitarbeitende ohne Verwaltungsrolle) sehen nur die Stellen, in deren „Hiring
+  Team“ sie stehen, und deren Bewerbungen. Sie können Bewerbungen ansehen, Anhänge öffnen, die Phase
+  wechseln, Notizen schreiben und bewerten. Mitarbeitende ohne Verwaltungsrolle finden das in „Mein
+  Bereich“ → „Recruiting“. Die Gehaltsvorstellung sehen nur Konten mit „Vergütung & Lohn-Export“.
+- **Reiter „Stellen“:** „Neue Stelle“ mit Titel, Abteilung, Standort, Anstellungsart, Status
+  („Entwurf“, „Veröffentlicht“, „Geschlossen“), optional „Bewerbungsschluss“, „Beschreibung“ und
+  „Hiring Team“. Die Beschreibung ist einfacher Text: Leerzeile = neuer Absatz, Zeilen mit „- “ werden
+  zur Aufzählung. Eine Stelle mit Bewerbungen lässt sich nicht löschen, nur schließen. Die Spalte
+  „Bewerbungen“ zeigt alle und die offenen; „Gelöscht“ zählt anonym, was schon gelöscht wurde.
+- **Karriereseite:** `https://<firma>.hr3000.de/karriere` listet ohne Anmeldung die veröffentlichten
+  Stellen bis einschließlich Bewerbungsschluss; „Ansehen“ öffnet die Anzeige mit Bewerbungsformular
+  (Vorname, Nachname, E-Mail, optional Telefon, Anschreiben, Gehaltsvorstellung, Lebenslauf und weitere
+  Anhänge). Erlaubt sind PDF, PNG und JPEG, höchstens 5 Dateien mit je höchstens 10 MB; die Dateien
+  liegen verschlüsselt. Pflicht ist das Häkchen zu den Datenschutzhinweisen; optional „Meine
+  Bewerbung darf auch für künftige Stellen aufbewahrt werden“ (Talentpool). Gegen Missbrauch gibt es
+  eine Grenze je Anschluss (5 Bewerbungen pro Stunde) und ein verstecktes Feld gegen Bots, kein
+  Captcha. Mit eingerichtetem Mailversand bekommt die Person eine Eingangsbestätigung; das Hiring Team
+  (ohne Team: Admin und HR) bekommt eine Benachrichtigung in der Glocke.
+- **Reiter „Bewerbungen“:** als „Spalten“ nach Phase („Neu“, „Sichtung“, „Interview“, „Angebot“,
+  „Eingestellt“, „Abgelehnt“, „Zurückgezogen“) oder als „Liste“, filterbar nach Stelle. „Bewerbung
+  erfassen“ (Admin, HR) legt eine Bewerbung von Hand an (Quelle „Manuell erfasst“), Anhänge kommen
+  danach in der Bewerbung dazu. Ein Klick auf den Namen öffnet die Bewerbung:
+  - „Phase“ mit „Phase speichern“; bei „Abgelehnt“ ist ein „Absagegrund“ Pflicht, bei „Abgelehnt“ und
+    „Zurückgezogen“ gibt es eine optionale Begründung. Jeder Wechsel steht unter „Verlauf“.
+  - „Anhänge“: ansehen (Auge) oder herunterladen; jeder Abruf steht im Audit-Protokoll.
+  - „Bewertungen“: 1 bis 5 Sterne je Konto mit Kommentar; die Liste zeigt den Durchschnitt.
+  - „Notizen“ mit Verfasser und Zeit; löschen kann der Verfasser sowie Admin und HR.
+  - Admin und HR: „Für künftige Stellen aufbewahren“ und „Bewerbung jetzt löschen“.
+- **„Als Mitarbeiter übernehmen“** (Admin, HR; in der Phase „Eingestellt“): fragt Vorname, Nachname,
+  Personalnummer, Anstelldatum, E-Mail (privat), Position, Standort und Abteilung ab, welche Anhänge
+  in die Personalakte kommen (mit Dokumentkategorie) und welche Onboarding-Checkliste starten soll.
+  Der Mitarbeiter entsteht wie über „Mitarbeiter anlegen“ (inklusive Tarifgrenze); die Bewerbung bleibt
+  mit ihm verknüpft und lässt sich nicht ein zweites Mal übernehmen.
+- **Löschfristen:** Abgelehnte und zurückgezogene Bewerbungen löscht HR3000 nach der „Frist in
+  Monaten“ ab dem Abschluss (im Talentpool nach „Talentpool in Monaten“) – mit Daten, Notizen,
+  Bewertungen und Anhängen. Übrig bleibt nur die anonyme Zählung je Stelle und Phase. Was in den
+  nächsten 30 Tagen fällig wird, zeigt der Kasten „Zur Löschung fällig“ über den Bewerbungen. Laufende
+  und eingestellte Bewerbungen löscht HR3000 nicht von selbst; Admin und HR können jede Bewerbung
+  jederzeit sofort löschen.
+- **Bewusst nicht enthalten:** Ausschreiben auf Stellenbörsen, Anbindung eines E-Mail-Postfachs,
+  Terminbuchung, Angebote und Verträge erstellen, ein Login für Bewerber.

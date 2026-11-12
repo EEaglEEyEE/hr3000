@@ -36,6 +36,8 @@ export function useUpdateSettingsMutation() {
       // Feature-Schalter (z.B. Schichtplanung) steuern Navigation und Reiter.
       void queryClient.invalidateQueries({ queryKey: ['features'] })
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      // Hinweisgebersystem: Menüpunkt und Link in „Mein Bereich“
+      void queryClient.invalidateQueries({ queryKey: ['whistle'] })
       // Saldo-Beginn/Schichtplanung wirken auf alle Überstundenkonten.
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       void queryClient.invalidateQueries({ queryKey: ['reports'] })

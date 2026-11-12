@@ -43,6 +43,19 @@ function settingsNav() {
 }
 
 describe('Einstellungen', () => {
+  it('schaltet eigene Berichte unter „Allgemein“ ein (Standard aus)', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const server = settingsServer()
+    const calls = mockApi(server.routes)
+    renderSettings('/einstellungen/firma')
+
+    const toggle = await screen.findByRole('checkbox', { name: /Eigene Berichte/ })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    await waitFor(() => expect(patches(calls).at(-1)).toMatchObject({ custom_reports_enabled: true }))
+    expect(server.current().custom_reports_enabled).toBe(true)
+  })
+
   it('schaltet das Stempeln über den Web-Login unter „Stempeln“ ein (Standard aus)', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     const server = settingsServer()
@@ -190,6 +203,41 @@ describe('Mein Bereich → Abwesenheiten', () => {
       expect(screen.getByRole('button', { name: /Neue Abwesenheit/ })).toBeInTheDocument()
     } else {
       expect(screen.queryByRole('button', { name: /Neue Abwesenheit/ })).not.toBeInTheDocument()
+    }
+  })
+})
+
+describe('Einstellungen → Lohnbuchhaltung und Zugänge', () => {
+  it('schaltet die Lohnbuchhaltung ein (Standard aus)', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const server = settingsServer()
+    const calls = mockApi(server.routes)
+    renderSettings('/einstellungen/lohnbuchhaltung')
+    const toggle = await screen.findByRole('checkbox', { name: /Lohnbuchhaltung/ })
+    expect(toggle).not.toBeChecked()
+    await userEvent.click(toggle)
+    await waitFor(() => expect(patches(calls).at(-1)).toMatchObject({ payroll_accounting_enabled: true }))
+  })
+
+  it('zeigt Admins die Bereiche „Rollen“ und „Verwaltungskonten“', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    mockApi({ ...settingsServer().routes, 'GET /roles': [], 'GET /roles/meta': { areas: [], templates: [] } })
+    renderSettings('/einstellungen/rollen')
+    expect(await within(settingsNav()).findByRole('link', { name: 'Rollen' })).toBeInTheDocument()
+    expect(within(settingsNav()).getByRole('link', { name: 'Verwaltungskonten' })).toBeInTheDocument()
+    expect(await screen.findByText('Noch keine eigenen Rollen angelegt.')).toBeInTheDocument()
+  })
+
+  it('zeigt HR mit eigener Rolle nur passende Bereiche', async () => {
+    loginAs({ kind: 'hr', role: 'HR', perms: { MASTER_DATA: 'EDIT' } })
+    mockApi({ ...settingsServer().routes, 'GET /locations': [] })
+    renderSettings('/einstellungen')
+    await screen.findByRole('navigation', { name: 'Bereiche der Einstellungen' })
+    for (const label of ['Standorte', 'Kostenstellen', 'Feiertagskalender', 'Tablets']) {
+      expect(within(settingsNav()).getByRole('link', { name: label })).toBeInTheDocument()
+    }
+    for (const label of ['Abteilungen', 'Audit-Protokoll', 'Rollen', 'Lohnarten']) {
+      expect(within(settingsNav()).queryByRole('link', { name: label })).not.toBeInTheDocument()
     }
   })
 })

@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Time, false
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Time, false, true
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,6 +65,8 @@ class AppSettings(Base):
     two_factor_roles: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Mitarbeiter sehen in „Mein Bereich“ das Organigramm (Standard aus; Admin/HR/Führungskräfte immer)
     org_chart_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Eigene Berichte (Berichts-Builder) unter „Analysen“ für Verwaltungskonten (Standard aus)
+    custom_reports_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Mitarbeiter sehen in „Mein Bereich“ den Teamkalender ihres Teams (Standard aus)
     team_calendar_for_employees: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Resturlaub automatisch ins Folgejahr übertragen (sonst trägt HR den Übertrag ein).
@@ -144,8 +146,28 @@ class AppSettings(Base):
     # und E-Mail; Standard aus. reminders_sent_on: einmal pro Tag (services/reminder_service.py).
     reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     reminders_sent_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Seite „Lohnbuchhaltung“ (vorbereitende Lohnbuchhaltung mit Freigabe je Monat) – Standard aus.
+    payroll_accounting_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Mitarbeiter dürfen über den Web-Login (Startseite) selbst stempeln – Standard aus.
     portal_punching_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Standort beim Stempeln im Web-Login prüfen (A18, Standard aus): Der Browser schickt die Position nur im
+    # Moment des Stempelns, gespeichert wird nur innerhalb/außerhalb/unbekannt. Modus RECORD = nur vermerken,
+    # BLOCK = außerhalb bzw. ohne Standortfreigabe nicht erlauben. Siehe services/punch_location_service.py.
+    punch_location_check_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    punch_location_mode: Mapped[str] = mapped_column(String(10), default="RECORD", server_default="RECORD")
+    # Zeiten selbst eintragen (Stundenzettel in „Mein Bereich“) – Standard aus. Mit Genehmigung (Standard)
+    # zählen Einträge erst nach „Übernehmen“ unter „Zu klären“; rückwirkend höchstens so viele Tage
+    # (0 = nur heute). Bewusst nur je Firma, nicht je Modell oder Mitarbeiter (Migration 0157).
+    self_time_entry_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    self_time_entry_approval: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    self_time_entry_backdate_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7")
+    # Projektzeiten: Kunden/Projekte, Zuordnung beim Selbst-Eintragen, Auswertung – Standard aus;
+    # project_required = jede eingetragene Arbeitszeit braucht ein Projekt (Migration 0158).
+    project_times_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    project_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Hinweisgebersystem (interne Meldestelle): öffentliche Meldeseite /hinweis und Menüpunkt
+    # „Hinweise“ für die benannten Beauftragten, siehe app/services/whistle_service.py.
+    whistleblowing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Begrüßungs-/Hinweistext über den Kacheln
     kiosk_greeting: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Sortierung der Kacheln: LAST_NAME | FIRST_NAME
@@ -177,6 +199,16 @@ class AppSettings(Base):
     smtp_security: Mapped[str] = mapped_column(String(10), default="STARTTLS")
     # Mail-Benachrichtigungen (Urlaubsanträge, "Zu klären") zusätzlich zur Glocke.
     email_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Recruiting (Stellen, Karriereseite, Bewerbungen) – Standard aus (Migration 0154)
+    recruiting_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Datenschutzhinweise für Bewerber: Text und/oder Link, auf der Karriereseite angezeigt
+    recruiting_privacy_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recruiting_privacy_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Löschfrist abgelehnter/zurückgezogener Bewerbungen in Monaten nach dem Abschluss
+    recruiting_retention_months: Mapped[int] = mapped_column(Integer, default=6, server_default="6")
+    # verlängerte Frist bei „Bewerbung für künftige Stellen aufbewahren“
+    recruiting_talent_pool_months: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
 
     @property
     def smtp_password_set(self) -> bool:

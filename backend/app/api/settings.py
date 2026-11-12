@@ -57,7 +57,12 @@ async def get_features(
         shift_planning_enabled=settings_row.shift_planning_enabled,
         team_calendar_for_employees=settings_row.team_calendar_for_employees,
         org_chart_for_employees=settings_row.org_chart_for_employees,
+        custom_reports_enabled=settings_row.custom_reports_enabled,
         absence_requests_enabled=settings_row.absence_requests_enabled,
+        recruiting_enabled=settings_row.recruiting_enabled,
+        whistleblowing_enabled=settings_row.whistleblowing_enabled,
+        payroll_accounting_enabled=settings_row.payroll_accounting_enabled,
+        project_times_enabled=settings_row.project_times_enabled,
         default_auto_break=settings_row.default_auto_break,
         default_show_birthday=settings_row.default_show_birthday,
         default_day_minutes=[int(v) for v in settings_row.default_day_minutes.split(",")] if settings_row.default_day_minutes else None,
@@ -301,16 +306,29 @@ async def update_settings(
         "kiosk_break_buttons",
         "kiosk_errand_buttons",
         "portal_punching_enabled",
+        "punch_location_check_enabled",
+        "punch_location_mode",
+        "self_time_entry_enabled",
+        "self_time_entry_approval",
+        "self_time_entry_backdate_days",
+        "project_times_enabled",
+        "project_required",
+        "whistleblowing_enabled",
         "absence_requests_enabled",
         "absence_four_eyes",
         "absence_overlaps_for_employees",
         "reminders_enabled",
+        "payroll_accounting_enabled",
         "team_calendar_for_employees",
         "org_chart_for_employees",
+        "custom_reports_enabled",
         "kiosk_sort",
         "kiosk_theme",
         "kiosk_card_self_registration",
         "kiosk_pin_self_setup",
+        "recruiting_enabled",
+        "recruiting_retention_months",
+        "recruiting_talent_pool_months",
     ):
         value = getattr(payload, field)
         if value is not None:
@@ -321,6 +339,11 @@ async def update_settings(
         if value != settings_row.two_factor_roles:
             settings_row.two_factor_roles = value
             changed.append(f"two_factor_roles={value or 'keine'}")
+    for field in ("recruiting_privacy_text", "recruiting_privacy_url"):
+        value = getattr(payload, field)
+        if value is not None:
+            setattr(settings_row, field, value.strip() or None)
+            changed.append(f"{field} geändert")
     if payload.kiosk_greeting is not None:
         settings_row.kiosk_greeting = payload.kiosk_greeting.strip() or None
         changed.append("kiosk_greeting geändert")

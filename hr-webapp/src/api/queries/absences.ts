@@ -8,8 +8,9 @@ export type AbsenceCreateRequest = components['schemas']['AbsenceCreateRequest']
 export type AbsenceUpdateRequest = components['schemas']['AbsenceUpdateRequest']
 export type AbsenceDecideRequest = components['schemas']['AbsenceDecideRequest']
 
-export function usePendingAbsencesQuery() {
+export function usePendingAbsencesQuery(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ['absences', 'pending'],
     queryFn: async () => unwrap(await apiClient.GET('/absences/pending')),
   })

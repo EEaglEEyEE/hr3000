@@ -42,3 +42,53 @@ describe('HR-Berechtigung: Vergütung & Lohn-Export', () => {
     expect(screen.queryByRole('checkbox', { name: /Vergütung & Lohn-Export/ })).not.toBeInTheDocument()
   })
 })
+
+describe('HR-Berechtigung: eigene Rolle', () => {
+  const ROLES = [{ id: 4, name: 'Lohnbüro (nur lesen)', description: null, permissions: { PAYROLL: 'VIEW' }, account_count: 0 }]
+
+  it('weist einer HR-Person eine eigene Rolle zu', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi({
+      'GET /features': {},
+      'GET /teams': [],
+      'GET /roles': ROLES,
+      'PATCH /employees/{employee_id}/hr-role': { ...(employee as object), hr_custom_role: { id: 4, name: 'Lohnbüro (nur lesen)' } },
+    })
+    renderWithProviders(<EmployeeForm employee={employee} locations={LOCATIONS} />)
+    const select = await screen.findByLabelText('Eigene Rolle')
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Lohnbüro (nur lesen)' })).toBeInTheDocument())
+    await userEvent.selectOptions(select, '4')
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'PATCH')?.init.body).toEqual({ hr_role: 'HR', custom_role_id: 4 }),
+    )
+    // Mit eigener Rolle entscheidet die Rolle über „Vergütung & Lohn“
+    expect(screen.queryByRole('checkbox', { name: /Vergütung & Lohn-Export/ })).not.toBeInTheDocument()
+  })
+
+  it('zeigt die zugewiesene Rolle und erlaubt das Entziehen', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const calls = mockApi({
+      'GET /features': {},
+      'GET /teams': [],
+      'GET /roles': ROLES,
+      'PATCH /employees/{employee_id}/hr-role': employee,
+    })
+    renderWithProviders(
+      <EmployeeForm employee={{ ...(employee as object), hr_custom_role: { id: 4, name: 'Lohnbüro (nur lesen)' } } as never} locations={LOCATIONS} />,
+    )
+    const select = await screen.findByLabelText('Eigene Rolle')
+    await waitFor(() => expect(select).toHaveValue('4'))
+    await userEvent.selectOptions(select, 'FULL')
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'PATCH')?.init.body).toEqual({ hr_role: 'HR', custom_role_id: null }),
+    )
+  })
+
+  it('bietet ohne angelegte Rollen keine Auswahl an', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    mockApi({ 'GET /features': {}, 'GET /teams': [], 'GET /roles': [] })
+    renderWithProviders(<EmployeeForm employee={employee} locations={LOCATIONS} />)
+    await screen.findByText('HR-Berechtigung')
+    expect(screen.queryByLabelText('Eigene Rolle')).not.toBeInTheDocument()
+  })
+})

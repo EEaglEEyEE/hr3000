@@ -54,6 +54,13 @@ export function TimesheetTab({ employeeId, canAdjust = false }: { employeeId: nu
                 inkl. Korrekturbuchungen {formatMinutesAsHours(balanceQuery.data.adjustment_minutes)} Std.
               </p>
             )}
+            {balanceQuery.data?.settled_limit_minutes ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Davon abgegolten in diesem Monat: {formatMinutesAsHours(balanceQuery.data.settled_month_minutes).replace(/^\+/, '')}{' '}
+                von {formatMinutesAsHours(balanceQuery.data.settled_limit_minutes).replace(/^\+/, '')} Std. (mit dem Gehalt, nicht im
+                Kontostand)
+              </p>
+            ) : null}
             <p className="mt-2 text-xs text-slate-400">
               {balanceQuery.data && !balanceQuery.data.balance_start
                 ? 'Noch kein Konto: es beginnt mit der ersten Stempelung oder ab dem Stichtag unter Einstellungen → „Arbeitszeit“ → „Überstundenkonten führen ab“.'

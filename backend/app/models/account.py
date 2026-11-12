@@ -20,6 +20,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.employee import Employee
+    from app.models.role import Role
 
 
 class HrRole(str, enum.Enum):
@@ -48,6 +49,9 @@ class Account(Base):
     role: Mapped[HrRole | None] = mapped_column(Enum(HrRole), nullable=True)
     # Berechtigung „Vergütung & Lohn-Export“ für Rolle HR (Admins haben sie immer)
     payroll_access: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Eigene Rolle (nur bei Rolle HR): schränkt das Konto auf die Bereiche der Rolle ein. NULL = voller
+    # HR-Zugriff wie bisher. Durchgesetzt zentral in app/api/deps.py (role_permissions.ROUTE_RULES).
+    custom_role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id", ondelete="SET NULL"), nullable=True)
     # Nur bei Selbstregistrierung mit Mailversand: Anmeldung erst nach Klick auf den
     # Bestätigungslink (api/public.verify_email). Alle übrigen Konten: False.
     email_verification_pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
@@ -66,11 +70,15 @@ class Account(Base):
     totp_recovery_hashes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     employee: Mapped["Employee | None"] = relationship(back_populates="account", lazy="selectin")
+    # Immer über diese Beziehung zuweisen (nicht nur custom_role_id), damit sie nie veraltet ist.
+    custom_role: Mapped["Role | None"] = relationship(lazy="selectin")
 
     def __init__(self, **kwargs) -> None:
         # Ohne Mitarbeiter gilt employee=None als geladen (kein Nachladen im async-Kontext).
         if "employee" not in kwargs and kwargs.get("employee_id") is None:
             kwargs["employee"] = None
+        if "custom_role" not in kwargs and kwargs.get("custom_role_id") is None:
+            kwargs["custom_role"] = None
         super().__init__(**kwargs)
 
     @property

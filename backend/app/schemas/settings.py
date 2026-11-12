@@ -60,6 +60,7 @@ class SettingsResponse(BaseModel):
     seniority_leave_rules: list[SeniorityLeaveRule] = []
     team_calendar_for_employees: bool = False
     org_chart_for_employees: bool = False
+    custom_reports_enabled: bool = False
     two_factor_roles: list[TwoFactorRole] = []
     vacation_carry_over_auto: bool = False
     vacation_carry_over_max_days: float | None = None
@@ -84,6 +85,7 @@ class SettingsResponse(BaseModel):
     overtime_limit_max_hours: int | None = None
     overtime_limit_min_hours: int | None = None
     reminders_enabled: bool = False
+    payroll_accounting_enabled: bool = False
     kiosk_admin_pin_set: bool = False
     rfid_required: bool = False
     kiosk_rfid_enabled: bool = True
@@ -94,10 +96,23 @@ class SettingsResponse(BaseModel):
     kiosk_break_buttons: bool = True
     kiosk_errand_buttons: bool = False
     portal_punching_enabled: bool = False
+    punch_location_check_enabled: bool = False
+    punch_location_mode: Literal["RECORD", "BLOCK"] = "RECORD"
+    self_time_entry_enabled: bool = False
+    self_time_entry_approval: bool = True
+    self_time_entry_backdate_days: int = 7
+    project_times_enabled: bool = False
+    project_required: bool = False
+    whistleblowing_enabled: bool = False
     absence_requests_enabled: bool = True
     absence_four_eyes: bool = False
     absence_overlaps_for_employees: bool = False
     kiosk_greeting: str | None = None
+    recruiting_enabled: bool = False
+    recruiting_privacy_text: str | None = None
+    recruiting_privacy_url: str | None = None
+    recruiting_retention_months: int = 6
+    recruiting_talent_pool_months: int = 12
     kiosk_sort: Literal["LAST_NAME", "FIRST_NAME"] = "LAST_NAME"
     kiosk_theme: Literal["DARK", "LIGHT"] = "DARK"
     kiosk_screen_on_from: time | None = None
@@ -149,6 +164,7 @@ class SettingsUpdateRequest(BaseModel):
     seniority_leave_rules: list[SeniorityLeaveRule] | None = Field(default=None, max_length=10)
     team_calendar_for_employees: bool | None = None
     org_chart_for_employees: bool | None = None
+    custom_reports_enabled: bool | None = None
     # Pflicht zur Zwei-Faktor-Anmeldung je Gruppe; [] = für niemanden
     two_factor_roles: list[TwoFactorRole] | None = Field(default=None, max_length=len(TWO_FACTOR_ROLES))
     vacation_carry_over_auto: bool | None = None
@@ -168,6 +184,7 @@ class SettingsUpdateRequest(BaseModel):
     clear_overtime_limit_max: bool = False
     clear_overtime_limit_min: bool = False
     reminders_enabled: bool | None = None
+    payroll_accounting_enabled: bool | None = None
     # Kernzeit und Gleitzeit-Rahmen: jeweils beide Zeiten zusammen; clear_* = entfernen
     core_time_start: time | None = None
     core_time_end: time | None = None
@@ -196,11 +213,28 @@ class SettingsUpdateRequest(BaseModel):
     kiosk_break_buttons: bool | None = None
     kiosk_errand_buttons: bool | None = None
     portal_punching_enabled: bool | None = None
+    # Standort beim Stempeln im Web-Login prüfen; RECORD = nur vermerken, BLOCK = außerhalb nicht erlauben
+    punch_location_check_enabled: bool | None = None
+    punch_location_mode: Literal["RECORD", "BLOCK"] | None = None
+    # Zeiten selbst eintragen (Stundenzettel): Schalter, Genehmigung, rückwirkend bis … Tage (0 = nur heute)
+    self_time_entry_enabled: bool | None = None
+    self_time_entry_approval: bool | None = None
+    self_time_entry_backdate_days: int | None = Field(default=None, ge=0, le=62)
+    # Projektzeiten: Schalter und „Projekt ist Pflicht“ bei selbst eingetragenen Zeiten
+    project_times_enabled: bool | None = None
+    project_required: bool | None = None
+    whistleblowing_enabled: bool | None = None
     absence_requests_enabled: bool | None = None
     absence_four_eyes: bool | None = None
     absence_overlaps_for_employees: bool | None = None
     # Leerer String = Text entfernen
     kiosk_greeting: str | None = Field(default=None, max_length=120)
+    # Recruiting: Schalter, Datenschutzhinweise für Bewerber ("" = entfernen) und Löschfristen
+    recruiting_enabled: bool | None = None
+    recruiting_privacy_text: str | None = Field(default=None, max_length=5000)
+    recruiting_privacy_url: str | None = Field(default=None, max_length=500, pattern=r"^(https://\S+)?$")
+    recruiting_retention_months: int | None = Field(default=None, ge=1, le=36)
+    recruiting_talent_pool_months: int | None = Field(default=None, ge=1, le=60)
     kiosk_sort: Literal["LAST_NAME", "FIRST_NAME"] | None = None
     kiosk_theme: Literal["DARK", "LIGHT"] | None = None
     # Bildschirmzeiten am Tablet: beide zusammen; clear_kiosk_screen_hours = wieder immer an
@@ -266,7 +300,16 @@ class FeaturesResponse(BaseModel):
     team_calendar_for_employees: bool = False
     # Mitarbeiter sehen das Organigramm (Reiter in „Mein Bereich“)
     org_chart_for_employees: bool = False
+    custom_reports_enabled: bool = False
     absence_requests_enabled: bool = True
+    # Recruiting eingeschaltet (Menüpunkt „Recruiting“)
+    recruiting_enabled: bool = False
+    # Hinweisgebersystem eingeschaltet – nur damit die Oberfläche /whistle/status gar nicht erst abfragt
+    whistleblowing_enabled: bool = False
+    # Seite „Lohnbuchhaltung“ (Standard aus)
+    payroll_accounting_enabled: bool = False
+    # Projektzeiten (Auswertung „Projektzeiten“, Projekt beim Korrigieren, Einstellungen)
+    project_times_enabled: bool = False
     # Vorbelegung für "Neuer Mitarbeiter"
     default_auto_break: bool = True
     default_show_birthday: bool = True

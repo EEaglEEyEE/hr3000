@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -19,3 +19,6 @@ class OvertimeBalance(Base):
     daily_actual_minutes: Mapped[int] = mapped_column()
     daily_delta_minutes: Mapped[int] = mapped_column()
     running_balance_minutes: Mapped[int] = mapped_column()
+    # Mit dem Gehalt abgegoltene Minuten des Kalendermonats bis einschließlich dieses Tages (laufend,
+    # siehe timesheet_service.rebuild_balance); running_balance_minutes enthält sie schon nicht mehr.
+    settled_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

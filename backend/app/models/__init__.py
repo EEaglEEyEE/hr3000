@@ -4,6 +4,7 @@ from app.models.account import Account, HrRole
 from app.models.account_token import AccountToken, AccountTokenPurpose
 from app.models.app_settings import AppSettings
 from app.models.server_metric import ServerMetricSample
+from app.models.saved_report import SavedReport
 from app.models.audit_log_entry import AuditAction, AuditLogEntry
 from app.models.balance_adjustment import AdjustmentKind, BalanceAdjustment
 from app.models.base import Base
@@ -34,15 +35,38 @@ from app.models.pay_component import AllowanceUnit, PayComponent, PayComponentKi
 from app.models.wage_type import WageTypeItem, WageTypeMapping
 from app.models.work_time_profile import PROFILE_START, WorkTimeProfile, WorkTimeProfileVersion
 from app.models.payroll_export_log import PayrollExportLog
+from app.models.payroll_release import PayrollRelease
+from app.models.role import Role
 from app.models.holiday import Holiday, holiday_locations
 from app.models.leave_adjustment import LeaveAdjustment
 from app.models.leave_entitlement import LeaveEntitlement
 from app.models.location import Location
 from app.models.notification import Notification, NotificationType
+from app.models.whistle import (
+    WhistleAttachment,
+    WhistleCase,
+    WhistleCategory,
+    WhistleMessage,
+    WhistleMessageKind,
+    WhistleOfficer,
+    WhistleStatus,
+)
 from app.models.overtime_balance import OvertimeBalance
 from app.models.period_closure import LOCKING_STATUSES, PeriodClosure, PeriodStatus
+from app.models.project import Customer, Project
 from app.models.punch import Punch, PunchSource, PunchType
-from app.models.punch_correction_request import CorrectionRequestStatus, PunchCorrectionRequest
+from app.models.punch_location import PunchLocationCheck
+from app.models.recruiting import (
+    RecruitingApplication,
+    RecruitingAttachment,
+    RecruitingJob,
+    RecruitingJobMember,
+    RecruitingNote,
+    RecruitingRating,
+    RecruitingStageEvent,
+    RecruitingStat,
+)
+from app.models.punch_correction_request import CorrectionRequestKind, CorrectionRequestStatus, PunchCorrectionRequest
 from app.models.shift_plan_entry import ShiftPlanEntry
 from app.models.shift_template import BreakMode, ShiftTemplate, TargetPeriod
 from app.models.surcharge_rule import SurchargeKind, SurchargeRule
@@ -58,6 +82,9 @@ __all__ = [
     "SEPARATE_UNPAID_CATEGORIES",
     "UNPAID_CATEGORIES",
     "AbsenceTypeDefinition",
+    "CorrectionRequestKind",
+    "Customer",
+    "Project",
     "CorrectionRequestStatus",
     "PunchCorrectionRequest",
     "AppSettings",
@@ -67,6 +94,8 @@ __all__ = [
     "PayComponentKind",
     "PayComponentType",
     "PayrollExportLog",
+    "PayrollRelease",
+    "Role",
     "WageTypeItem",
     "WageTypeMapping",
     "PROFILE_START",
@@ -124,6 +153,13 @@ __all__ = [
     "LeaveEntitlement",
     "Location",
     "Notification",
+    "WhistleAttachment",
+    "WhistleCase",
+    "WhistleCategory",
+    "WhistleMessage",
+    "WhistleMessageKind",
+    "WhistleOfficer",
+    "WhistleStatus",
     "NotificationType",
     "OvertimeBalance",
     "LOCKING_STATUSES",
@@ -132,6 +168,16 @@ __all__ = [
     "Punch",
     "PunchSource",
     "PunchType",
+    "PunchLocationCheck",
+    "SavedReport",
+    "RecruitingApplication",
+    "RecruitingAttachment",
+    "RecruitingJob",
+    "RecruitingJobMember",
+    "RecruitingNote",
+    "RecruitingRating",
+    "RecruitingStageEvent",
+    "RecruitingStat",
     "ServerMetricSample",
     "ShiftPlanEntry",
     "ShiftTemplate",

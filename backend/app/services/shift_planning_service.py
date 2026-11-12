@@ -185,7 +185,8 @@ async def _plan_from_version(db: AsyncSession, version: EmployeeDefaultShift, wo
         )
 
     weekday_bit = 1 << work_date.weekday()
-    per_day = version.day_minutes_list
+    # Mehrwöchiges Modell: die Stunden der Turnus-Woche dieses Tages, sonst die je Wochentag.
+    per_day = version.day_minutes_on(work_date)
     if not (version.weekdays_mask & weekday_bit) or (per_day is not None and per_day[work_date.weekday()] <= 0):
         return EffectiveDayPlan(False, True, None, None, None, None, False, version=version)
 

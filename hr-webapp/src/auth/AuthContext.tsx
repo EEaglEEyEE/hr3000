@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { login as loginRequest } from '../api/auth'
 import { clearTokens, decodeJwtPayload, getAccessToken, getRefreshToken, setTokens } from './tokenStore'
+import { AREAS, type Perms } from '../lib/access'
 
 interface AuthState {
   isAuthenticated: boolean
@@ -20,6 +21,8 @@ interface AuthState {
   /** Rolle SUPER_ADMIN – plattformweit, keinem Mandanten zugeordnet. Nur über den
    * Super-Admin-Hostname erreichbar. */
   isSuperAdmin: boolean
+  /** Eigene Rolle (Token-Claim perms): Stufe je Bereich; null = keine eigene Rolle (volle Rolle). */
+  perms: Perms | null
 }
 
 /** Nach dem Passwort noch ein Schritt: Code eingeben bzw. (Pflicht) Zwei-Faktor-Anmeldung einrichten. */
@@ -45,11 +48,25 @@ const SIGNED_OUT: AuthState = {
   isFullHr: false,
   canPayroll: false,
   isSuperAdmin: false,
+  perms: null,
+}
+
+const LEVELS = ['NONE', 'VIEW', 'EDIT']
+
+/** Nur bekannte Bereiche/Stufen übernehmen; ein Konto MIT eigener Rolle bleibt eingeschränkt (leer = nichts). */
+function readPerms(raw: unknown): Perms | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const perms: Perms = {}
+  for (const area of AREAS) {
+    const value = (raw as Record<string, unknown>)[area]
+    perms[area] = typeof value === 'string' && LEVELS.includes(value) ? (value as Perms[typeof area]) : 'NONE'
+  }
+  return perms
 }
 
 const KNOWN_ROLES = ['ADMIN', 'HR', 'SUPERVISOR', 'SUPER_ADMIN']
 
-/** Rechte aus dem Token (claims role, emp, payroll) – nur für die Anzeige, das Backend prüft selbst. */
+/** Rechte aus dem Token (claims role, emp, payroll, perms) – nur für die Anzeige, das Backend prüft selbst. */
 function readAuthState(): AuthState {
   if (getRefreshToken() === null) return SIGNED_OUT
   const token = getAccessToken()
@@ -64,6 +81,7 @@ function readAuthState(): AuthState {
     isFullHr: role === 'ADMIN' || role === 'HR' || role === 'SUPER_ADMIN',
     canPayroll: payload?.payroll === true || role === 'ADMIN',
     isSuperAdmin: role === 'SUPER_ADMIN',
+    perms: role === 'HR' ? readPerms(payload?.perms) : null,
   }
 }
 

@@ -40,3 +40,24 @@ export function useLaborCostsQuery(from: string, to: string, enabled: boolean) {
     queryFn: async () => unwrap(await apiClient.GET('/reports/labor-costs', { params: { query: { from, to } } })),
   })
 }
+
+export type AbsenceRate = components['schemas']['AbsenceRateResponse']
+export type Headcount = components['schemas']['HeadcountResponse']
+export type AbsenceCategory = components['schemas']['AbsenceType']
+
+export function useAbsenceRateQuery(dateFrom: string, dateTo: string, categories: AbsenceCategory[]) {
+  return useQuery({
+    queryKey: ['reports', 'absence-rate', dateFrom, dateTo, categories],
+    enabled: categories.length > 0 && dateFrom <= dateTo,
+    queryFn: async () =>
+      unwrap(await apiClient.GET('/reports/absence-rate', { params: { query: { date_from: dateFrom, date_to: dateTo, categories } } })),
+  })
+}
+
+export function useHeadcountQuery(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ['reports', 'headcount', dateFrom, dateTo],
+    enabled: dateFrom <= dateTo,
+    queryFn: async () => unwrap(await apiClient.GET('/reports/headcount', { params: { query: { date_from: dateFrom, date_to: dateTo } } })),
+  })
+}

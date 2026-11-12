@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { AlertCircle, BarChart3, CalendarDays, CalendarRange, ClipboardCheck, FileSpreadsheet, House, KeyRound, LayoutGrid, ListChecks, LogOut, Menu, Network, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, UserCircle, Users, X, type LucideIcon } from 'lucide-react'
+import { AlertCircle, BarChart3, BookOpenCheck, Briefcase, CalendarDays, CalendarRange, ClipboardCheck, FileSpreadsheet, House, KeyRound, LayoutGrid, ListChecks, LogOut, Menu, Network, PanelLeftClose, PanelLeftOpen, Settings, ShieldAlert, ShieldCheck, UserCircle, Users, X, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../../auth/AuthContext'
 import { cn } from '../../lib/utils'
-import { allows, PAGE_ACCESS } from '../../lib/access'
+import { allowsPage, hasArea } from '../../lib/access'
 import { useFeaturesQuery } from '../../api/queries/workTimeModel'
+import { useWhistleStatusQuery } from '../../api/queries/whistle'
+import { useRecruitingAccessQuery } from '../../api/queries/recruiting'
 import { useCorrectionRequestsQuery } from '../../api/queries/correctionRequests'
 import { usePendingAbsencesQuery } from '../../api/queries/absences'
 import { useChangeRequestsQuery } from '../../api/queries/changeRequests'
@@ -21,6 +23,12 @@ interface NavItem {
   label: string
   icon: LucideIcon
   shiftPlanning?: boolean
+  /** Nur für benannte Meldestellen-Beauftragte (Hinweisgebersystem) */
+  whistle?: boolean
+  /** Nur mit eingeschaltetem Recruiting und für Admin/HR bzw. Konten im Hiring Team */
+  recruiting?: boolean
+  /** Nur mit eingeschalteter Lohnbuchhaltung (Einstellungen → Lohnbuchhaltung) */
+  payrollAccounting?: boolean
 }
 
 // Rechte je Seite stehen in lib/access.ts (PAGE_ACCESS) – dieselbe Quelle wie der Seitenschutz.
@@ -36,6 +44,7 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { to: '/team-kalender', label: 'Kalender', icon: LayoutGrid },
       { to: '/organigramm', label: 'Organigramm', icon: Network },
       { to: '/zu-klaeren', label: 'Zu klären', icon: AlertCircle },
+      { to: '/hinweise', label: 'Hinweise', icon: ShieldAlert, whistle: true },
     ],
   },
   {
@@ -45,7 +54,9 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { to: '/monatsabschluss', label: 'Monatsabschluss', icon: ClipboardCheck },
       { to: '/auswertungen', label: 'Analysen', icon: BarChart3 },
       { to: '/lohn-export', label: 'Lohn-Export', icon: FileSpreadsheet },
+      { to: '/lohnbuchhaltung', label: 'Lohnbuchhaltung', icon: BookOpenCheck, payrollAccounting: true },
       { to: '/checklisten', label: 'On- & Offboarding', icon: ListChecks },
+      { to: '/recruiting', label: 'Recruiting', icon: Briefcase, recruiting: true },
     ],
   },
 ]
@@ -59,23 +70,33 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   )
 
 export function AppLayout() {
-  const { logout, isAdmin, isFullHr, canPayroll, employeeId } = useAuth()
+  const { logout, isAdmin, isFullHr, canPayroll, employeeId, perms } = useAuth()
+  const flags = { isAdmin, isFullHr, canPayroll, perms }
   // Zu klären (Posteingang): offene Tage, Monatsgrenzen, Urlaubsanträge und Korrekturanträge (nur
-  // Admin/HR entscheidet diese).
-  const openDays = useOpenDaysCount()
-  const pendingCorrections = useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0
+  // Admin/HR entscheidet diese). Mit eigener Rolle nur die Zähler der freigegebenen Bereiche.
+  const time = hasArea(perms, 'TIME')
+  const openDays = useOpenDaysCount(time)
+  const pendingCorrections = useCorrectionRequestsQuery('PENDING', isFullHr && time).data?.length ?? 0
   const capsExceeded =
-    (useMonthlyCapsQuery().data ?? []).filter((row) => row.exceeded).length +
-    (useBalanceLimitsQuery().data ?? []).filter((row) => row.exceeded).length
-  const pendingAbsences = usePendingAbsencesQuery().data?.length ?? 0
-  const pendingChanges = useChangeRequestsQuery(isFullHr).data?.length ?? 0
+    (useMonthlyCapsQuery(time).data ?? []).filter((row) => row.exceeded).length +
+    (useBalanceLimitsQuery(time).data ?? []).filter((row) => row.exceeded).length
+  const pendingAbsences = usePendingAbsencesQuery(hasArea(perms, 'ABSENCES')).data?.length ?? 0
+  const pendingChanges = useChangeRequestsQuery(isFullHr && hasArea(perms, 'EMPLOYEES')).data?.length ?? 0
   const openCount = openDays + capsExceeded + pendingAbsences + (isFullHr ? pendingCorrections + pendingChanges : 0)
   const featuresQuery = useFeaturesQuery()
   const shiftPlanningEnabled = featuresQuery.data?.shift_planning_enabled ?? false
+  const payrollAccountingEnabled = featuresQuery.data?.payroll_accounting_enabled ?? false
+  // Beide Abfragen nur, wenn das Modul eingeschaltet ist – sonst zwei Anfragen je Seitenaufruf umsonst.
+  const whistleOfficer = useWhistleStatusQuery(featuresQuery.data?.whistleblowing_enabled === true).data?.officer ?? false
+  const recruitingAccess = useRecruitingAccessQuery(featuresQuery.data?.recruiting_enabled === true).data
+  const recruitingVisible = Boolean(recruitingAccess?.enabled && (recruitingAccess.can_manage || recruitingAccess.member))
 
   const allowed = (item: NavItem) =>
-    allows(PAGE_ACCESS[item.to] ?? 'all', { isAdmin, isFullHr, canPayroll }) &&
-    (!item.shiftPlanning || shiftPlanningEnabled)
+    allowsPage(item.to, flags, featuresQuery.data) &&
+    (!item.shiftPlanning || shiftPlanningEnabled) &&
+    (!item.payrollAccounting || payrollAccountingEnabled) &&
+    (!item.whistle || whistleOfficer) &&
+    (!item.recruiting || recruitingVisible)
   const groups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter(allowed),
@@ -194,7 +215,7 @@ export function AppLayout() {
               <span className={label}>Mein Bereich</span>
             </NavLink>
           )}
-          {allows(PAGE_ACCESS['/einstellungen'], { isAdmin, isFullHr, canPayroll }) && (
+          {allowsPage('/einstellungen', flags) && (
             <NavLink to="/einstellungen" className={itemClass} title={collapsed ? 'Einstellungen' : undefined}>
               <Settings className="h-4 w-4 shrink-0" />
               <span className={label}>Einstellungen</span>

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.role_permissions import Area
 from app.api.deps import (
     Actor,
     get_current_actor,
@@ -336,7 +337,7 @@ async def upload_own_document(
     await db.flush()
     _audit(db, actor, AuditAction.DOCUMENT_UPLOADED, document, f"{category.name}: {document.title} (selbst hochgeladen)")
     await _notify_accounts(
-        db, actor.tenant_id, await full_hr_recipients(db, actor.tenant_id, exclude_employee_id=employee.id),
+        db, actor.tenant_id, await full_hr_recipients(db, actor.tenant_id, exclude_employee_id=employee.id, area=Area.DOCUMENTS),
         NotificationType.DOCUMENT_UPLOADED,
         f"{employee.first_name} {employee.last_name} hat „{document.title}“ ({category.name}) hochgeladen.",
         "Dokument hochgeladen",

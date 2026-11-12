@@ -11,6 +11,7 @@ import {
   useUnmarkDayReviewedMutation,
 } from '../api/queries/timesheets'
 import { useAuth } from '../auth/AuthContext'
+import { hasArea, type Area } from '../lib/access'
 import { PendingAbsencesPanel } from '../components/absences/PendingAbsencesPanel'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useChangeRequestsQuery } from '../api/queries/changeRequests'
@@ -26,29 +27,32 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 const ALL_LOCATIONS = 'all'
 
-/** Reiter des Posteingangs „Zu klären“ (Adresse /zu-klaeren/:reiter). */
-const TABS = [
-  { key: 'tage', label: 'Tage' },
-  { key: 'korrekturen', label: 'Korrekturanträge', fullHrOnly: true },
-  { key: 'urlaubsantraege', label: 'Urlaubsanträge' },
-  { key: 'monatsgrenzen', label: 'Grenzen' },
-  { key: 'datenaenderungen', label: 'Datenänderungen', fullHrOnly: true },
-] as const
+/** Reiter des Posteingangs „Zu klären“ (Adresse /zu-klaeren/:reiter); area = Bereich einer eigenen Rolle. */
+const TABS: { key: string; label: string; area: Area; fullHrOnly?: boolean }[] = [
+  { key: 'tage', label: 'Tage', area: 'TIME' },
+  { key: 'korrekturen', label: 'Korrekturanträge', area: 'TIME', fullHrOnly: true },
+  { key: 'urlaubsantraege', label: 'Urlaubsanträge', area: 'ABSENCES' },
+  { key: 'monatsgrenzen', label: 'Grenzen', area: 'TIME' },
+  { key: 'datenaenderungen', label: 'Datenänderungen', area: 'EMPLOYEES', fullHrOnly: true },
+]
 
 /** Posteingang: offene Tage, Korrekturanträge, Urlaubsanträge und Monatsgrenzen an einer Stelle. */
 export function OpenDaysPage() {
   const navigate = useNavigate()
   const { reiter } = useParams()
-  const { isFullHr } = useAuth()
+  const { isFullHr, perms } = useAuth()
+  const tabs = TABS.filter((tab) => (!tab.fullHrOnly || isFullHr) && hasArea(perms, tab.area))
+  const visible = new Set(tabs.map((tab) => tab.key))
+  const time = hasArea(perms, 'TIME')
   const counts: Record<string, number> = {
-    tage: useOpenDaysCount(),
-    korrekturen: useCorrectionRequestsQuery('PENDING', isFullHr).data?.length ?? 0,
-    urlaubsantraege: usePendingAbsencesQuery().data?.length ?? 0,
-    monatsgrenzen: (useMonthlyCapsQuery().data?.length ?? 0) + (useBalanceLimitsQuery().data?.length ?? 0),
-    datenaenderungen: useChangeRequestsQuery(isFullHr).data?.length ?? 0,
+    tage: useOpenDaysCount(time),
+    korrekturen: useCorrectionRequestsQuery('PENDING', visible.has('korrekturen')).data?.length ?? 0,
+    urlaubsantraege: usePendingAbsencesQuery(visible.has('urlaubsantraege')).data?.length ?? 0,
+    monatsgrenzen: (useMonthlyCapsQuery(time).data?.length ?? 0) + (useBalanceLimitsQuery(time).data?.length ?? 0),
+    datenaenderungen: useChangeRequestsQuery(visible.has('datenaenderungen')).data?.length ?? 0,
   }
-  const tabs = TABS.filter((tab) => !('fullHrOnly' in tab) || isFullHr)
-  const current = tabs.find((tab) => tab.key === reiter)?.key ?? 'tage'
+  const current = tabs.find((tab) => tab.key === reiter)?.key ?? tabs[0]?.key
+  if (!current) return <p className="text-slate-500">Für diese Seite fehlt die Berechtigung.</p>
 
   return (
     <div className="flex flex-col gap-4">
@@ -66,28 +70,34 @@ export function OpenDaysPage() {
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="tage">
-          <OpenDaysList />
-        </TabsContent>
-        {isFullHr && (
+        {visible.has('tage') && (
+          <TabsContent value="tage">
+            <OpenDaysList />
+          </TabsContent>
+        )}
+        {visible.has('korrekturen') && (
           <TabsContent value="korrekturen">
             <PendingCorrectionRequests />
           </TabsContent>
         )}
-        <TabsContent value="urlaubsantraege">
-          <PendingAbsencesPanel />
-        </TabsContent>
-        {isFullHr && (
+        {visible.has('urlaubsantraege') && (
+          <TabsContent value="urlaubsantraege">
+            <PendingAbsencesPanel />
+          </TabsContent>
+        )}
+        {visible.has('datenaenderungen') && (
           <TabsContent value="datenaenderungen">
             <PendingChangeRequests />
           </TabsContent>
         )}
-        <TabsContent value="monatsgrenzen">
-          <div className="flex flex-col gap-6">
-            <MonthlyCapsNotice />
-            <BalanceLimitsNotice />
-          </div>
-        </TabsContent>
+        {visible.has('monatsgrenzen') && (
+          <TabsContent value="monatsgrenzen">
+            <div className="flex flex-col gap-6">
+              <MonthlyCapsNotice />
+              <BalanceLimitsNotice />
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

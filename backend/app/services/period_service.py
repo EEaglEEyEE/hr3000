@@ -21,6 +21,7 @@ from app.models import (
     Tenant,
 )
 from app.services.absence_type_service import format_days, list_absence_types
+from app.services.punch_location_service import location_remarks
 from app.services.settings_service import get_or_create_settings, tenant_logo_data_url
 from app.services.surcharge_service import compute_surcharges
 from app.services.timesheet_service import (
@@ -36,6 +37,7 @@ from app.services.timesheet_service import (
     punch_blocks,
     punches_by_day,
     review_valid,
+    settled_limit,
     today_in,
 )
 
@@ -218,6 +220,10 @@ class MonthReport:
     actual_minutes: int = 0
     delta_minutes: int = 0
     balance_end_minutes: int = 0
+    # Mit dem Gehalt abgegoltene Überstunden des Monats (nicht im Kontostand) und die Grenze dazu
+    # (0 = keine Abgeltung vereinbart)
+    settled_minutes: int = 0
+    settled_limit_minutes: int = 0
     # Halbe Abwesenheitstage zählen 0,5
     vacation_days: float = 0
     sick_days: float = 0
@@ -290,6 +296,8 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
         )
         if calc.flags:
             label = (label + " · " if label else "") + ", ".join(_FLAG_LABELS.get(f, f) for f in calc.flags)
+        if remarks := location_remarks(punches, tz):  # Stempeln im Web-Login außerhalb/Standort unbekannt (A18)
+            label = (label + " · " if label else "") + remarks
         target = calc.target_minutes
         actual = calc.actual_minutes
         delta = None
@@ -339,7 +347,10 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
     # Flexibles Modell: Wochensoll anteilig auf die Kalendertage des Monats.
     report.target_minutes += round(flexible_target)
     report.delta_minutes = report.actual_minutes - report.target_minutes
-    report.balance_end_minutes = (await balance_as_of(db, employee, last)).total_minutes
+    balance = await balance_as_of(db, employee, last)
+    report.balance_end_minutes = balance.total_minutes
+    report.settled_minutes = balance.settled_in_month(first)
+    report.settled_limit_minutes = await settled_limit(db, employee, first)
     report.surcharges = [
         (total.rule.name, float(total.rule.percent), total.minutes)
         for total in await compute_surcharges(db, employee, first, last)
