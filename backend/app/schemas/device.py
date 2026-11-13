@@ -176,6 +176,15 @@ class DeviceEnrollmentResponse(BaseModel):
     last_seen_at: datetime | None
     # Es gibt schon einen benutzten Tablet-Eintrag mit diesem Gerätenamen (möglicher Doppelgänger)
     conflict_device_name: str | None = None
+    # Das Gerät wartet gerade (meldet sich jede Minute); False = meldet sich nicht mehr
+    active: bool = True
+    # Herkunft der Anfrage: Browser und System (aus der Browser-Kennung) und IP-Adresse – ungeprüft
+    client: str | None = None
+    client_ip: str | None = None
+
+
+class EnrollmentCleanupResponse(BaseModel):
+    removed: int
 
 
 class EnrollmentApproveRequest(BaseModel):

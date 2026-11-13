@@ -24,15 +24,18 @@ from app.services.scope_service import ensure_employee_visible, visible_employee
 from app.services.timesheet_service import (
     balance_as_of,
     balance_start,
+    DayFlag,
     calculate_day,
     day_fingerprint,
     day_reviews,
     employee_timezone,
+    flexible_week,
     is_birthday,
     needs_review,
     punch_blocks,
     punches_for_day,
     rebuild_balance,
+    refresh_stale_day_cache,
     review_valid,
     settled_limit,
     today_in,
@@ -45,41 +48,6 @@ router = APIRouter(tags=["timesheets"])
 # Jeder Tag kostet mehrere Abfragen – ohne Obergrenze könnte ein einzelner Request
 # (auch aus dem Self-Service) den Server mit Jahrhunderten an Tagen lahmlegen.
 _MAX_RANGE_DAYS = 366
-
-
-async def _refresh_stale_day_cache(db: AsyncSession, tenant_id: int) -> None:
-    """Korrekturen über Abwesenheiten, Feiertage, Arbeitszeitmodelle, Schichtplan usw. markieren das
-    Konto nur als veraltet (invalidate_balance) – der Tages-Cache, aus dem "Zu klären" liest, wäre
-    sonst bis zum nächsten Öffnen des Mitarbeiters veraltet. Daher die betroffenen Mitarbeiter vorher
-    nachrechnen (nur ab dem veralteten Tag)."""
-    yesterday = utc_today() - timedelta(days=1)
-    stale = (
-        await db.execute(
-            select(Employee).where(
-                Employee.tenant_id == tenant_id,
-                or_(
-                    Employee.balance_through.is_(None),
-                    Employee.balance_through < yesterday,
-                    # Frühere Tage, die noch als "anwesend" zwischengespeichert sind, können inzwischen
-                    # über die maximale Schichtlänge hinaus offen sein (vergessenes "Gehen").
-                    Employee.id.in_(
-                        select(DailySummary.employee_id).where(
-                            DailySummary.status.in_([SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND]),
-                            DailySummary.work_date < utc_today(),
-                        )
-                    ),
-                ),
-                # Ausgeschiedene sind nur bis zum Austritt zu rechnen (danach bleibt der Marker dort stehen).
-                or_(
-                    Employee.termination_date.is_(None),
-                    Employee.balance_through.is_(None),
-                    Employee.balance_through < Employee.termination_date,
-                ),
-            )
-        )
-    ).scalars().all()
-    for employee in stale:
-        await rebuild_balance(db, employee)
 
 
 @router.get("/timesheet/open-days", response_model=list[OpenDayResponse])
@@ -98,7 +66,7 @@ async def list_open_days(
     Was HR mit "Erledigt" abgehakt hat (DayReview), erscheint nicht mehr – solange sich der Tag
     nicht ändert. Dieselbe Regel (timesheet_service.needs_review) gilt für Monatsabschluss,
     Monatsbericht und Lohn-Export."""
-    await _refresh_stale_day_cache(db, actor.tenant_id)
+    await refresh_stale_day_cache(db, actor.tenant_id)
     today = utc_today()
     stmt = (
         select(DailySummary, Employee)
@@ -135,7 +103,7 @@ async def list_open_days(
     rows = []
     for summary, employee in candidates:
         flags = summary.flags.split(",") if summary.flags else []
-        if not needs_review(summary.status, flags, summary.work_date, today):
+        if not needs_review(summary.status, flags, summary.work_date, today, exempt=summary.review_exempt):
             continue
         fingerprint = day_fingerprint(summary.status, summary.target_minutes, summary.actual_minutes, flags)
         if review_valid(reviews, employee.id, summary.work_date, fingerprint):
@@ -155,6 +123,9 @@ async def list_open_days(
         # Zeiten mitliefern, damit HR den Sonderfall (z.B. außerplanmäßig gestempelt) direkt beurteilen kann.
         tz = await employee_timezone(db, employee)
         punches = await punches_for_day(db, employee, summary.work_date, tz)
+        flags = summary.flags.split(",") if summary.flags else []
+        # "Wochensoll nicht erreicht": Soll und Ist der Woche dazu (dieselbe Rechnung wie im Konto).
+        week = await flexible_week(db, employee, summary.work_date, tz) if DayFlag.WEEKLY_TARGET_MISSED in flags else None
         response.append(
             OpenDayResponse(
                 employee_id=employee.id,
@@ -163,9 +134,11 @@ async def list_open_days(
                 location_id=employee.location_id,
                 work_date=summary.work_date,
                 status=summary.status,
-                flags=summary.flags.split(",") if summary.flags else [],
+                flags=flags,
                 times=punch_blocks(punches, tz),
                 actual_minutes=summary.actual_minutes,
+                week_target_minutes=week.target_minutes if week else None,
+                week_actual_minutes=week.actual_minutes if week else None,
             )
         )
     return response

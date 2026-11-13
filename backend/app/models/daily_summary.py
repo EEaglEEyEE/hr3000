@@ -1,7 +1,7 @@
 import enum
 from datetime import date
 
-from sqlalchemy import Date, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -37,3 +37,7 @@ class DailySummary(Base):
     status: Mapped[SummaryStatus] = mapped_column(Enum(SummaryStatus))
     # Kommagetrennte Sonderfälle (siehe timesheet_service.DayFlag), z.B. "UNPLANNED_WORK".
     flags: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Tag eines flexiblen Modells, dessen Tage der Mandant nicht melden lässt (AppSettings.
+    # report_flexible_days aus): Status und Zeiten bleiben, "offen" ist der Tag nur noch mit einem Hinweis
+    # in flags ("Wochensoll nicht erreicht") – siehe timesheet_service.needs_review.
+    review_exempt: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

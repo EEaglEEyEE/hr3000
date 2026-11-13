@@ -205,7 +205,7 @@ PORTABLE_SETTINGS = (
     "require_pin_for_punch", "default_bundesland", "default_annual_vacation_days",
     "show_birthdays_in_calendar", "shift_planning_enabled", "default_auto_break", "default_show_birthday",
     "default_day_minutes", "prorate_part_time_vacation", "prorate_partial_year_vacation", "reduce_vacation_parental_leave", "seniority_leave_rules", "team_calendar_for_employees", "vacation_carry_over_auto", "vacation_carry_over_max_days",
-    "vacation_carry_over_expiry", "disabled_day_flags", "report_days_without_punches",
+    "vacation_carry_over_expiry", "disabled_day_flags", "report_days_without_punches", "report_flexible_days",
     "max_shift_span_hours", "core_time_start", "core_time_end", "core_time_days", "legal_break_minimum", "break_precise_from", "break_capped_from",
     "late_tolerance_minutes", "flex_frame_start", "flex_frame_end", "rfid_required", "kiosk_rfid_enabled",
     "kiosk_card_self_registration", "kiosk_pin_self_setup", "kiosk_show_balance", "kiosk_show_vacation",
@@ -250,6 +250,11 @@ class TenantSettingsFile(BaseModel):
 
     @model_validator(mode="after")
     def _old_hours_wage_type(self) -> "TenantSettingsFile":
+        # Dateien von vor dem Hinweis "Wochensoll nicht erreicht" kennen ihn nicht – er bleibt dann aus
+        # (sonst würde er durch die fehlende Nennung in der Liste eingeschaltet).
+        flags = self.settings.get("disabled_day_flags")
+        if isinstance(flags, list) and "report_flexible_days" not in self.settings and "WEEKLY_TARGET_MISSED" not in flags:
+            self.settings["disabled_day_flags"] = [*flags, "WEEKLY_TARGET_MISSED"]
         legacy = self.settings.pop("datev_hours_wage_type", None)
         if legacy and WageTypeItem.WORKED not in self.wage_types:
             self.wage_types[WageTypeItem.WORKED] = legacy

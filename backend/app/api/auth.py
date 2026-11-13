@@ -37,7 +37,7 @@ from app.services.signup_mail import send_verification_mail
 from app.services import rate_limiter
 from app.services.pairing_service import card_salt, new_device_token, pairing_code_hash, token_hash
 from app.services.notification_service import notify_device_rejected, notify_device_replaced
-from app.services.device_enrollment import enroll_device, pending_enrollment_for_token
+from app.services.device_enrollment import enroll_device, pending_enrollment_for_token, touch_pending_enrollment
 from app.services.settings_service import device_kiosk_config
 from app.services import two_factor_service
 
@@ -107,10 +107,12 @@ async def device_login(
         # Per MDM registriert, aber noch nicht freigegeben: Gerät zeigt den Prüfcode und versucht es weiter.
         pending = await pending_enrollment_for_token(db, tenant_id, payload.device_token)
         if pending is not None and payload.installation_id and token_hash(payload.installation_id) == pending.installation_hash:
+            verify_code = pending.verify_code
+            await touch_pending_enrollment(db, pending)  # „wartet gerade“ in der Freigabeliste
             raise AppError(
                 403,
                 "DEVICE_PENDING",
-                f"Dieses Gerät wartet auf Freigabe in der HR-Webapp unter „Tablets“. Prüfcode: {pending.verify_code}",
+                f"Dieses Gerät wartet auf Freigabe in der HR-Webapp unter „Tablets“. Prüfcode: {verify_code}",
             )
         raise AppError(401, "INVALID_DEVICE_TOKEN", "Unbekanntes Gerät.")
 
@@ -165,7 +167,10 @@ async def device_enroll(
     key = f"enroll:{_client_ip(request)}"
     rate_limiter.check_rate_limit(key, 10, 300, code="ENROLLMENT_LOCKED")
     try:
-        return await enroll_device(db, tenant_id, payload.key, payload.installation_id, payload.name)
+        return await enroll_device(
+            db, tenant_id, payload.key, payload.installation_id, payload.name,
+            user_agent=request.headers.get("user-agent"), client_ip=_client_ip(request),
+        )
     except AppError as exc:
         if exc.code in ("ENROLLMENT_KEY_INVALID", "ENROLLMENT_KEY_EXPIRED"):
             rate_limiter.record_failure(key)

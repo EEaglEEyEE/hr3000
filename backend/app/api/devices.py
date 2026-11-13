@@ -18,6 +18,7 @@ from app.schemas.device import (
     DeviceResponse,
     DeviceUpdateRequest,
     EnrollmentApproveRequest,
+    EnrollmentCleanupResponse,
     EnrollmentKeyCreatedResponse,
     EnrollmentKeyCreateRequest,
     EnrollmentKeyResponse,
@@ -27,7 +28,15 @@ from app.schemas.device import (
 )
 from app.services import rate_limiter
 from app.services.audit_service import log_action
-from app.services.device_enrollment import bind_device, device_name_matches, new_enrollment_key
+from app.services.device_enrollment import (
+    bind_device,
+    describe_client,
+    device_name_matches,
+    enrollment_active,
+    new_enrollment_key,
+    purge_stale_enrollments,
+    remove_inactive_enrollments,
+)
 from app.services.auth_service import hash_password, verify_password
 from app.services.pairing_service import PAIRING_CODE_TTL, new_device_token, new_pairing_code, pairing_code_hash, token_hash
 from app.services.platform_domain import kiosk_url_for_host
@@ -250,7 +259,10 @@ async def list_enrollments(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> list[DeviceEnrollmentResponse]:
-    """Geräte, die sich mit einem Registrierungsschlüssel gemeldet haben und auf Freigabe warten."""
+    """Geräte, die sich mit einem Registrierungsschlüssel gemeldet haben und auf Freigabe warten –
+    wartende zuerst. Anfragen, deren Gerät sich seit 24 Stunden nicht gemeldet hat, verfallen hier."""
+    if await purge_stale_enrollments(db, actor.tenant_id):
+        await db.commit()
     rows = (
         await db.execute(
             select(DeviceEnrollment)
@@ -280,9 +292,23 @@ async def list_enrollments(
                 created_at=row.created_at,
                 last_seen_at=row.last_seen_at,
                 conflict_device_name=conflict,
+                active=enrollment_active(row),
+                client=describe_client(row.user_agent),
+                client_ip=row.client_ip,
             )
         )
-    return result
+    return sorted(result, key=lambda item: not item.active)  # stabil: je Gruppe nach Eingang
+
+
+@router.post("/devices/enrollments/remove-inactive", response_model=EnrollmentCleanupResponse)
+async def remove_inactive(
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> EnrollmentCleanupResponse:
+    """Alle Anfragen entfernen, deren Gerät sich nicht mehr meldet. Wartende Geräte bleiben stehen."""
+    removed = await remove_inactive_enrollments(db, actor.tenant_id, actor.account_id)
+    await db.commit()
+    return EnrollmentCleanupResponse(removed=removed)
 
 
 async def _get_enrollment(db: AsyncSession, actor: Actor, enrollment_id: int) -> DeviceEnrollment:

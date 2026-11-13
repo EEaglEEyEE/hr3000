@@ -33,6 +33,9 @@ class OpenDayResponse(BaseModel):
     # Gestempelte Zeiten des Tages, z.B. "08:00–12:00, 13:00–17:00"
     times: str = ""
     actual_minutes: int | None = None
+    # Nur beim Hinweis "Wochensoll nicht erreicht" (flexibles Modell): Soll und Ist der abgerechneten Woche
+    week_target_minutes: int | None = None
+    week_actual_minutes: int | None = None
 
 
 class MonthlyCapRow(BaseModel):

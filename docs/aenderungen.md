@@ -3,6 +3,33 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 13.11.2026
+
+- **„Zu klären“ und das Modell „Flexibel ohne feste Tage“:** Unter „Einstellungen“ → „Prüfungen“
+  gibt es zwei neue Häkchen für Mitarbeiter mit diesem Arbeitszeitmodell.
+  - „Tage dieser Mitarbeiter melden“ (Standard an, wie bisher). Aus: Tage dieser Mitarbeiter
+    erscheinen nicht mehr unter „Zu klären“ – weder unvollständige oder widersprüchliche
+    Stempelungen noch Sonderfälle (Feiertag, trotz Abwesenheit, mehr als 10 Std.). Sie gelten dann
+    auch beim Monatsabschluss, im Monatsbericht und im Lohn-Export nicht als offen. Status und
+    Zeiten bleiben am Tag sichtbar; ein Tag ohne auswertbare Stempelung zählt mit 0 Stunden.
+  - „Wochen melden, in denen das Wochensoll nicht erreicht wurde“ (Standard aus). An: Bleibt eine
+    abgerechnete Woche unter dem Wochensoll, steht am Sonntag der Woche (bei Austritt am letzten
+    Beschäftigungstag) der Hinweis „Wochensoll nicht erreicht“ mit Ist und Soll der Woche. Gemeldet
+    werden nur Wochen ab dem Tag des Einschaltens.
+  - Wer beide Häkchen so setzt (erstes aus, zweites an), sieht flexible Mitarbeiter nur noch, wenn
+    sie ihre Wochenstunden nicht erreichen.
+- **Tablets, Verteilung per MDM – Freigabeliste:** „Neue Geräte warten auf Freigabe“ zeigt jetzt,
+  welche Geräte wirklich warten („wartet gerade“ – sie melden sich jede Minute) und zählt nur diese.
+  Anfragen, hinter denen kein wartendes Gerät mehr steht, stehen getrennt unter „Meldet sich nicht
+  mehr“, lassen sich mit „Alle entfernen“ wegräumen und verfallen nach 24 Stunden von selbst. Jede
+  Anfrage nennt Browser, System und IP-Adresse. Solche Anfragen entstehen, wenn die Start-URL
+  irgendwo geöffnet wird – z. B. durch automatische Prüfgeräte des App-Stores nach dem
+  Veröffentlichen einer Web-App. Zugriff entsteht daraus nicht. Verwaiste Anfragen blockieren die
+  Obergrenze von 20 je Standort nicht mehr.
+- **Monatsabschluss, Übersicht:** Die Spalte der offenen Tage rechnet veraltete Tage jetzt selbst
+  nach. Bisher zeigte sie nach einer Änderung an Einstellungen oder Arbeitszeitmodellen den alten
+  Stand, bis jemand „Zu klären“ geöffnet hatte.
+
 ## 12.11.2026
 
 - **Unbekannte Adressen zeigen „Seite nicht gefunden“:** Wer in der Verwaltung eine veraltete oder

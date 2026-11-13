@@ -246,7 +246,11 @@ export const DAY_FLAG_LABELS: Record<string, string> = {
   LATE_ARRIVAL: 'Zu spät gekommen (nach Schicht-/Kernzeitbeginn)',
   EARLY_LEAVE: 'Zu früh gegangen (vor Schicht-/Kernzeitende)',
   OUTSIDE_FLEX_FRAME: 'Außerhalb der Gleitzeit-Rahmenzeit gestempelt',
+  WEEKLY_TARGET_MISSED: 'Wochensoll nicht erreicht (flexibles Modell)',
 }
+
+/** Hinweis am Abrechnungstag einer Woche (Modell „Flexibel ohne feste Tage“), siehe Backend DayFlag. */
+export const WEEKLY_TARGET_MISSED = 'WEEKLY_TARGET_MISSED'
 
 /** Status wie in der Personalakte (aus Eintritt/Austritt, Aktiv und Elternzeit/Pflegezeit). */
 export const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {

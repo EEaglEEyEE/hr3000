@@ -23,7 +23,13 @@ from app.services.secret_box import encrypt_secret
 from app.services.audit_service import log_action
 from app.services.settings_service import get_or_create_settings
 from app.services.period_service import ensure_tenant_open_from
-from app.services.timesheet_service import DAY_FLAGS, invalidate_tenant_balances, staffel_covers_law
+from app.services.timesheet_service import (
+    DAY_FLAGS,
+    DayFlag,
+    invalidate_tenant_balances,
+    staffel_covers_law,
+    utc_today,
+)
 
 _PUNCTUALITY_FLAGS = {"LATE_ARRIVAL", "EARLY_LEAVE", "OUTSIDE_FLEX_FRAME"}
 
@@ -182,6 +188,10 @@ async def update_settings(
         before = {f for f in (settings_row.disabled_day_flags or "").split(",") if f}
         if (before - set(payload.disabled_day_flags)) & _PUNCTUALITY_FLAGS:
             settings_row.punctuality_from = date.today()  # neu eingeschaltet: erst ab heute melden
+        if DayFlag.WEEKLY_TARGET_MISSED in before - set(payload.disabled_day_flags):
+            # Neu eingeschaltet: erst Wochen melden, die ab heute abgerechnet werden (sonst wäre jede
+            # frühere Woche unter dem Soll auf einen Schlag offen – auch in abgeschlossenen Monaten).
+            settings_row.weekly_target_from = utc_today()
         settings_row.disabled_day_flags = ",".join(sorted(set(payload.disabled_day_flags))) or None
         changed.append(f"disabled_day_flags={settings_row.disabled_day_flags}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
@@ -215,6 +225,10 @@ async def update_settings(
     if payload.report_days_without_punches is not None:
         settings_row.report_days_without_punches = payload.report_days_without_punches
         changed.append(f"report_days_without_punches={payload.report_days_without_punches}")
+        await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
+    if payload.report_flexible_days is not None and payload.report_flexible_days != settings_row.report_flexible_days:
+        settings_row.report_flexible_days = payload.report_flexible_days
+        changed.append(f"report_flexible_days={payload.report_flexible_days}")
         await invalidate_tenant_balances(db, actor.tenant_id, None)  # Tages-Cache ("Zu klären") neu aufbauen
     punctuality_changed = False
     # Erst prüfen, dann übernehmen: Kernzeit muss im (neuen bzw. bestehenden) Gleitzeit-Rahmen liegen.

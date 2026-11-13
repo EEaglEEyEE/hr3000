@@ -77,13 +77,24 @@ class AppSettings(Base):
     vacation_carry_over_expiry: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Sonderfälle, die NICHT unter "Zu klären" erscheinen sollen (kommagetrennte DayFlags)
     # Neue Firmen: Hinweise "zu spät"/"zu früh" erst nach bewusstem Einschalten (Kernarbeitszeit).
-    disabled_day_flags: Mapped[str | None] = mapped_column(String(200), nullable=True, default="EARLY_LEAVE,LATE_ARRIVAL")
+    # Ebenso aus, bis bewusst eingeschaltet: "Wochensoll nicht erreicht" (flexibles Modell).
+    disabled_day_flags: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, default="EARLY_LEAVE,LATE_ARRIVAL,WEEKLY_TARGET_MISSED"
+    )
     # Wie lange nach dem "Kommen" ein "Gehen" am Folgetag noch zur Schicht gehört (Nachtschicht)
     max_shift_span_hours: Mapped[int] = mapped_column(Integer, default=16)
     # Arbeitstage mit Soll, an denen gar nicht gestempelt wurde, als "Stempelung fehlt" melden
     # (unter "Zu klären", im Monatsbericht samt Sperre für den Abschluss, im Lohn-Export). Aus: nur
     # unvollständig gestempelte Tage gelten als offen – das Soll zählt trotzdem (Minus im Konto).
     report_days_without_punches: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Tage von Mitarbeitern mit dem Modell "Flexibel ohne feste Tage" wie alle anderen melden
+    # (unvollständig/widersprüchlich gestempelt, Sonderfälle). Aus: solche Tage gelten nie als offen –
+    # weder unter "Zu klären" noch beim Monatsabschluss, im Monatsbericht oder im Lohn-Export; gemeldet
+    # wird dann höchstens "Wochensoll nicht erreicht" (DayFlag.WEEKLY_TARGET_MISSED, eigener Schalter).
+    report_flexible_days: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    # "Wochensoll nicht erreicht" erst für Wochen melden, die an oder nach diesem Tag abgerechnet werden –
+    # gesetzt beim Einschalten, sonst wäre die ganze Vergangenheit offen (NULL = ohne Grenze).
+    weekly_target_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     # --- DATEV-LODAS-Export (siehe app/services/datev_export_service.py) ---
     datev_consultant_number: Mapped[str | None] = mapped_column(String(7), nullable=True)  # Beraternummer
     datev_client_number: Mapped[str | None] = mapped_column(String(5), nullable=True)  # Mandantennummer

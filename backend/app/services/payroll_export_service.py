@@ -141,6 +141,7 @@ async def payroll_period(db: AsyncSession, employee: Employee, date_from: date, 
                 open=needs_review(
                     calculation.status, calculation.flags, current, today,
                     missing_reported=missing_punch_reported(calculation, report_no_punch_days),
+                    exempt=calculation.review_exempt,
                 )
                 and not review_valid(
                     reviews, employee.id, current,

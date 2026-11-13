@@ -125,7 +125,8 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     wie jede Modelländerung über `ensure_open_from(valid_from)` – die Grenze eines Monats hängt nur
     an Fassungen, die in diesem Monat gelten.
 - **„Zu klären“:** `GET /timesheet/open-days`.
-  - Zuerst rechnet es veraltete Tage nach (`_refresh_stale_day_cache`).
+  - Zuerst rechnet es veraltete Tage nach (`timesheet_service.refresh_stale_day_cache`, ebenso
+    die Abschluss-Übersicht `GET /period-closures`).
   - Sonderfälle sind `DayFlag`s, je Mandant abschaltbar (`disabled_day_flags`).
   - Arbeitstage ganz ohne Stempelung: Schalter `AppSettings.report_days_without_punches`.
     Ausgewertet über `missing_punch_reported` (Monatsbericht, Lohn-Export) und beim Füllen des
@@ -137,6 +138,28 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Eine Regel „Tag offen“ (`timesheet_service.needs_review`) für `GET /timesheet/open-days`, die
     Abschluss-Übersicht (`GET /period-closures`), den Monatsbericht (`build_month_report`) und den
     Rechenkern der Abrechnung (`PayrollDay.open`).
+  - Flexible Modelle (Migration 0162): Schalter `AppSettings.report_flexible_days` (Standard an).
+    Aus: `calculate_day` setzt an flexiblen Tagen `DayCalculation.review_exempt` und leert die
+    Hinweise; `needs_review(..., exempt=True)` meldet den Tag dann nur noch mit
+    `DayFlag.WEEKLY_TARGET_MISSED`. Der Tages-Cache trägt die Kennung in
+    `daily_summaries.review_exempt` (die Zeile bleibt, weil Startseite und „läuft noch“ den Status
+    lesen). Umschalten baut den Cache neu auf (`invalidate_tenant_balances`).
+  - „Wochensoll nicht erreicht“ (`WEEKLY_TARGET_MISSED`): ein `DayFlag` am Abrechnungstag der Woche
+    (Sonntag bzw. letzter Beschäftigungstag, erst wenn der Tag vorbei ist), abschaltbar wie die
+    anderen – bei bestehenden und neuen Firmen in `disabled_day_flags`, also aus. Berechnet in
+    `timesheet_service.flexible_week` mit derselben Rechnung wie die Wochenabrechnung in
+    `rebuild_balance` (flexible Tage ab Montag, frühestens ab Kontobeginn; Soll = Summe der
+    Wochenanteile, Ist = Summe der Tages-Ist-Zeiten). Nur wenn der Abrechnungstag selbst flexibel
+    ist – wechselt das Modell in der Woche von flexibel auf fest, gibt es für diese Woche keinen
+    Hinweis. `AppSettings.weekly_target_from` (gesetzt beim Einschalten, `utc_today()`) begrenzt
+    ihn auf Wochen ab diesem Abrechnungstag. Der Hinweis macht den Tag auch ohne Stempelung offen
+    (Cache-Zeile in `rebuild_balance`, Ausnahme in `needs_review`). `GET /timesheet/open-days`
+    liefert dazu `week_target_minutes`/`week_actual_minutes`. Der Fingerabdruck von „Erledigt“
+    enthält die Wochenwerte nicht: Bleibt die Woche unter dem Soll, gilt „Erledigt“ weiter, auch
+    wenn sich ihr Ist ändert.
+  - Einstellungs-Datei (`/migration/settings-import`): Dateien ohne `report_flexible_days` (vor
+    0162 exportiert) bekommen `WEEKLY_TARGET_MISSED` in `disabled_day_flags` ergänzt, damit der
+    Hinweis nicht durch die fehlende Nennung eingeschaltet wird.
 - **Zulagen/Einmalzahlungen:** `PayComponent` (`ALLOWANCE` mit `PER_MONTH`/`PER_HOUR` und
   Gültigkeit, `ONE_TIME` mit `pay_date`) mit Art `PayComponentType` (Katalog je Mandant: `kind`,
   `name`, `wage_type`, `active`; Name/Lohnart stehen nur dort, Migration 0092). Anlegen mit
@@ -787,6 +810,16 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     diesem Token ergibt 403 `DEVICE_PENDING`, bis `POST /devices/enrollments/{id}/approve` es an einen
     neuen oder vorhandenen Eintrag hängt. Eine Anfrage je Installation (Neustart aktualisiert sie,
     gleicher Prüfcode). Grenzen: 20 offene je Standort, 10 falsche Schlüssel je IP in 5 Min.
+    Freigabeliste (`GET /devices/enrollments`): `active` = letzte Meldung innerhalb von
+    `ACTIVE_WINDOW` (3 Min.); die Kiosk-App versucht die Anmeldung jede Minute, der Versuch
+    (403 `DEVICE_PENDING`) setzt `last_seen_at` (`touch_pending_enrollment`, höchstens alle 30 s).
+    Wartende zuerst. `client` ist die Kurzform der Browser-Kennung (`describe_client`), dazu
+    `client_ip` – beides ungeprüft, gespeichert in `device_enrollments.user_agent`/`client_ip`
+    (Migration 0163) und mit der Anfrage gelöscht. Anfragen ohne Meldung seit `STALE_AFTER`
+    (24 Std.) verfallen beim Lesen der Liste und bei jeder neuen Registrierung
+    (`purge_stale_enrollments`); `POST /devices/enrollments/remove-inactive` entfernt alle nicht
+    aktiven sofort. Ist die Grenze je Standort erreicht, weicht die älteste nicht aktive Anfrage;
+    warten wirklich 20 Geräte, bleibt es bei 429. Alles mit Audit `DEVICE_ENROLLMENT`.
     `mdm_name` ist je Mandant eindeutig (`MDM_NAME_TAKEN`). Nicht ersetzte MDM-Platzhalter
     (`{{…}}`, `%…%`, `$…`) zählen als kein Name; die Kiosk-App erkennt `%…%` schon roh, weil
     `decodeURIComponent` „%de…“ sonst als Prozent-Kodierung liest. Audit `DEVICE_ENROLLMENT`.

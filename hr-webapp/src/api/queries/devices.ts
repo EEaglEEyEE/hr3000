@@ -150,6 +150,17 @@ export function useApproveEnrollmentMutation() {
   })
 }
 
+/** Alle Anfragen entfernen, deren Gerät sich nicht mehr meldet (verwaist). */
+export function useRemoveInactiveEnrollmentsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrap(await apiClient.POST('/devices/enrollments/remove-inactive')),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['device-enrollments'] })
+    },
+  })
+}
+
 export function useRejectEnrollmentMutation() {
   const queryClient = useQueryClient()
   return useMutation({

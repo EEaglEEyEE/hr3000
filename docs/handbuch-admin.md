@@ -167,6 +167,10 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     - mehr als 10 Std.
     - zu spät / zu früh
     - außerhalb der Gleitzeit-Rahmenzeit
+    - Wochensoll nicht erreicht (nur beim Modell „Flexibel ohne feste Tage“, Standard aus): steht
+      am Sonntag der Woche bzw. am letzten Beschäftigungstag, mit „Woche: … von … Std.“
+  - Mitarbeiter mit dem Modell „Flexibel ohne feste Tage“ lassen sich in den Einstellungen ganz
+    aus dieser Liste nehmen (siehe „Prüfungen“); dann erscheint höchstens ihre Woche unter dem Soll.
   - Ein „Kommen“ ohne „Gehen“ gilt nach der „Maximalen Schichtlänge“ als vergessenes „Gehen“.
   - Je Tag: „Korrigieren →“ oder „Erledigt“ (mit „Rückgängig“). „Erledigt“ ändert an der
     Berechnung nichts und gilt, solange sich der Tag nicht ändert – kommt z. B. eine Stempelung dazu
@@ -297,7 +301,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     Die Angaben im Einzelnen:
     - „Modell“: „Feste Arbeitstage“, „Flexibel ohne feste Tage“ (Wochenstunden ohne feste
       Arbeitstage, abgerechnet je Woche – passt für Teilzeit, die mal an 2, mal an 3 Tagen
-      arbeitet; Tage ohne Stempelung sind nie „zu klären“) oder „Nach Aufwand (Aushilfe)“ (ohne
+      arbeitet; Tage ohne Stempelung sind nie „zu klären“, und unter „Einstellungen“ →
+      „Prüfungen“ lässt sich einstellen, dass ihre Tage gar nicht gemeldet werden, sondern nur
+      eine Woche unter dem Wochensoll) oder „Nach Aufwand (Aushilfe)“ (ohne
       Soll, optional mit Monatsgrenze).
     - „Soll“ bei festen Arbeitstagen: „Wochenstunden“ mit „Arbeitstage“ – gleichmäßig verteilt
       oder mit „Stunden je Wochentag unterschiedlich (Teilzeit)“ je Tag – oder „Monatsstunden
@@ -866,6 +872,19 @@ für bestehende Firmen nichts ändert.
   offen, und im Monatsbericht steht kein „Stempelung fehlt“ mehr. Das Soll zählt trotzdem, ein
   Arbeitstag ohne Stempelung geht also ins Minus. Zu spät, zu früh und Gleitzeit-Rahmen stehen
   unter „Arbeitszeit“.
+  Darunter zwei Häkchen für „Mitarbeiter mit dem Arbeitszeitmodell „Flexibel ohne feste Tage““:
+  - „Tage dieser Mitarbeiter melden (unvollständige oder widersprüchliche Stempelungen,
+    Sonderfälle)“ – Standard an. Aus: Tage dieser Mitarbeiter gelten nirgends als offen, also weder
+    unter „Zu klären“ noch beim Monatsabschluss, im Monatsbericht oder im Lohn-Export. Status und
+    Zeiten bleiben am Tag sichtbar. Ein Tag ohne auswertbare Stempelung (z. B. „Gehen“ vergessen)
+    zählt mit 0 Stunden; es wird nichts geschätzt. Wer das abschaltet, sollte das zweite Häkchen
+    einschalten, sonst fällt eine vergessene Stempelung nur noch dem Mitarbeiter selbst auf.
+  - „Wochen melden, in denen das Wochensoll nicht erreicht wurde“ – Standard aus. An: Sobald eine
+    Woche vorbei ist und ihr Ist unter dem Wochensoll liegt, steht am Sonntag (bei Austritt am
+    letzten Beschäftigungstag) der Hinweis „Wochensoll nicht erreicht“. Gerechnet wird wie im
+    Überstundenkonto: Urlaub, Krankheit und Feiertage an Mo–Fr zählen mit ihrer Gutschrift,
+    unbezahlte Abwesenheit senkt das Soll. Gemeldet werden Wochen ab dem Tag des Einschaltens
+    (das Datum steht unter dem Häkchen). Mit „Erledigt“ lässt sich die Woche abhaken.
 - **Abrechnung:** „Zuschläge“ und „Lohnarten“ (siehe Abschnitt 7)
 - **Konto:**
   - „Tarif & Konto“: „Tarif“; „Einstellungen übertragen“: „Exportieren“ speichert fachliche
@@ -1021,6 +1040,16 @@ einzelnen Geräte entstehen erst am Gerät und stehen nie im MDM.
    vergleichen, dann „Freigeben“ (als neues Tablet oder als Ersatz für ein vorhandenes) oder
    „Ablehnen“. Das Gerät meldet sich innerhalb einer Minute von selbst an. Zu jeder neuen Anfrage
    bekommen Admin und HR eine Benachrichtigung.
+   - Ein Gerät, das wirklich wartet, meldet sich jede Minute und trägt die Marke „wartet gerade“.
+     Nur diese Geräte zählt die Überschrift.
+   - Darunter steht „Meldet sich nicht mehr“: Anfragen, deren Gerät sich seit mehr als drei Minuten
+     nicht gemeldet hat. Dahinter steht kein wartendes Gerät – etwa ein Test der Start-URL im
+     Browser, ein automatisches Prüfgerät des App-Stores (kurz nach dem Veröffentlichen einer Web-App
+     üblich) oder ein Gerät, dessen Browser seine Daten gelöscht hat. „Alle entfernen“ räumt sie
+     weg; nach 24 Stunden verfallen sie von selbst.
+   - Jede Anfrage nennt Browser, System und IP-Adresse des Geräts. Die Angaben kommen vom Gerät
+     bzw. aus dem Netz und sind ungeprüft; sie helfen beim Einordnen, entscheidend bleibt der
+     Prüfcode auf dem Bildschirm.
 
 Regeln:
 
@@ -1041,7 +1070,12 @@ Regeln:
 - Das Gerät speichert seine Anmeldung im Browser. Kein Inkognito- oder InPrivate-Modus, kein
   „Browserdaten beim Beenden löschen“. Vor dem Rollout an einem Pilotgerät prüfen: Nach einem
   Neustart muss es ohne neue Freigabe wieder angemeldet sein.
-- Höchstens 20 offene Anfragen je Standort. Nach 10 falschen Schlüsseln sperrt HR3000 die
+- Wer die Start-URL kennt, kann eine Anfrage erzeugen – auch ein Dienst, dem die URL übergeben
+  wurde (z. B. der App-Store beim Veröffentlichen einer Web-App). Zugriff entsteht daraus nicht:
+  Ohne Freigabe meldet sich kein Gerät an. Deshalb nur freigeben, was auf einem Gerät vor Ort
+  denselben Prüfcode zeigt.
+- Höchstens 20 offene Anfragen je Standort. Ist die Grenze erreicht, macht die älteste Anfrage, die
+  sich nicht mehr meldet, Platz für eine neue. Nach 10 falschen Schlüsseln sperrt HR3000 die
   Registrierung von dieser Adresse für 5 Minuten.
 
 ## 11. Kündigen und Löschen

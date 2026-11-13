@@ -60,6 +60,7 @@ _FLAG_LABELS = {
     "LATE_ARRIVAL": "zu spät gekommen",
     "EARLY_LEAVE": "zu früh gegangen",
     "OUTSIDE_FLEX_FRAME": "außerhalb Gleitzeit-Rahmen",
+    "WEEKLY_TARGET_MISSED": "Wochensoll nicht erreicht",
 }
 _ABSENCE_LABELS = {
     AbsenceType.VACATION: "Urlaub",
@@ -290,7 +291,8 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
 
         # Die eine Regel "Tag offen" (wie "Zu klären"); "Erledigt" gilt, solange der Tag gleich bleibt.
         is_open = needs_review(
-            calc.status, calc.flags, current, today, missing_reported=missing_punch_reported(calc, report_no_punch_days)
+            calc.status, calc.flags, current, today,
+            missing_reported=missing_punch_reported(calc, report_no_punch_days), exempt=calc.review_exempt,
         ) and not review_valid(
             reviews, employee.id, current, day_fingerprint(calc.status, calc.target_minutes, calc.actual_minutes, calc.flags)
         )

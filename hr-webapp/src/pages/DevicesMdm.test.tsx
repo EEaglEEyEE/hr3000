@@ -12,7 +12,12 @@ const device = {
 }
 const enrollment = {
   id: 9, location_id: 1, reported_name: 'NB-FRA-07', verify_code: 'K7Q-4XZ', created_at: '2026-11-08T09:00:00',
-  last_seen_at: '2026-11-08T09:00:00', conflict_device_name: null,
+  last_seen_at: '2026-11-08T09:00:00', conflict_device_name: null, active: true,
+  client: 'Chrome 157 auf Android', client_ip: '203.0.113.7',
+}
+const orphan = {
+  ...enrollment, id: 11, reported_name: null, verify_code: 'BK8-47R', created_at: '2026-11-08T07:57:00',
+  last_seen_at: '2026-11-08T07:58:00', active: false, client: 'Chrome 157 auf Linux', client_ip: '198.51.100.20',
 }
 
 function api(overrides: Record<string, unknown> = {}) {
@@ -23,6 +28,7 @@ function api(overrides: Record<string, unknown> = {}) {
     'GET /devices/enrollment-keys': [],
     'POST /devices/enrollments/{enrollment_id}/approve': (init: ApiInit) => ({ ...device, id: 4, ...(init.body as object) }),
     'DELETE /devices/enrollments/{enrollment_id}': undefined,
+    'POST /devices/enrollments/remove-inactive': { removed: 1 },
     'POST /devices/enrollment-keys': {
       location_id: 1, created_at: '2026-11-08T09:00:00', expires_at: '2026-12-08T09:00:00', last_used_at: null,
       key: KEY, enroll_url: `https://kiosk.firma.hr3000.de/#enroll=${KEY}`,
@@ -81,6 +87,57 @@ describe('Tablets per MDM', () => {
     renderWithProviders(<DevicesPage />)
     await userEvent.click(await screen.findByRole('button', { name: 'Ablehnen' }))
     await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.path === '/devices/enrollments/{enrollment_id}')).toBe(true))
+  })
+
+  it('zeigt Herkunft und „wartet gerade“ und trennt Anfragen ab, die sich nicht mehr melden', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    api({ 'GET /devices/enrollments': [orphan, enrollment] })
+    renderWithProviders(<DevicesPage />)
+    const pending = await screen.findByRole('region', { name: 'Neue Geräte' })
+    // Gezählt werden nur Geräte, die gerade warten
+    expect(within(pending).getByText('Neue Geräte warten auf Freigabe (1)')).toBeInTheDocument()
+    expect(within(pending).getByText('wartet gerade')).toBeInTheDocument()
+    expect(within(pending).getByText('Chrome 157 auf Android · IP-Adresse 203.0.113.7')).toBeInTheDocument()
+
+    const inactive = within(pending).getByRole('group', { name: 'Nicht mehr aktive Anfragen' })
+    expect(within(inactive).getByText('Meldet sich nicht mehr (1)')).toBeInTheDocument()
+    expect(within(inactive).getByText(/BK8-47R/)).toBeInTheDocument()
+    expect(within(inactive).getByText(/zuletzt gemeldet/)).toBeInTheDocument()
+    expect(within(inactive).getByText('Chrome 157 auf Linux · IP-Adresse 198.51.100.20')).toBeInTheDocument()
+    expect(within(inactive).queryByText('wartet gerade')).not.toBeInTheDocument()
+    expect(within(inactive).getByText(/verfallen\s+nach 24 Stunden von selbst/)).toBeInTheDocument()
+  })
+
+  it('entfernt alle Anfragen, die sich nicht mehr melden, nach Rückfrage', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = api({ 'GET /devices/enrollments': [orphan, enrollment] })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+    renderWithProviders(<DevicesPage />)
+    const button = await screen.findByRole('button', { name: 'Alle entfernen' })
+    await userEvent.click(button) // „Abbrechen“ in der Rückfrage: nichts passiert
+    expect(calls.some((c) => c.path === '/devices/enrollments/remove-inactive')).toBe(false)
+    await userEvent.click(button)
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/devices/enrollments/remove-inactive')).toBe(true))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('1 Anfrage(n) entfernen'))
+  })
+
+  it('zeigt ohne wartendes Gerät nur die verwaisten Anfragen und keine Herkunftszeile ohne Angaben', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    api({ 'GET /devices/enrollments': [{ ...orphan, client: null, client_ip: null, last_seen_at: null }] })
+    renderWithProviders(<DevicesPage />)
+    const pending = await screen.findByRole('region', { name: 'Neue Geräte' })
+    expect(within(pending).getByText('Neue Geräte warten auf Freigabe (0)')).toBeInTheDocument()
+    expect(within(pending).queryByText(/IP-Adresse/)).not.toBeInTheDocument()
+    expect(within(pending).queryByText(/zuletzt gemeldet/)).not.toBeInTheDocument()
+  })
+
+  it('zeigt ohne verwaiste Anfragen keinen zweiten Abschnitt', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    api()
+    renderWithProviders(<DevicesPage />)
+    await screen.findByRole('region', { name: 'Neue Geräte' })
+    expect(screen.queryByRole('group', { name: 'Nicht mehr aktive Anfragen' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Alle entfernen' })).not.toBeInTheDocument()
   })
 
   it('erzeugt einen Schlüssel und zeigt die Start-URL nur einmal', async () => {

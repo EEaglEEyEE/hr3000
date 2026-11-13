@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
 import { useUpdateSettingsMutation, type Settings } from '../../api/queries/settings'
-import { DAY_FLAG_LABELS } from '../../lib/labels'
+import { DAY_FLAG_LABELS, WEEKLY_TARGET_MISSED } from '../../lib/labels'
 import { formatDate } from '../../lib/format'
 import {
   CoreTimeDaysEditor,
@@ -329,7 +329,7 @@ export function OpenDayChecksCard({ settings }: { settings: Settings }) {
           </p>
         )}
         {Object.entries(DAY_FLAG_LABELS)
-          .filter(([flag]) => !PUNCTUALITY_FLAGS.includes(flag))
+          .filter(([flag]) => !PUNCTUALITY_FLAGS.includes(flag) && flag !== WEEKLY_TARGET_MISSED)
           .map(([flag, label]) => (
           <label key={flag} className="flex items-center gap-2 pl-1 text-sm">
             <input
@@ -346,6 +346,44 @@ export function OpenDayChecksCard({ settings }: { settings: Settings }) {
           </label>
         ))}
         <p className="pl-1 text-xs text-slate-500">Zu spät, zu früh und Gleitzeit-Rahmen: unter „Arbeitszeit“ → „Kernarbeitszeit &amp; Gleitzeit“.</p>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm">Mitarbeiter mit dem Arbeitszeitmodell „Flexibel ohne feste Tage“:</span>
+        <label className="flex items-center gap-2 pl-1 text-sm">
+          <input
+            type="checkbox"
+            checked={settings.report_flexible_days}
+            onChange={(e) => void save({ report_flexible_days: e.target.checked })}
+          />
+          Tage dieser Mitarbeiter melden (unvollständige oder widersprüchliche Stempelungen, Sonderfälle)
+        </label>
+        {!settings.report_flexible_days && (
+          <p className="pl-6 text-sm text-slate-500">
+            Tage dieser Mitarbeiter gelten nirgends als offen – auch nicht beim Monatsabschluss, im Monatsbericht und im
+            Lohn-Export. Status und Zeiten bleiben am Tag sichtbar. Ein Tag ohne auswertbare Stempelung (z. B. „Gehen“
+            vergessen) zählt mit 0 Stunden, es wird nichts geschätzt.
+          </p>
+        )}
+        <label className="flex items-center gap-2 pl-1 text-sm">
+          <input
+            type="checkbox"
+            checked={!disabled.has(WEEKLY_TARGET_MISSED)}
+            onChange={(e) => {
+              const next = new Set(disabled)
+              if (e.target.checked) next.delete(WEEKLY_TARGET_MISSED)
+              else next.add(WEEKLY_TARGET_MISSED)
+              void save({ disabled_day_flags: [...next] })
+            }}
+          />
+          Wochen melden, in denen das Wochensoll nicht erreicht wurde
+        </label>
+        {!disabled.has(WEEKLY_TARGET_MISSED) && (
+          <p className="pl-6 text-sm text-slate-500">
+            Der Hinweis steht am Sonntag der Woche (bei Austritt am letzten Beschäftigungstag), sobald die Woche vorbei ist –
+            mit derselben Rechnung wie im Überstundenkonto.
+            {settings.weekly_target_from ? ` Gemeldet werden Wochen ab dem ${formatDate(settings.weekly_target_from)}.` : ''}
+          </p>
+        )}
       </div>
     </SettingsCard>
   )

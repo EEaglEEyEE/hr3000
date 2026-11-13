@@ -36,7 +36,14 @@ from app.services.audit_service import log_action
 from app.services.scope_service import ensure_employee_visible
 from app.services.document_service import store_document
 from app.services.notification_service import notify_period_disputed, notify_period_submitted
-from app.services.timesheet_service import day_fingerprint, day_reviews, needs_review, review_valid, utc_today
+from app.services.timesheet_service import (
+    day_fingerprint,
+    day_reviews,
+    needs_review,
+    refresh_stale_day_cache,
+    review_valid,
+    utc_today,
+)
 from app.services.period_service import (
     build_month_report,
     month_bounds,
@@ -438,7 +445,9 @@ async def period_overview(
             )
         ).scalars().all():
             closures[closure.employee_id] = closure
-        # Dieselbe Regel "Tag offen" wie "Zu klären" (inkl. Fingerabdruck von "Erledigt").
+        # Dieselbe Regel "Tag offen" wie "Zu klären" (inkl. Fingerabdruck von "Erledigt") – aus dem
+        # Tages-Cache, der nach Änderungen an Einstellungen, Modellen usw. erst nachgerechnet wird.
+        await refresh_stale_day_cache(db, actor.tenant_id)
         today = utc_today()
         reviews = await day_reviews(db, ids, first, last)
         rows = await db.execute(
@@ -456,7 +465,7 @@ async def period_overview(
         )
         for summary in rows.scalars().all():
             flags = summary.flags.split(",") if summary.flags else []
-            if not needs_review(summary.status, flags, summary.work_date, today):
+            if not needs_review(summary.status, flags, summary.work_date, today, exempt=summary.review_exempt):
                 continue
             fingerprint = day_fingerprint(summary.status, summary.target_minutes, summary.actual_minutes, flags)
             if not review_valid(reviews, summary.employee_id, summary.work_date, fingerprint):

@@ -110,6 +110,8 @@ export function settings(overrides: Partial<Schemas['SettingsResponse']> = {}): 
     vacation_carry_over_expiry: null,
     disabled_day_flags: [],
     report_days_without_punches: true,
+    report_flexible_days: true,
+    weekly_target_from: null,
     max_shift_span_hours: 16,
     core_time_start: null,
     core_time_end: null,

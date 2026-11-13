@@ -17,8 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useChangeRequestsQuery } from '../api/queries/changeRequests'
 import { PendingChangeRequests } from '../components/employees/ChangeRequests'
 import { Button } from '../components/ui/button'
-import { DAY_FLAG_LABELS } from '../lib/labels'
-import { formatDate, formatMinutesAsHours } from '../lib/format'
+import { DAY_FLAG_LABELS, WEEKLY_TARGET_MISSED } from '../lib/labels'
+import { formatDate, formatHoursMinutes, formatMinutesAsHours } from '../lib/format'
 import { DayStatusBadge } from '../components/shared/DayStatusBadge'
 import { PendingCorrectionRequests } from '../components/punches/CorrectionRequests'
 import { BalanceLimitsNotice, MonthlyCapsNotice } from '../components/timesheet/MonthlyCapsNotice'
@@ -142,7 +142,7 @@ function OpenDaysList() {
         Tage mit einer offenen (unvollständigen) Stempelung – z.B. ein „Kommen“ ohne
         zugehöriges „Gehen“ –, einer widersprüchlichen Buchungsfolge, einem Arbeitstag ganz ohne
         Stempelung oder einem Sonderfall (siehe Einstellungen, z.B. außerplanmäßig gestempelt, trotz
-        Urlaub/Krankheit, an einem Feiertag, zu spät). Korrigierte Tage verschwinden automatisch. Mit
+        Urlaub/Krankheit, an einem Feiertag, zu spät, Wochensoll nicht erreicht). Korrigierte Tage verschwinden automatisch. Mit
         „Erledigt“ lässt sich ein Tag auch bewusst so stehen lassen, wie er ist – fehlende Zeiten werden
         dabei nicht ergänzt; ändert sich der Tag später, erscheint er wieder. Dieselben Tage zählen beim
         Monatsabschluss, im Monatsbericht und im Lohn-Export als offen.
@@ -178,7 +178,10 @@ function OpenDaysList() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {openDaysQuery.data.map((day) => (
+            {openDaysQuery.data.map((day) => {
+              // „Wochensoll nicht erreicht“ steht am Abrechnungstag der Woche – oft ohne eigene Stempelung.
+              const weekOnly = day.flags.includes(WEEKLY_TARGET_MISSED) && !day.times
+              return (
               <TableRow
                 key={`${day.employee_id}-${day.work_date}`}
                 className="cursor-pointer"
@@ -195,11 +198,16 @@ function OpenDaysList() {
                   )}
                 </TableCell>
                 <TableCell>
-                  <DayStatusBadge status={day.status} />
+                  {weekOnly ? <span className="text-slate-400">–</span> : <DayStatusBadge status={day.status} />}
                 </TableCell>
                 <TableCell className="text-sm text-amber-800">
                   {day.flags.map((flag) => DAY_FLAG_LABELS[flag] ?? flag).join(', ') ||
                     (day.status === 'ERROR' ? 'Widersprüchliche Buchungen' : 'Stempelung fehlt')}
+                  {day.week_target_minutes != null && day.week_actual_minutes != null && (
+                    <span className="block text-xs text-slate-500">
+                      Woche: {formatHoursMinutes(day.week_actual_minutes)} von {formatHoursMinutes(day.week_target_minutes)} Std.
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right">
                   {isFullHr ? (
@@ -210,7 +218,7 @@ function OpenDaysList() {
                       onClick={(event) => {
                         event.stopPropagation()
                         // Fehlende/widersprüchliche Stempelung: bewusst bestätigen lassen – der Tag zählt dann so, wie er ist.
-                        const incomplete = day.status === 'ERROR' || day.status === 'OPEN_MISSING_PUNCH'
+                        const incomplete = !weekOnly && (day.status === 'ERROR' || day.status === 'OPEN_MISSING_PUNCH')
                         if (
                           incomplete &&
                           !window.confirm(
@@ -239,7 +247,8 @@ function OpenDaysList() {
                   )}
                 </TableCell>
               </TableRow>
-            ))}
+              )
+            })}
             {openDaysQuery.data.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-slate-500">

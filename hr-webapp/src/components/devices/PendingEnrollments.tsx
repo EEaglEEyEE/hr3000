@@ -4,6 +4,7 @@ import {
   useApproveEnrollmentMutation,
   useEnrollmentsQuery,
   useRejectEnrollmentMutation,
+  useRemoveInactiveEnrollmentsMutation,
   type Device,
   type DeviceEnrollment,
 } from '../../api/queries/devices'
@@ -23,9 +24,13 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
   const enrollmentsQuery = useEnrollmentsQuery()
   const reject = useRejectEnrollmentMutation()
   const [approving, setApproving] = useState<DeviceEnrollment | undefined>(undefined)
+  const removeInactive = useRemoveInactiveEnrollmentsMutation()
   const items = enrollmentsQuery.data ?? []
   if (items.length === 0) return null
   const locationName = new Map(locations.map((location) => [location.id, location.name]))
+  // Ein wartendes Gerät meldet sich jede Minute. Was das nicht mehr tut, steht kein Gerät mehr dahinter.
+  const waiting = items.filter((item) => item.active)
+  const inactive = items.filter((item) => !item.active)
 
   function handleReject(item: DeviceEnrollment) {
     if (
@@ -37,26 +42,41 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
     }
   }
 
-  return (
-    <section aria-label="Neue Geräte" className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <h2 className="text-base font-semibold text-amber-900">Neue Geräte warten auf Freigabe ({items.length})</h2>
-      <p className="mt-1 text-sm text-amber-800">
-        Vor dem Freigeben den Prüfcode mit dem Code auf dem Bildschirm des Geräts vergleichen.
-      </p>
-      <ul className="mt-3 flex flex-col gap-2">
-        {items.map((item) => (
+  function handleRemoveInactive() {
+    if (
+      window.confirm(
+        `${inactive.length} Anfrage(n) entfernen, deren Gerät sich nicht mehr meldet? Ein Gerät, das doch noch wartet, fragt nach einem Neustart der Kiosk-App erneut an.`,
+      )
+    ) {
+      removeInactive.mutate()
+    }
+  }
+
+  function row(item: DeviceEnrollment) {
+    return (
           <li
             key={item.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-white p-3"
+            className={`flex flex-wrap items-center justify-between gap-3 rounded-md border bg-white p-3 ${item.active ? 'border-amber-200' : 'border-slate-200'}`}
           >
             <div className="min-w-0">
               <p className="font-medium text-slate-900">
                 {item.reported_name ?? 'Gerät ohne Namen'}
                 <span className="ml-2 font-mono text-sm font-normal text-slate-600">Prüfcode {item.verify_code}</span>
+                {item.active && (
+                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                    wartet gerade
+                  </span>
+                )}
               </p>
               <p className="text-xs text-slate-500">
                 Standort {locationName.get(item.location_id) ?? '–'} · gemeldet {formatDateTime(item.created_at)}
+                {!item.active && item.last_seen_at ? ` · zuletzt gemeldet ${formatDateTime(item.last_seen_at)}` : ''}
               </p>
+              {(item.client || item.client_ip) && (
+                <p className="text-xs text-slate-500">
+                  {[item.client, item.client_ip ? `IP-Adresse ${item.client_ip}` : null].filter(Boolean).join(' · ')}
+                </p>
+              )}
               {item.conflict_device_name && (
                 <p className="mt-1 text-xs font-medium text-red-600">
                   Achtung: Das Tablet „{item.conflict_device_name}“ mit diesem Gerätenamen ist bereits in Benutzung. Nur
@@ -65,7 +85,7 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => setApproving(item)}>
+              <Button size="sm" variant={item.active ? undefined : 'outline'} onClick={() => setApproving(item)}>
                 Freigeben
               </Button>
               <Button size="sm" variant="outline" disabled={reject.isPending} onClick={() => handleReject(item)}>
@@ -73,8 +93,32 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
               </Button>
             </div>
           </li>
-        ))}
-      </ul>
+    )
+  }
+
+  return (
+    <section aria-label="Neue Geräte" className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <h2 className="text-base font-semibold text-amber-900">Neue Geräte warten auf Freigabe ({waiting.length})</h2>
+      <p className="mt-1 text-sm text-amber-800">
+        Vor dem Freigeben den Prüfcode mit dem Code auf dem Bildschirm des Geräts vergleichen.
+      </p>
+      {waiting.length > 0 && <ul className="mt-3 flex flex-col gap-2">{waiting.map(row)}</ul>}
+      {inactive.length > 0 && (
+        <div className="mt-4" role="group" aria-label="Nicht mehr aktive Anfragen">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-800">Meldet sich nicht mehr ({inactive.length})</h3>
+            <Button size="sm" variant="outline" disabled={removeInactive.isPending} onClick={handleRemoveInactive}>
+              Alle entfernen
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-slate-600">
+            Ein wartendes Gerät meldet sich jede Minute. Diese Anfragen tun das nicht mehr – etwa ein Test im Browser, ein
+            automatisches Prüfgerät des App-Stores oder ein Gerät, dessen Browser seine Daten gelöscht hat. Sie verfallen
+            nach 24 Stunden von selbst.
+          </p>
+          <ul className="mt-2 flex flex-col gap-2">{inactive.map(row)}</ul>
+        </div>
+      )}
       <Dialog open={approving !== undefined} onOpenChange={(open) => !open && setApproving(undefined)}>
         <DialogContent>
           <DialogHeader>

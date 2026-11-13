@@ -70,6 +70,11 @@ class DayCalculation:
     credit_parts: list[tuple[AbsenceType, int]] = field(default_factory=list)
     # Halber Feiertag (z. B. Heiligabend): Abwesenheitstage zählen an diesem Tag nur halb.
     leave_weight: float = 1.0
+    # Tag eines flexiblen Modells (Wochensoll ohne feste Tage) – auch wenn der Wochenanteil 0 ist.
+    flexible: bool = False
+    # Flexibler Tag, den der Mandant nicht melden lässt (AppSettings.report_flexible_days aus): nie
+    # "offen", außer mit dem Hinweis "Wochensoll nicht erreicht" (siehe needs_review).
+    review_exempt: bool = False
 
 
 class DayFlag:
@@ -83,6 +88,9 @@ class DayFlag:
     LATE_ARRIVAL = "LATE_ARRIVAL"  # nach Schicht-/Kernzeitbeginn (+ Toleranz) gekommen
     EARLY_LEAVE = "EARLY_LEAVE"  # vor Schicht-/Kernzeitende (− Toleranz) gegangen
     OUTSIDE_FLEX_FRAME = "OUTSIDE_FLEX_FRAME"  # vor/nach dem Gleitzeit-Rahmen gestempelt
+    # Flexibles Modell: die abgerechnete Woche blieb unter dem Wochensoll – steht am Abrechnungstag
+    # (Sonntag bzw. letzter Beschäftigungstag), auch ohne Stempelung an diesem Tag.
+    WEEKLY_TARGET_MISSED = "WEEKLY_TARGET_MISSED"
 
 
 DAY_FLAGS = [
@@ -94,6 +102,7 @@ DAY_FLAGS = [
     DayFlag.LATE_ARRIVAL,
     DayFlag.EARLY_LEAVE,
     DayFlag.OUTSIDE_FLEX_FRAME,
+    DayFlag.WEEKLY_TARGET_MISSED,
 ]
 
 
@@ -155,11 +164,65 @@ async def calculate_day(
         calculation.flags.append(DayFlag.OUTSIDE_EMPLOYMENT)
     if calculation.exceeds_max_daily_minutes:
         calculation.flags.append(DayFlag.OVER_MAX_DAILY)
-    if calculation.flags:
+    if calculation.flags or calculation.flexible:
         # Mandant kann einzelne Sonderfälle abschalten (Einstellungen) – der Tag zählt dann normal.
-        _, disabled = await _tenant_rules(db, employee.tenant_id)
-        calculation.flags = [f for f in calculation.flags if f not in disabled]
+        rules = await _review_rules(db, employee.tenant_id)
+        calculation.flags = [f for f in calculation.flags if f not in rules.disabled]
+        if calculation.flexible:
+            if not rules.report_flexible_days:
+                # Tage flexibler Modelle werden nicht gemeldet: Status und Zeiten bleiben sichtbar,
+                # "offen" ist der Tag höchstens noch wegen eines verfehlten Wochensolls.
+                calculation.review_exempt = True
+                calculation.flags = []
+            if DayFlag.WEEKLY_TARGET_MISSED not in rules.disabled and (
+                rules.weekly_target_from is None or work_date >= rules.weekly_target_from
+            ):
+                week = await flexible_week(db, employee, work_date, tz, calculation)
+                if week is not None and week.actual_minutes < week.target_minutes:
+                    calculation.flags.append(DayFlag.WEEKLY_TARGET_MISSED)
     return calculation
+
+
+@dataclass
+class FlexibleWeek:
+    """Wochenabrechnung eines flexiblen Modells (Minuten), wie sie ins Überstundenkonto geht."""
+
+    target_minutes: int
+    actual_minutes: int
+
+
+async def flexible_week(
+    db: AsyncSession, employee: Employee, day: date, tz: ZoneInfo, day_calculation: DayCalculation | None = None
+) -> FlexibleWeek | None:
+    """Soll und Ist der Woche, die an `day` abgerechnet wird – None, wenn `day` kein Abrechnungstag
+    ist. Dieselbe Rechnung wie in rebuild_balance: abgerechnet wird am Sonntag bzw. am letzten
+    Beschäftigungstag und erst, wenn der Tag vorbei ist; es zählen die flexiblen Tage der Woche ab
+    Montag (frühestens ab Kontobeginn), Soll = Summe der Wochenanteile, Ist = Summe der Tages-Ist-Zeiten
+    (ein Tag ohne auswertbare Stempelung zählt 0 – es wird nichts geschätzt)."""
+    if employee.termination_date is not None and day > employee.termination_date:
+        return None
+    if day.weekday() != 6 and day != employee.termination_date:
+        return None
+    if day >= today_in(tz):
+        return None
+    start = await balance_start(db, employee)
+    if start is None or day < start:
+        return None
+    target, actual = 0.0, 0
+    current = max(start, day - timedelta(days=day.weekday()))
+    while current <= day:
+        calc = (
+            day_calculation
+            if current == day and day_calculation is not None
+            else await _calculate_day_core(db, employee, current, tz)
+        )
+        if calc.flexible_share:
+            target += calc.flexible_share
+            actual += calc.actual_minutes or 0
+        current += timedelta(days=1)
+    if not target:
+        return None
+    return FlexibleWeek(round(target), actual)
 
 
 async def _calculate_day_core(db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo) -> DayCalculation:
@@ -328,6 +391,7 @@ async def _resolve_planned_day(
         calculation = await _resolve_flexible_day(
             db, employee, work_date, tz, day_punches, plan.flexible_weekly_minutes, credit_factor=factor
         )
+        calculation.flexible = True
         calculation.flexible_share = plan.flexible_weekly_minutes / 7
         if work_date.weekday() < 5:
             if calculation.unpaid_portion:
@@ -636,18 +700,32 @@ def day_fingerprint(status: SummaryStatus, target: int | None, actual: int | Non
 
 
 def needs_review(
-    status: SummaryStatus, flags: list[str], work_date: date, today: date, *, missing_reported: bool = True
+    status: SummaryStatus,
+    flags: list[str],
+    work_date: date,
+    today: date,
+    *,
+    missing_reported: bool = True,
+    exempt: bool = False,
 ) -> bool:
     """Die eine Regel "Tag offen" für "Zu klären", Monatsabschluss, Monatsbericht und Lohn-Export:
     widersprüchlich; fehlende Stempelung (vergangene Tage); ein gemeldeter Sonderfall. Heute zählt
     nur, was schon feststeht (Widerspruch oder abgeschlossener Tag mit Sonderfall); eine laufende
-    Schicht ist nicht offen, ein liegengebliebenes "anwesend" älter als einen Tag schon."""
+    Schicht ist nicht offen, ein liegengebliebenes "anwesend" älter als einen Tag schon.
+
+    exempt: Tag eines flexiblen Modells, dessen Tage der Mandant nicht melden lässt
+    (DayCalculation.review_exempt bzw. DailySummary.review_exempt) – offen ist er dann nur, wenn die
+    Woche ihr Soll verfehlt hat. Dieser Hinweis steht am Abrechnungstag der Woche und macht ihn auch
+    ohne Stempelung offen."""
+    week_missed = DayFlag.WEEKLY_TARGET_MISSED in flags
+    if exempt:
+        return week_missed
     if status == SummaryStatus.ERROR:
         return True
     if work_date >= today:
         return status == SummaryStatus.COMPLETE and bool(flags)
     if status == SummaryStatus.OPEN_MISSING_PUNCH:
-        return missing_reported
+        return missing_reported or week_missed
     if status in (SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND):
         return work_date < today - timedelta(days=1)
     return bool(flags)
@@ -702,6 +780,35 @@ async def _tenant_rules(db: AsyncSession, tenant_id: int) -> tuple[timedelta, se
         return MAX_SHIFT_SPAN, set()
     span_hours, disabled = row
     return timedelta(hours=span_hours or 16), {f for f in (disabled or "").split(",") if f}
+
+
+@dataclass
+class ReviewRules:
+    """Was der Mandant unter "Zu klären" melden lässt (Einstellungen)."""
+
+    disabled: set[str] = field(default_factory=set)  # abgeschaltete Sonderfälle
+    report_flexible_days: bool = True  # Tage flexibler Modelle wie alle anderen melden
+    weekly_target_from: date | None = None  # "Wochensoll nicht erreicht" erst ab diesem Abrechnungstag
+
+
+async def _review_rules(db: AsyncSession, tenant_id: int) -> ReviewRules:
+    row = (
+        await db.execute(
+            select(
+                AppSettings.disabled_day_flags, AppSettings.report_flexible_days, AppSettings.weekly_target_from
+            ).where(AppSettings.tenant_id == tenant_id)
+        )
+    ).first()
+    if row is None:
+        # Noch keine Einstellungen gespeichert: nichts abgeschaltet (wie bisher) – nur der neue
+        # Hinweis "Wochensoll nicht erreicht" bleibt aus, bis er bewusst eingeschaltet wird.
+        return ReviewRules(disabled={DayFlag.WEEKLY_TARGET_MISSED})
+    disabled, report_flexible, weekly_from = row
+    return ReviewRules(
+        disabled={f for f in (disabled or "").split(",") if f},
+        report_flexible_days=True if report_flexible is None else bool(report_flexible),
+        weekly_target_from=weekly_from,
+    )
 
 
 def assign_shift_days(punches: list[Punch], tz: ZoneInfo, max_span: timedelta = MAX_SHIFT_SPAN) -> dict[int, date]:
@@ -1469,7 +1576,8 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
         # Tages-Cache ("Zu klären"): Tage mit Stempelung sowie vergangene Tage mit Soll – Letztere nur,
         # wenn der Mandant Arbeitstage ohne Stempelung meldet (sonst sind sie nie "zu klären").
         summary = summaries.get(day)
-        if has_punch or (calc.target_minutes and day < today and report_no_punch_days):
+        # Dazu Tage mit einem Hinweis ohne Stempelung ("Wochensoll nicht erreicht" am Abrechnungstag).
+        if has_punch or calc.flags or (calc.target_minutes and day < today and report_no_punch_days):
             if summary is None:
                 summary = DailySummary(employee_id=locked.id, work_date=day)
                 db.add(summary)
@@ -1477,6 +1585,7 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
             summary.target_minutes = calc.target_minutes or 0
             summary.status = calc.status
             summary.flags = ",".join(calc.flags) or None
+            summary.review_exempt = calc.review_exempt
         elif summary is not None:
             await db.delete(summary)
 
@@ -1534,6 +1643,41 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
 
     locked.balance_through = min(end, yesterday)
     await db.commit()
+
+
+async def refresh_stale_day_cache(db: AsyncSession, tenant_id: int) -> None:
+    """Korrekturen über Abwesenheiten, Feiertage, Arbeitszeitmodelle, Schichtplan usw. markieren das
+    Konto nur als veraltet (invalidate_balance) – der Tages-Cache, aus dem "Zu klären" und die
+    Übersicht des Monatsabschlusses lesen, wäre sonst bis zum nächsten Öffnen des Mitarbeiters
+    veraltet. Daher die betroffenen Mitarbeiter vorher nachrechnen (nur ab dem veralteten Tag)."""
+    yesterday = utc_today() - timedelta(days=1)
+    stale = (
+        await db.execute(
+            select(Employee).where(
+                Employee.tenant_id == tenant_id,
+                or_(
+                    Employee.balance_through.is_(None),
+                    Employee.balance_through < yesterday,
+                    # Frühere Tage, die noch als "anwesend" zwischengespeichert sind, können inzwischen
+                    # über die maximale Schichtlänge hinaus offen sein (vergessenes "Gehen").
+                    Employee.id.in_(
+                        select(DailySummary.employee_id).where(
+                            DailySummary.status.in_([SummaryStatus.PRESENT, SummaryStatus.ON_BREAK, SummaryStatus.ON_ERRAND]),
+                            DailySummary.work_date < utc_today(),
+                        )
+                    ),
+                ),
+                # Ausgeschiedene sind nur bis zum Austritt zu rechnen (danach bleibt der Marker dort stehen).
+                or_(
+                    Employee.termination_date.is_(None),
+                    Employee.balance_through.is_(None),
+                    Employee.balance_through < Employee.termination_date,
+                ),
+            )
+        )
+    ).scalars().all()
+    for employee in stale:
+        await rebuild_balance(db, employee)
 
 
 async def ensure_balance_current(db: AsyncSession, employee: Employee) -> None:

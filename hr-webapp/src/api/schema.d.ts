@@ -632,11 +632,32 @@ export interface paths {
         };
         /**
          * List Enrollments
-         * @description Geräte, die sich mit einem Registrierungsschlüssel gemeldet haben und auf Freigabe warten.
+         * @description Geräte, die sich mit einem Registrierungsschlüssel gemeldet haben und auf Freigabe warten –
+         *     wartende zuerst. Anfragen, deren Gerät sich seit 24 Stunden nicht gemeldet hat, verfallen hier.
          */
         get: operations["list_enrollments_devices_enrollments_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollments/remove-inactive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Inactive
+         * @description Alle Anfragen entfernen, deren Gerät sich nicht mehr meldet. Wartende Geräte bleiben stehen.
+         */
+        post: operations["remove_inactive_devices_enrollments_remove_inactive_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7415,6 +7436,15 @@ export interface components {
             last_seen_at: string | null;
             /** Conflict Device Name */
             conflict_device_name?: string | null;
+            /**
+             * Active
+             * @default true
+             */
+            active: boolean;
+            /** Client */
+            client?: string | null;
+            /** Client Ip */
+            client_ip?: string | null;
         };
         /** DeviceLoginRequest */
         DeviceLoginRequest: {
@@ -8102,6 +8132,11 @@ export interface components {
             device_id?: number | null;
             /** Name */
             name?: string | null;
+        };
+        /** EnrollmentCleanupResponse */
+        EnrollmentCleanupResponse: {
+            /** Removed */
+            removed: number;
         };
         /** EnrollmentKeyCreateRequest */
         EnrollmentKeyCreateRequest: {
@@ -9059,6 +9094,10 @@ export interface components {
             times: string;
             /** Actual Minutes */
             actual_minutes?: number | null;
+            /** Week Target Minutes */
+            week_target_minutes?: number | null;
+            /** Week Actual Minutes */
+            week_actual_minutes?: number | null;
         };
         /** OrgChartDepartment */
         OrgChartDepartment: {
@@ -10510,6 +10549,13 @@ export interface components {
              * @default true
              */
             report_days_without_punches: boolean;
+            /**
+             * Report Flexible Days
+             * @default true
+             */
+            report_flexible_days: boolean;
+            /** Weekly Target From */
+            weekly_target_from?: string | null;
             /** Datev Consultant Number */
             datev_consultant_number?: string | null;
             /** Datev Client Number */
@@ -10751,6 +10797,8 @@ export interface components {
             disabled_day_flags?: string[] | null;
             /** Report Days Without Punches */
             report_days_without_punches?: boolean | null;
+            /** Report Flexible Days */
+            report_flexible_days?: boolean | null;
             /** Datev Consultant Number */
             datev_consultant_number?: string | null;
             /** Datev Client Number */
@@ -14355,6 +14403,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceEnrollmentResponse"][];
+                };
+            };
+        };
+    };
+    remove_inactive_devices_enrollments_remove_inactive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentCleanupResponse"];
                 };
             };
         };

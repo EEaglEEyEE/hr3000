@@ -12,10 +12,11 @@ Das MDM (Intune, Endpoint Central, …) setzt für eine Gerätegruppe die Start-
 
 Der Schlüssel allein übernimmt also nie einen benutzten Eintrag – auch nicht nach „Kopplung aufheben“.
 """
+import re
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,12 @@ from app.services.pairing_service import new_device_token, new_verify_code, toke
 
 # Offene Registrierungen je Standort – bremst Fluten mit einem abgeflossenen Schlüssel
 PENDING_LIMIT_PER_LOCATION = 20
+# Ein wartendes Gerät meldet sich jede Minute (Kiosk-App). Wer sich so lange nicht gemeldet hat, gilt als
+# „meldet sich nicht mehr“ – dahinter steht kein wartendes Gerät (Test im Browser, Prüfgerät des
+# App-Stores, Browser hat seine Daten gelöscht).
+ACTIVE_WINDOW = timedelta(minutes=3)
+# So lange nach der letzten Meldung verfällt eine offene Registrierung von selbst.
+STALE_AFTER = timedelta(hours=24)
 
 
 def _now() -> datetime:
@@ -37,6 +44,105 @@ def _now() -> datetime:
 def new_enrollment_key() -> str:
     """256 Bit, URL-tauglich (steht in der Start-URL hinter #enroll=)."""
     return secrets.token_urlsafe(32)
+
+
+def enrollment_active(enrollment: DeviceEnrollment, now: datetime | None = None) -> bool:
+    """Wartet das Gerät gerade? (letzte Meldung innerhalb von ACTIVE_WINDOW)"""
+    seen = enrollment.last_seen_at or enrollment.created_at
+    return seen is not None and seen >= (now or _now()) - ACTIVE_WINDOW
+
+
+_BROWSERS = (
+    (r"HeadlessChrome/(\d+)", "Chrome ohne Bildschirm"),
+    (r"Edg(?:e|A|iOS)?/(\d+)", "Edge"),
+    (r"OPR/(\d+)", "Opera"),
+    (r"SamsungBrowser/(\d+)", "Samsung Internet"),
+    (r"(?:Firefox|FxiOS)/(\d+)", "Firefox"),
+    (r"(?:Chrome|CriOS)/(\d+)", "Chrome"),
+    (r"Version/(\d+)[\d.]* (?:Mobile/\S+ )?Safari", "Safari"),
+)
+_SYSTEMS = (
+    ("Android", "Android"),
+    ("iPhone", "iOS"),
+    ("iPad", "iOS"),
+    ("Windows", "Windows"),
+    ("CrOS", "ChromeOS"),
+    ("Mac OS X", "macOS"),
+    ("Linux", "Linux"),
+)
+
+
+def describe_client(user_agent: str | None) -> str | None:
+    """Kurzform der Browser-Kennung für die Freigabeliste, z. B. „Chrome 157 auf Android“. Die Kennung
+    kommt ungeprüft vom Gerät – sie hilft beim Einordnen, beweist aber nichts."""
+    if not user_agent or not user_agent.strip():
+        return None
+    browser = None
+    for pattern, label in _BROWSERS:
+        match = re.search(pattern, user_agent)
+        if match:
+            browser = f"{label} {match.group(1)}"
+            break
+    system = next((label for marker, label in _SYSTEMS if marker in user_agent), None)
+    if browser and system:
+        return f"{browser} auf {system}"
+    if browser or system:
+        return browser or system
+    return user_agent.strip()[:60]
+
+
+async def purge_stale_enrollments(db: AsyncSession, tenant_id: int) -> int:
+    """Offene Registrierungen entfernen, deren Gerät sich seit STALE_AFTER nicht mehr gemeldet hat.
+    Schreibt einen Protokolleintrag, committet nicht."""
+    limit = _now() - STALE_AFTER
+    rows = (
+        await db.execute(
+            select(DeviceEnrollment).where(
+                DeviceEnrollment.tenant_id == tenant_id,
+                or_(
+                    DeviceEnrollment.last_seen_at < limit,
+                    DeviceEnrollment.last_seen_at.is_(None) & (DeviceEnrollment.created_at < limit),
+                ),
+            )
+        )
+    ).scalars().all()
+    return await _remove_enrollments(db, tenant_id, list(rows), None, "nach 24 Stunden ohne Meldung verfallen")
+
+
+async def remove_inactive_enrollments(db: AsyncSession, tenant_id: int, actor_account_id: int | None) -> int:
+    """Alle offenen Registrierungen entfernen, deren Gerät sich nicht mehr meldet (Schaltfläche „Alle
+    entfernen“). Wartende Geräte bleiben. Committet nicht."""
+    now = _now()
+    rows = (
+        await db.execute(select(DeviceEnrollment).where(DeviceEnrollment.tenant_id == tenant_id))
+    ).scalars().all()
+    inactive = [row for row in rows if not enrollment_active(row, now)]
+    return await _remove_enrollments(db, tenant_id, inactive, actor_account_id, "entfernt (Gerät meldet sich nicht mehr)")
+
+
+async def _remove_enrollments(
+    db: AsyncSession, tenant_id: int, rows: list[DeviceEnrollment], actor_account_id: int | None, what: str
+) -> int:
+    if not rows:
+        return 0
+    codes = ", ".join(row.verify_code for row in rows[:20]) + (" …" if len(rows) > 20 else "")
+    for row in rows:
+        await db.delete(row)
+    log_action(
+        db, tenant_id=tenant_id, actor_account_id=actor_account_id, action=AuditAction.DEVICE_ENROLLMENT,
+        entity_type="tenant", entity_id=tenant_id,
+        detail=f"{len(rows)} offene Registrierung(en) {what} (Prüfcodes {codes})",
+    )
+    return len(rows)
+
+
+async def touch_pending_enrollment(db: AsyncSession, enrollment: DeviceEnrollment) -> None:
+    """Das wartende Gerät hat sich gemeldet (Anmeldeversuch mit seinem Token). Höchstens alle 30 s
+    schreiben; committet."""
+    now = _now()
+    if enrollment.last_seen_at is None or enrollment.last_seen_at < now - timedelta(seconds=30):
+        enrollment.last_seen_at = now
+        await db.commit()
 
 
 def device_name_matches(column, name: str):
@@ -78,7 +184,8 @@ def bind_device(device: Device, installation_hash: str, new_token_hash: str) -> 
 
 
 async def enroll_device(
-    db: AsyncSession, tenant_id: int, key: str, installation_id: str, name: str | None
+    db: AsyncSession, tenant_id: int, key: str, installation_id: str, name: str | None,
+    *, user_agent: str | None = None, client_ip: str | None = None,
 ) -> DeviceEnrollResponse:
     key_row = await _find_key(db, tenant_id, key)
     now = _now()
@@ -148,14 +255,25 @@ async def enroll_device(
         )
     ).scalar_one_or_none()
     token = new_device_token()
+    origin = {"user_agent": (user_agent or "").strip()[:300] or None, "client_ip": (client_ip or "")[:45] or None}
     if enrollment is None:
-        pending = (
+        await purge_stale_enrollments(db, tenant_id)
+        waiting = (
             await db.execute(
-                select(func.count(DeviceEnrollment.id)).where(
-                    DeviceEnrollment.tenant_id == tenant_id, DeviceEnrollment.location_id == key_row.location_id
-                )
+                select(DeviceEnrollment)
+                .where(DeviceEnrollment.tenant_id == tenant_id, DeviceEnrollment.location_id == key_row.location_id)
+                .order_by(DeviceEnrollment.last_seen_at.asc(), DeviceEnrollment.id.asc())
             )
-        ).scalar_one()
+        ).scalars().all()
+        pending = len(waiting)
+        if pending >= PENDING_LIMIT_PER_LOCATION:
+            # Voll: die älteste Anfrage, die sich nicht mehr meldet, macht Platz – verwaiste Anfragen
+            # dürfen kein echtes Gerät aussperren. Warten wirklich so viele Geräte, bleibt es bei 429.
+            orphan = next((row for row in waiting if not enrollment_active(row, now)), None)
+            if orphan is not None:
+                pending -= await _remove_enrollments(
+                    db, tenant_id, [orphan], None, "entfernt, um Platz für eine neue Anfrage zu machen"
+                )
         if pending >= PENDING_LIMIT_PER_LOCATION:
             raise AppError(
                 429,
@@ -171,6 +289,7 @@ async def enroll_device(
             token_hash=token_hash(token),
             reported_name=name,
             last_seen_at=now,
+            **origin,
         )
         db.add(enrollment)
         log_action(
@@ -188,6 +307,7 @@ async def enroll_device(
         enrollment.location_id = key_row.location_id
         enrollment.reported_name = name
         enrollment.last_seen_at = now
+        enrollment.user_agent, enrollment.client_ip = origin["user_agent"], origin["client_ip"]
     try:
         await db.commit()
     except IntegrityError as exc:

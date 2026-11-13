@@ -67,6 +67,10 @@ class SettingsResponse(BaseModel):
     vacation_carry_over_expiry: str | None = None
     disabled_day_flags: list[str] = []
     report_days_without_punches: bool = True
+    # Tage von Mitarbeitern mit dem Modell „Flexibel ohne feste Tage“ unter „Zu klären“ melden
+    report_flexible_days: bool = True
+    # „Wochensoll nicht erreicht“ gilt für Wochen, die ab diesem Tag abgerechnet werden (None = ohne Grenze)
+    weekly_target_from: date | None = None
     datev_consultant_number: str | None = None
     datev_client_number: str | None = None
     core_time_start: time | None = None
@@ -174,6 +178,7 @@ class SettingsUpdateRequest(BaseModel):
     vacation_carry_over_expiry: str | None = Field(default=None, pattern=r"^((0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))?$")
     disabled_day_flags: list[str] | None = Field(default=None, max_length=10)
     report_days_without_punches: bool | None = None
+    report_flexible_days: bool | None = None
     # DATEV-LODAS-Export; "" = entfernen
     datev_consultant_number: str | None = Field(default=None, pattern=r"^(\d{4,7})?$")
     datev_client_number: str | None = Field(default=None, pattern=r"^(\d{1,5})?$")

@@ -79,3 +79,7 @@ class DeviceEnrollment(Base):
     token_hash: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Herkunft der Anfrage, nur zur Anzeige in der Freigabeliste (ungeprüft, vom Gerät bzw. Netz):
+    # Browser-Kennung und IP-Adresse. Verschwinden mit der Anfrage (Freigabe, Ablehnung, Verfall).
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    client_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
