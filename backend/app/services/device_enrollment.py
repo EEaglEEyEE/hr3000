@@ -181,6 +181,9 @@ def bind_device(device: Device, installation_hash: str, new_token_hash: str) -> 
     device.rejected_at = None
     device.pairing_code_hash = None
     device.pairing_code_expires_at = None
+    # Der Stand der Warteschlange gehörte zum bisherigen Gerät
+    device.queued_punches = None
+    device.failed_punches = None
 
 
 async def enroll_device(

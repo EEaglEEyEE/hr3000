@@ -141,6 +141,9 @@ class AppSettings(Base):
     kiosk_break_buttons: Mapped[bool] = mapped_column(Boolean, default=True)
     # Dienstgang-Buttons (Start/Ende) am Tablet und im Portal
     kiosk_errand_buttons: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Admin/HR warnen, wenn ein Tablet länger als eine Stunde keine Meldung schickt (Glocke und E-Mail),
+    # siehe services/device_presence.py
+    device_offline_alert: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     # Mitarbeiter dürfen selbst Abwesenheiten/Urlaub beantragen (aus = nur HR/Teamleader tragen ein)
     absence_requests_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Vier-Augen-Prinzip: eigene Abwesenheiten werden nie selbst genehmigt (auch nicht von HR,

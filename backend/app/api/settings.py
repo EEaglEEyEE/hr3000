@@ -319,6 +319,7 @@ async def update_settings(
         "kiosk_show_vacation",
         "kiosk_break_buttons",
         "kiosk_errand_buttons",
+        "device_offline_alert",
         "portal_punching_enabled",
         "punch_location_check_enabled",
         "punch_location_mode",

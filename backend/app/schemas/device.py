@@ -187,6 +187,56 @@ class EnrollmentCleanupResponse(BaseModel):
     removed: int
 
 
+# Obergrenze für die gemeldete Warteschlange: weit über allem, was ein Tablet offline ansammeln kann
+MAX_REPORTED_PUNCHES = 100_000
+
+
+class DeviceHeartbeatRequest(BaseModel):
+    """Meldung der Kiosk-App (alle paar Sekunden): Stand ihrer Offline-Warteschlange."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Stempelungen, die am Tablet noch auf die Übertragung warten
+    queued_punches: int = Field(default=0, ge=0, le=MAX_REPORTED_PUNCHES)
+    # … davon vom Server abgelehnt (z. B. falscher PIN) – sie bleiben liegen, bis jemand sie am Tablet verwirft
+    failed_punches: int = Field(default=0, ge=0, le=MAX_REPORTED_PUNCHES)
+
+    @model_validator(mode="after")
+    def _failed_within_queued(self) -> "DeviceHeartbeatRequest":
+        if self.failed_punches > self.queued_punches:
+            raise ValueError("failed_punches darf nicht größer sein als queued_punches.")
+        return self
+
+
+class DeviceHeartbeatResponse(BaseModel):
+    # So viele Sekunden bis zur nächsten Meldung (der Server gibt den Takt vor: selten im Ruhezustand,
+    # schnell, solange jemand die Seite „Tablets“ offen hat)
+    interval_seconds: int
+
+
+class DevicePresence(BaseModel):
+    device_id: int
+    # ONLINE = meldet sich gerade, CHECKING = Seite eben erst geöffnet und noch keine frische Meldung,
+    # OFFLINE = meldet sich nicht
+    state: Literal["ONLINE", "CHECKING", "OFFLINE"]
+    last_seen: datetime | None
+    # Stand der letzten Meldung; None = die Kiosk-App hat sich noch nie gemeldet
+    queued_punches: int | None = None
+    failed_punches: int | None = None
+    # Außerhalb der Bildschirmzeiten: Das Tablet schläft planmäßig, „offline“ ist dann kein Störfall
+    screen_off: bool = False
+
+
+class DevicePresenceListResponse(BaseModel):
+    # Serverzeit der Auskunft (UTC)
+    checked_at: datetime
+    # Seit wann die Seite „Tablets“ durchgehend offen ist (so lange melden sich die Tablets im schnellen Takt)
+    watching_since: datetime
+    heartbeat_seconds: int
+    online_window_seconds: int
+    devices: list[DevicePresence]
+
+
 class EnrollmentApproveRequest(BaseModel):
     # Vorhandenen Tablet-Eintrag (gleicher Standort) übernehmen; None = neuen Eintrag anlegen
     device_id: int | None = None

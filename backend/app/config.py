@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     server_metrics_interval_seconds: int = 60
     # Erinnerungen prüfen (Sekunden, 0 = aus); verschickt wird höchstens einmal pro Tag und Mandant
     reminders_interval_seconds: int = 3600
+    # Tablets auf „länger als eine Stunde offline“ prüfen (Sekunden, 0 = aus); gewarnt wird je Mandant nur mit
+    # eingeschalteter Einstellung und einmal je Ausfall
+    device_offline_check_interval_seconds: int = 300
     # Webhook-Zustellung alle n Sekunden (0 = aus)
     webhook_interval_seconds: int = 15
     server_metrics_retention_days: int = 30

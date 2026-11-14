@@ -779,6 +779,16 @@ export function KioskDisplayCard({ settings }: { settings: Settings }) {
         />
         Dienstgang-Buttons anzeigen (Zeit auf Dienstgang zählt voll als Arbeitszeit)
       </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={settings.device_offline_alert}
+          onChange={(e) => void save({ device_offline_alert: e.target.checked })}
+        />
+        Benachrichtigen, wenn ein Tablet länger als 1 Stunde offline ist (Glocke und E-Mail an Admin und HR; nicht
+        außerhalb der Bildschirmzeiten)
+      </label>
       <div className="flex flex-col gap-1 text-sm">
         Darstellung am Tablet
         <div className="flex gap-2">

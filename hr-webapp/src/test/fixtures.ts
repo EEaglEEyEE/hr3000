@@ -134,6 +134,7 @@ export function settings(overrides: Partial<Schemas['SettingsResponse']> = {}): 
     kiosk_show_vacation: true,
     kiosk_break_buttons: true,
     kiosk_errand_buttons: false,
+    device_offline_alert: true,
     portal_punching_enabled: false,
     punch_location_check_enabled: false,
     punch_location_mode: 'RECORD',

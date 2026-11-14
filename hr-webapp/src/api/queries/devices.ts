@@ -14,6 +14,25 @@ export function useDevicesQuery(locationId?: number) {
   })
 }
 
+export type DevicePresence = components['schemas']['DevicePresence']
+export type DevicePresenceList = components['schemas']['DevicePresenceListResponse']
+
+/** So oft fragt die Seite „Tablets“ den Live-Status ab */
+export const PRESENCE_REFETCH_MS = 5_000
+
+/** Live-Status der Tablets. Nur solange diese Abfrage läuft (Seite „Tablets“ offen und im Vordergrund),
+ * melden sich die Tablets alle 15 Sekunden statt alle 15 Minuten – der Server merkt sich jede Abfrage
+ * 30 Sekunden lang. Kein Zwischenspeicher: Ein alter Stand soll nach dem Zurückkehren nicht aufblitzen. */
+export function useDevicePresenceQuery() {
+  return useQuery({
+    queryKey: ['device-presence'],
+    queryFn: async () => unwrap(await apiClient.GET('/devices/presence')),
+    refetchInterval: PRESENCE_REFETCH_MS,
+    refetchIntervalInBackground: false,
+    gcTime: 0,
+  })
+}
+
 export function useCreateDeviceMutation() {
   const queryClient = useQueryClient()
   return useMutation({

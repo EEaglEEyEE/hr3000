@@ -57,6 +57,7 @@ async def test_settings_default_to_pin_not_required(
         "kiosk_show_vacation": True,
         "kiosk_break_buttons": True,
         "kiosk_errand_buttons": False,
+        "device_offline_alert": True,
         "portal_punching_enabled": False,
         "punch_location_check_enabled": False,
         "punch_location_mode": "RECORD",

@@ -63,6 +63,16 @@ def _reset_rate_limiter():
     rate_limiter.clear_all()
 
 
+@pytest.fixture(autouse=True)
+def _reset_presence_watch():
+    """Wer die Seite „Tablets“ offen hat, steht nur im Speicher – zwischen Tests leeren."""
+    from app.services import presence_watch
+
+    presence_watch.clear_all()
+    yield
+    presence_watch.clear_all()
+
+
 def _enable_sqlite_foreign_keys(dbapi_connection, _record) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")

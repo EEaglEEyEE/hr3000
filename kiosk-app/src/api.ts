@@ -33,6 +33,9 @@ export interface KioskConfig {
   screen_on_until?: string | null
   /** IANA-Zeitzone des Standorts (maßgeblich für die Bildschirmzeiten) */
   timezone?: string
+  /** Sekunden zwischen zwei Meldungen an den Server (selten im Ruhezustand, schnell, solange jemand in
+   * der HR-Webapp die Seite „Tablets“ offen hat) */
+  heartbeat_seconds?: number
 }
 
 export interface DeviceLoginResponse extends KioskConfig {
@@ -174,6 +177,23 @@ export function deviceLogin(deviceToken: string): Promise<DeviceLoginResponse> {
 
 export function getKioskConfig(accessToken: string): Promise<KioskConfig> {
   return request('/device/config', { headers: { Authorization: `Bearer ${accessToken}` } })
+}
+
+export interface HeartbeatPayload {
+  /** Stempelungen, die am Tablet noch auf die Übertragung warten */
+  queued_punches: number
+  /** … davon vom Server abgelehnt */
+  failed_punches: number
+}
+
+/** Meldung „ich laufe und erreiche den Server“ samt Stand der Offline-Warteschlange (Live-Status in der
+ * HR-Webapp, Warnung bei längerem Ausfall). Die Antwort nennt den Abstand bis zur nächsten Meldung. */
+export function sendHeartbeat(accessToken: string, payload: HeartbeatPayload): Promise<{ interval_seconds: number }> {
+  return request('/device/heartbeat', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function listLocationEmployees(locationId: number, accessToken: string): Promise<Employee[]> {

@@ -297,6 +297,21 @@ async def notify_enrollment_requested(
     )
 
 
+async def notify_device_offline(db: AsyncSession, device, location_name: str, last_seen_local, queued_punches: int) -> None:
+    """Warnung an Admin/HR: ein Tablet hat sich länger als eine Stunde nicht gemeldet."""
+    message = (
+        f"Das Tablet „{device.name}“ am Standort „{location_name}“ meldet sich seit {last_seen_local:%d.%m.%Y, %H:%M} Uhr "
+        "nicht mehr. Stempelungen von dort kommen erst an, wenn es wieder online ist – bitte Strom, WLAN und die "
+        "Kiosk-App prüfen."
+    )
+    if queued_punches:
+        message += f" Bei der letzten Meldung warteten dort {queued_punches} Stempelung(en) auf die Übertragung."
+    await _notify_accounts(
+        db, device.tenant_id, await full_hr_recipients(db, device.tenant_id, area=Area.MASTER_DATA), NotificationType.DEVICE_ALERT, message,
+        "Warnung: Tablet offline",
+    )
+
+
 async def notify_device_replaced(db: AsyncSession, device) -> None:
     """Warnung an Admin/HR: ein verbundenes Tablet wurde per QR-Code an ein anderes Gerät vergeben."""
     message = (

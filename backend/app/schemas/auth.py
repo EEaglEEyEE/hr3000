@@ -33,6 +33,9 @@ class KioskConfigResponse(BaseModel):
     screen_on_until: str | None = None
     # IANA-Zeitzone des Standorts des Tablets (maßgeblich für die Bildschirmzeiten)
     timezone: str = "Europe/Berlin"
+    # So viele Sekunden zwischen zwei Meldungen an POST /device/heartbeat: selten im Ruhezustand, schnell,
+    # solange jemand in der HR-Webapp die Seite „Tablets“ offen hat
+    heartbeat_seconds: int = 900
 
 
 class DeviceLoginResponse(KioskConfigResponse):

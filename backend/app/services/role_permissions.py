@@ -307,6 +307,7 @@ ROUTE_RULES: dict[str, Rule] = {
     "GET /employees/{employee_id}/data-export": NEVER,  # Auskunft mit allen Daten einer Person
     "POST /devices/verify-admin-pin": NEVER,  # nur Tablets
     "GET /device/config": NEVER,
+    "POST /device/heartbeat": NEVER,
     "POST /device/register-card": NEVER,
     "POST /device/setup-pin": NEVER,
     # --- Nachschlagelisten: jeder Bereich, der mit Mitarbeitern arbeitet ------------------------
@@ -473,6 +474,7 @@ ROUTE_RULES: dict[str, Rule] = {
     "POST /locations": area(A.MASTER_DATA),
     "PATCH /locations/{location_id}": area(A.MASTER_DATA),
     "GET /devices": area(A.MASTER_DATA),
+    "GET /devices/presence": area(A.MASTER_DATA),
     "POST /devices": area(A.MASTER_DATA),
     "PATCH /devices/{device_id}": area(A.MASTER_DATA),
     "DELETE /devices/{device_id}": area(A.MASTER_DATA),

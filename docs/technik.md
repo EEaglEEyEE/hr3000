@@ -829,6 +829,36 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Chip-UIDs gehen nicht mehr ans Tablet: `/locations/{id}/employees` liefert Geräten nur
     `card_hash` = SHA-256(`hr3000-card:<tenant_id>:` + normalisierte UID). Die Kiosk-App hasht die
     gelesene UID genauso (`card_salt` aus der Login-Antwort).
+  - **Live-Status und Offline-Warnung** (`services/device_presence.py`, `services/presence_watch.py`,
+    Migration 0164): Der Server erreicht kein Tablet von sich aus, die Kiosk-App meldet sich selbst
+    (`POST /device/heartbeat`, Pydantic: `queued_punches`/`failed_punches` 0–100000,
+    `failed ≤ queued`, unbekannte Felder abgelehnt; nur mit Tablet-Sitzung). Gespeichert wird in
+    `devices.last_seen`, `queued_punches`, `failed_punches`. Takt: `IDLE_SECONDS` 900 im
+    Ruhezustand, `WATCH_SECONDS` 15, solange die Webapp `GET /devices/presence` abfragt (alle 5 s,
+    nur bei offener Seite im Vordergrund). Jede Abfrage verlängert die Beobachtung um `WATCH_TTL`
+    30 s. Den Abstand nennt der Server in der Antwort auf die Meldung (`interval_seconds`) und in
+    `heartbeat_seconds` der Kiosk-Konfiguration (`GET /device/config` alle 30 s, auch in der
+    Antwort der Anmeldung) – so erfährt ein ruhendes Tablet innerhalb von etwa 30 s vom schnellen
+    Takt. Die Kiosk-App (`kiosk-app/src/presence.ts`) meldet sich sofort bei neuer Sitzung oder
+    neuem Abstand, begrenzt den Abstand auf 5 s bis 1 Std., versucht es nach einem Fehler nach
+    60 s erneut und meldet sich bei 401 höchstens einmal pro Minute neu an.
+    Zustand je Tablet: `ONLINE` (letzte Meldung ≤ `ONLINE_WINDOW` 45 s), `CHECKING` (nicht online,
+    Seite aber kürzer als `CHECK_WINDOW` 75 s offen), sonst `OFFLINE`; `screen_off` = außerhalb der
+    Bildschirmzeiten (Gerät vor Mandant, Zeitzone des Standorts).
+    Wer zusieht, steht nur im Speicher des Prozesses (`presence_watch._watches`, je Mandant): Das
+    genügt für den einen Uvicorn-Prozess und heilt nach einem Neustart mit der nächsten Abfrage.
+    Mit mehreren Prozessen müsste der Stand in die Datenbank.
+    Warnung: `run_offline_alerts` (Lifespan, `DEVICE_OFFLINE_CHECK_INTERVAL_SECONDS`, Standard 300,
+    0 = aus) ruft je Mandant `send_offline_alerts` – erstmals einen Abstand nach dem Start, damit sich
+    die Tablets nach einem Neustart erst wieder melden können. Bedingungen in `offline_alert_due`: Schalter
+    `AppSettings.device_offline_alert` (Standard an, auch bei bestehenden Mandanten – Johannes,
+    14.11.2026), Gerät gebunden, Kiosk-App hat sich schon gemeldet (`queued_punches` nicht NULL;
+    ältere Versionen ohne Meldung würden sonst als ausgefallen gelten), letzte Meldung älter als
+    `OFFLINE_ALERT_AFTER` (1 Std.), gerade innerhalb der Bildschirmzeiten und letzte Meldung im
+    laufenden Zeitfenster (`screen_on_since`), noch keine Warnung für diesen Ausfall
+    (`devices.offline_alerted_at` < `last_seen`). Benachrichtigung `DEVICE_ALERT` an Admin/HR mit
+    Bereich Stammdaten (`notify_device_offline`), kein Audit-Eintrag (kein Benutzervorgang).
+    Koppeln, Tausch und „Kopplung aufheben“ leeren den Stand der Warteschlange.
 - **Verschlüsselung:** Dokumente und SMTP-Passwörter per Fernet (`ENCRYPTION_KEY`). Sicherungen
   extern mit restic.
 - **Secrets:** nur in `.env` auf dem Server, nie im Code.

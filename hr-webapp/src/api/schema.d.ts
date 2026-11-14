@@ -562,6 +562,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/devices/presence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Presence
+         * @description Live-Status: welche Tablets sich gerade melden (und damit Stempelungen liefern können), wann sich
+         *     die übrigen zuletzt gemeldet haben und ob am Tablet noch Stempelungen auf die Übertragung warten.
+         *     Die Webapp fragt das alle paar Sekunden ab, solange die Seite „Tablets“ offen ist – nur so lange
+         *     melden sich die Tablets alle 15 Sekunden statt alle 15 Minuten.
+         */
+        get: operations["list_presence_devices_presence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/devices/{device_id}": {
         parameters: {
             query?: never;
@@ -742,6 +765,28 @@ export interface paths {
         get: operations["get_kiosk_config_device_config_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Device Heartbeat
+         * @description Die angemeldete Kiosk-App meldet sich regelmäßig: „ich laufe und erreiche den Server“, dazu der
+         *     Stand ihrer Offline-Warteschlange. Grundlage des Live-Status unter „Tablets“ und der Offline-Warnung.
+         *     Die Antwort nennt den Abstand bis zur nächsten Meldung.
+         */
+        post: operations["device_heartbeat_device_heartbeat_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7446,6 +7491,27 @@ export interface components {
             /** Client Ip */
             client_ip?: string | null;
         };
+        /**
+         * DeviceHeartbeatRequest
+         * @description Meldung der Kiosk-App (alle paar Sekunden): Stand ihrer Offline-Warteschlange.
+         */
+        DeviceHeartbeatRequest: {
+            /**
+             * Queued Punches
+             * @default 0
+             */
+            queued_punches: number;
+            /**
+             * Failed Punches
+             * @default 0
+             */
+            failed_punches: number;
+        };
+        /** DeviceHeartbeatResponse */
+        DeviceHeartbeatResponse: {
+            /** Interval Seconds */
+            interval_seconds: number;
+        };
         /** DeviceLoginRequest */
         DeviceLoginRequest: {
             /** Device Token */
@@ -7518,6 +7584,11 @@ export interface components {
              * @default Europe/Berlin
              */
             timezone: string;
+            /**
+             * Heartbeat Seconds
+             * @default 900
+             */
+            heartbeat_seconds: number;
             /** Access Token */
             access_token: string;
             /**
@@ -7546,6 +7617,46 @@ export interface components {
         DevicePairResponse: {
             /** Device Token */
             device_token: string;
+        };
+        /** DevicePresence */
+        DevicePresence: {
+            /** Device Id */
+            device_id: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ONLINE" | "CHECKING" | "OFFLINE";
+            /** Last Seen */
+            last_seen: string | null;
+            /** Queued Punches */
+            queued_punches?: number | null;
+            /** Failed Punches */
+            failed_punches?: number | null;
+            /**
+             * Screen Off
+             * @default false
+             */
+            screen_off: boolean;
+        };
+        /** DevicePresenceListResponse */
+        DevicePresenceListResponse: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /**
+             * Watching Since
+             * Format: date-time
+             */
+            watching_since: string;
+            /** Heartbeat Seconds */
+            heartbeat_seconds: number;
+            /** Online Window Seconds */
+            online_window_seconds: number;
+            /** Devices */
+            devices: components["schemas"]["DevicePresence"][];
         };
         /** DeviceResponse */
         DeviceResponse: {
@@ -8681,6 +8792,11 @@ export interface components {
              * @default Europe/Berlin
              */
             timezone: string;
+            /**
+             * Heartbeat Seconds
+             * @default 900
+             */
+            heartbeat_seconds: number;
         };
         /** LaborCostResponse */
         LaborCostResponse: {
@@ -10651,6 +10767,11 @@ export interface components {
              */
             kiosk_errand_buttons: boolean;
             /**
+             * Device Offline Alert
+             * @default true
+             */
+            device_offline_alert: boolean;
+            /**
              * Portal Punching Enabled
              * @default false
              */
@@ -10879,6 +11000,8 @@ export interface components {
             kiosk_break_buttons?: boolean | null;
             /** Kiosk Errand Buttons */
             kiosk_errand_buttons?: boolean | null;
+            /** Device Offline Alert */
+            device_offline_alert?: boolean | null;
             /** Portal Punching Enabled */
             portal_punching_enabled?: boolean | null;
             /** Punch Location Check Enabled */
@@ -14241,6 +14364,26 @@ export interface operations {
             };
         };
     };
+    list_presence_devices_presence_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevicePresenceListResponse"];
+                };
+            };
+        };
+    };
     delete_device_devices__device_id__delete: {
         parameters: {
             query?: never;
@@ -14538,6 +14681,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KioskConfigResponse"];
+                };
+            };
+        };
+    };
+    device_heartbeat_device_heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceHeartbeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceHeartbeatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

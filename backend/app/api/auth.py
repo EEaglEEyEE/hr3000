@@ -208,6 +208,9 @@ async def device_pair(
     device.rejected_at = None
     device.pairing_code_hash = None
     device.pairing_code_expires_at = None
+    # Der Stand der Warteschlange gehörte zum bisherigen Gerät – das neue meldet seinen eigenen
+    device.queued_punches = None
+    device.failed_punches = None
     log_action(
         db, tenant_id=tenant_id, actor_account_id=None, action=AuditAction.DEVICE_ENROLLMENT,
         entity_type="device", entity_id=device.id,

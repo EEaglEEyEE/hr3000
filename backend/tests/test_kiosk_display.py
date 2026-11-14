@@ -66,6 +66,7 @@ async def test_kiosk_display_settings_are_enforced(client: AsyncClient, db_sessi
         "screen_on_from": None,
         "screen_on_until": None,
         "timezone": "UTC",
+        "heartbeat_seconds": 900,
     }
     assert (await client.get("/device/config", headers=admin)).status_code == 403
 

@@ -3,6 +3,18 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 14.11.2026
+
+- **Tablets, Live-Status:** Die Seite „Tablets“ zeigt je Tablet „Online“, „Wird abgefragt …“ oder
+  „Offline“ (mit letzter Meldung) und darüber z. B. „2 von 3 Tablets online“. Die Tablets melden
+  sich dafür selbst beim Server: alle 15 Minuten, und alle 15 Sekunden, solange jemand die Seite
+  „Tablets“ offen hat. Nach dem Öffnen dauert es bis zu einer Minute, bis jedes Tablet geantwortet
+  hat. Liegen am Tablet Stempelungen in der Offline-Warteschlange, steht das dabei.
+- **Tablets, Offline-Warnung:** Meldet sich ein Tablet länger als 1 Stunde nicht, bekommen Admin und
+  HR eine Benachrichtigung (Glocke und E-Mail). Eine Warnung je Ausfall, keine außerhalb der
+  Bildschirmzeiten. Bei allen Firmen eingeschaltet; abschalten unter „Einstellungen“ → „Anzeige am
+  Tablet“ → „Benachrichtigen, wenn ein Tablet länger als 1 Stunde offline ist“.
+
 ## 13.11.2026
 
 - **„Zu klären“ und das Modell „Flexibel ohne feste Tage“:** Unter „Einstellungen“ → „Prüfungen“

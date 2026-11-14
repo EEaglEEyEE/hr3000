@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AppSettings, BreakRule, Location
 from app.schemas.auth import KioskConfigResponse
+from app.services import presence_watch
 
 # §4 ArbZG-Mindestpausen – Vorlage für neue Mandanten, siehe
 # seed_default_break_rules. Historisch identisch zur ursprünglichen globalen
@@ -93,4 +94,6 @@ async def device_kiosk_config(db: AsyncSession, device) -> KioskConfigResponse:
     """Kiosk-Einstellungen für ein Tablet inkl. Zeitzone seines Standorts (für die Bildschirmzeiten)."""
     location = await db.get(Location, device.location_id)
     timezone = location.timezone if location is not None and location.tenant_id == device.tenant_id else "Europe/Berlin"
-    return kiosk_config(await get_or_create_settings(db, device.tenant_id), device, timezone)
+    config = kiosk_config(await get_or_create_settings(db, device.tenant_id), device, timezone)
+    config.heartbeat_seconds = presence_watch.heartbeat_seconds(device.tenant_id)
+    return config

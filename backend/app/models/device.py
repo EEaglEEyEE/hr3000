@@ -1,6 +1,6 @@
 from datetime import datetime, time
 
-from sqlalchemy import DateTime, ForeignKey, String, Time, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Time, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -25,7 +25,15 @@ class Device(Base):
     # Letzter abgewiesener Anmeldeversuch eines anderen Geräts (für Warnung und Anzeige)
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Letzter Kontakt: Anmeldung oder Meldung der Kiosk-App (siehe services/device_presence.py)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Stand der letzten Meldung (Live-Status unter „Tablets“): Stempelungen, die am Tablet noch auf die
+    # Übertragung warten, und wie viele davon der Server abgelehnt hat. None = noch keine Meldung.
+    queued_punches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    failed_punches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Zeitpunkt der letzten Warnung „länger als eine Stunde offline“ (eine Warnung je Ausfall: gewarnt wird
+    # erst wieder, wenn sich das Tablet danach gemeldet hat und erneut ausfällt)
+    offline_alerted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Darstellung dieses Tablets: DARK | LIGHT, NULL = Standard des Mandanten (Einstellungen → Kiosk)
     theme: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Bildschirmzeiten dieses Tablets: NULL = wie Mandant, ALWAYS = immer an, CUSTOM = eigene Zeiten

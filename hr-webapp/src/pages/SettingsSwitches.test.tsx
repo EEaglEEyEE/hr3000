@@ -103,6 +103,24 @@ describe('Einstellungen', () => {
     expect(screen.queryByRole('checkbox', { name: /Stempeln über den Web-Login/ })).not.toBeInTheDocument()
   })
 
+  it('schaltet die Warnung „Tablet länger als 1 Stunde offline“ ab und wieder an (Standard an)', async () => {
+    loginAs({ kind: 'hr', role: 'ADMIN' })
+    const server = settingsServer()
+    const calls = mockApi(server.routes)
+    renderSettings('/einstellungen/tablet-anzeige')
+
+    const alert = await screen.findByRole('checkbox', { name: /Benachrichtigen, wenn ein Tablet länger als 1 Stunde offline ist/ })
+    expect(alert).toBeChecked()
+    await userEvent.click(alert)
+    await waitFor(() => expect(patches(calls).at(-1)).toMatchObject({ device_offline_alert: false }))
+    await waitFor(() => expect(alert).not.toBeChecked())
+    expect(server.current().device_offline_alert).toBe(false)
+
+    await userEvent.click(alert)
+    await waitFor(() => expect(patches(calls).at(-1)).toMatchObject({ device_offline_alert: true }))
+    await waitFor(() => expect(alert).toBeChecked())
+  })
+
   it('schreibt die Zwei-Faktor-Anmeldung je Gruppe vor, „Alle“ kreuzt alle an (Standard: niemand)', async () => {
     loginAs({ kind: 'hr', role: 'ADMIN' })
     const server = settingsServer()

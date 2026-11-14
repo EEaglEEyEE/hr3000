@@ -34,6 +34,7 @@ import { TERMINAL_ARM_SECONDS, TerminalBar, type TerminalResult } from './compon
 import { normalizeCardUid, useKeyboardCardReader } from './cardReader'
 import { useWakeLock } from './wakeLock'
 import { useScreenHours } from './screenHours'
+import { usePresenceHeartbeat } from './presence'
 import { cardUidFromQr, isQrScanSupported, QrScanner, tokenFromQr } from './components/QrScanner'
 import { sha256Hex } from './installation'
 import { formatDays, formatMinutesAsHours } from './format'
@@ -572,6 +573,8 @@ export default function App() {
   // nicht wieder einschalten (Ein/Aus-Taste), beim Aufwachen wird die Sperre neu angefordert.
   const withinScreenHours = useScreenHours(session?.screen_on_from, session?.screen_on_until, session?.timezone)
   useWakeLock(Boolean(session) && withinScreenHours)
+  // Meldung an den Server (Live-Status unter „Tablets“ in der HR-Webapp, Warnung bei längerem Ausfall)
+  usePresenceHeartbeat(session?.access_token, session?.heartbeat_seconds, setSession)
 
   // Einstellungen → Kiosk: helle Darstellung kehrt die Farbskalen um (siehe theme-inverted.css).
   const light = session?.theme === 'LIGHT'

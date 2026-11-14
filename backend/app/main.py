@@ -74,6 +74,7 @@ from app.middleware.tenant import TenantResolutionMiddleware
 from app.services.holiday_import_service import ensure_holidays_imported_for_all_tenants
 from app.services.punch_location_service import strip_position_inputs
 from app.services.server_metrics import run_sampler
+from app.services.device_presence import run_offline_alerts
 from app.services.reminder_service import run_reminders
 from app.services.webhook_service import run_deliveries
 
@@ -152,8 +153,14 @@ async def lifespan(app: FastAPI):
     webhooks = None
     if settings.webhook_interval_seconds > 0:
         webhooks = asyncio.create_task(run_deliveries(AsyncSessionLocal, settings.webhook_interval_seconds))
+    # Warnung, wenn ein Tablet länger als eine Stunde offline ist, siehe app/services/device_presence.py.
+    offline_alerts = None
+    if settings.device_offline_check_interval_seconds > 0:
+        offline_alerts = asyncio.create_task(
+            run_offline_alerts(AsyncSessionLocal, settings.device_offline_check_interval_seconds)
+        )
     yield
-    for task in (sampler, reminders, webhooks):
+    for task in (sampler, reminders, webhooks, offline_alerts):
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

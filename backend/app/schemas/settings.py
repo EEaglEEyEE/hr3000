@@ -99,6 +99,7 @@ class SettingsResponse(BaseModel):
     kiosk_show_vacation: bool = True
     kiosk_break_buttons: bool = True
     kiosk_errand_buttons: bool = False
+    device_offline_alert: bool = True
     portal_punching_enabled: bool = False
     punch_location_check_enabled: bool = False
     punch_location_mode: Literal["RECORD", "BLOCK"] = "RECORD"
@@ -217,6 +218,8 @@ class SettingsUpdateRequest(BaseModel):
     kiosk_show_vacation: bool | None = None
     kiosk_break_buttons: bool | None = None
     kiosk_errand_buttons: bool | None = None
+    # Warnung an Admin/HR, wenn ein Tablet länger als eine Stunde offline ist
+    device_offline_alert: bool | None = None
     portal_punching_enabled: bool | None = None
     # Standort beim Stempeln im Web-Login prüfen; RECORD = nur vermerken, BLOCK = außerhalb nicht erlauben
     punch_location_check_enabled: bool | None = None

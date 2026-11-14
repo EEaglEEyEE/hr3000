@@ -858,6 +858,8 @@ für bestehende Firmen nichts ändert.
   - „Anzeige am Tablet“:
     - Saldo und Resturlaub nach dem Stempeln
     - „Pausen-Buttons anzeigen“, „Dienstgang-Buttons anzeigen“
+    - „Benachrichtigen, wenn ein Tablet länger als 1 Stunde offline ist“ (Standard an): Glocke und
+      E-Mail an Admin und HR, siehe Abschnitt 10 „Live-Status und Offline-Warnung“
     - „Darstellung am Tablet“ Dunkel/Hell
     - „Bildschirm nur zu bestimmten Zeiten anlassen“ (von–bis, über Mitternacht möglich; je
       Tablet abweichend einstellbar)
@@ -1003,6 +1005,41 @@ der Behörden bleiben davon unberührt; Beschäftigte dürfen sich weiterhin dir
   wurde, fragt nach einem Neustart der Kiosk-App erneut an (Freigabe unter „Tablets“). Zeigt ein Tablet „Dieser Tablet-Zugang ist auf einem anderen Gerät gekoppelt“, nutzt
   ein anderes Gerät den Zugang: prüfen, ob das gewollt ist, dann neu koppeln oder einen eigenen
   Eintrag anlegen.
+
+### Live-Status und Offline-Warnung
+
+Die Seite „Tablets“ zeigt in der Spalte „Status“, welche Tablets gerade erreichbar sind und
+Stempelungen liefern können. Darüber steht die Zusammenfassung, z. B. „2 von 3 Tablets online“.
+
+- **So funktioniert es:** Der Server kann ein Tablet nicht von sich aus anrufen. Jedes angemeldete
+  Tablet meldet sich deshalb selbst – im Normalfall alle 15 Minuten. Solange jemand die Seite
+  „Tablets“ offen hat, melden sich die Tablets alle 15 Sekunden. Das erfahren sie innerhalb von etwa
+  30 Sekunden; nach dem Schließen der Seite fallen sie wieder auf 15 Minuten zurück.
+- **Zustände:**
+  - „Online“: Das Tablet hat sich in den letzten 45 Sekunden gemeldet. Die Kiosk-App läuft, ist
+    angemeldet und erreicht den Server.
+  - „Wird abgefragt …“: Die Seite ist eben erst geöffnet, das Tablet hat noch nicht geantwortet.
+    Spätestens nach 75 Sekunden steht dort „Online“ oder „Offline“.
+  - „Offline“: Das Tablet meldet sich nicht, darunter steht die letzte Meldung. Stempelungen von
+    dort kommen erst an, wenn es wieder online ist (das Tablet puffert sie, solange die Kiosk-App
+    läuft).
+  - „Offline – außerhalb der Bildschirmzeiten“: Das Tablet schläft planmäßig, kein Störfall.
+  - „Kein Gerät gekoppelt“: Zu dem Eintrag gehört noch kein Tablet.
+- **Wartende Stempelungen:** Liegen am Tablet Stempelungen in der Offline-Warteschlange, steht das
+  beim Tablet („3 Stempelungen warten am Tablet auf die Übertragung“). „vom Server abgelehnt“ heißt:
+  Diese Einträge bleiben liegen, bis jemand sie am Tablet prüft.
+- **Offline-Warnung:** Meldet sich ein Tablet länger als 1 Stunde nicht, bekommen Admin und HR eine
+  Benachrichtigung (Glocke und E-Mail, sofern ein Mailversand eingerichtet ist). Geprüft wird alle
+  5 Minuten. Je Ausfall gibt es eine Warnung; die nächste kommt erst, wenn das Tablet wieder online
+  war und erneut ausfällt. Keine Warnung gibt es
+  - außerhalb der Bildschirmzeiten und für ein Tablet, das im laufenden Zeitfenster noch nicht
+    geweckt wurde (z. B. morgens vor Arbeitsbeginn),
+  - für Einträge ohne gekoppeltes Gerät.
+  Abschalten: „Einstellungen“ → „Anzeige am Tablet“ → „Benachrichtigen, wenn ein Tablet länger als
+  1 Stunde offline ist“.
+- **Ohne Bildschirmzeiten** hält das Tablet den Bildschirm dauerhaft wach und gilt immer als
+  erwartet. Wird es nachts ausgeschaltet, kommt eine Warnung – dann Bildschirmzeiten einstellen
+  oder die Warnung abschalten.
 
 ### Tablets per MDM verteilen
 

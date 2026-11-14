@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Plus, QrCode, Trash2 } from 'lucide-react'
-import { useDeleteDeviceMutation, useDevicesQuery, type Device } from '../api/queries/devices'
+import { useDeleteDeviceMutation, useDevicePresenceQuery, useDevicesQuery, type Device } from '../api/queries/devices'
 import { useLocationsQuery } from '../api/queries/locations'
 import { DeviceFormDialog } from '../components/devices/DeviceFormDialog'
+import { formatLastSeen, PresenceCell, PresenceSummary } from '../components/devices/DevicePresence'
 import { DeviceQrDialog } from '../components/devices/DeviceQrDialog'
 import { MdmDistribution } from '../components/devices/MdmDistribution'
 import { PendingEnrollments } from '../components/devices/PendingEnrollments'
@@ -10,15 +11,11 @@ import { Button } from '../components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 
-function formatLastSeen(iso: string | null): string {
-  if (!iso) return 'Noch nie verbunden'
-  const withUtc = iso.endsWith('Z') ? iso : `${iso}Z`
-  return new Date(withUtc).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
-}
-
 export function DevicesPage() {
   const locationsQuery = useLocationsQuery()
   const devicesQuery = useDevicesQuery()
+  // Live-Status: fragt alle paar Sekunden ab, solange die Seite offen ist (nur dann melden sich die Tablets schnell)
+  const presenceQuery = useDevicePresenceQuery()
   const deleteDevice = useDeleteDeviceMutation()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingDevice, setEditingDevice] = useState<Device | undefined>(undefined)
@@ -26,6 +23,7 @@ export function DevicesPage() {
 
   const locations = locationsQuery.data ?? []
   const locationNameById = new Map(locations.map((location) => [location.id, location.name]))
+  const presenceById = new Map((presenceQuery.data?.devices ?? []).map((row) => [row.device_id, row]))
 
   function openCreateDialog() {
     setEditingDevice(undefined)
@@ -70,14 +68,20 @@ export function DevicesPage() {
           {devicesQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
           {devicesQuery.isError && <p className="text-red-600">Tablets konnten nicht geladen werden.</p>}
 
+          {devicesQuery.data && devicesQuery.data.length > 0 && (
+            <div className="mb-3">
+              <PresenceSummary presence={presenceQuery.data} failed={presenceQuery.isError} devices={devicesQuery.data} />
+            </div>
+          )}
+
           {devicesQuery.data && (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Standort</TableHead>
                   <TableHead>Gekoppelt</TableHead>
-                  <TableHead>Zuletzt verbunden</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -87,6 +91,9 @@ export function DevicesPage() {
                     <TableCell>
                       {device.name}
                       {device.mdm_name && <span className="block text-xs text-slate-500">MDM: {device.mdm_name}</span>}
+                    </TableCell>
+                    <TableCell className="min-w-[11rem] text-sm">
+                      <PresenceCell device={device} row={presenceById.get(device.id)} />
                     </TableCell>
                     <TableCell>{locationNameById.get(device.location_id) ?? '–'}</TableCell>
                     <TableCell className="text-sm">
@@ -101,7 +108,6 @@ export function DevicesPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-slate-500">{formatLastSeen(device.last_seen)}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-2">
                         <Button variant="outline" size="sm" onClick={() => setQrDevice(device)}>

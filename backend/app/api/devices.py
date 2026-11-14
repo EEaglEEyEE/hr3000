@@ -15,6 +15,9 @@ from app.schemas.device import (
     CardRegistrationRequest,
     DeviceCreateRequest,
     DeviceEnrollmentResponse,
+    DeviceHeartbeatRequest,
+    DeviceHeartbeatResponse,
+    DevicePresenceListResponse,
     DeviceResponse,
     DeviceUpdateRequest,
     EnrollmentApproveRequest,
@@ -38,6 +41,7 @@ from app.services.device_enrollment import (
     remove_inactive_enrollments,
 )
 from app.services.auth_service import hash_password, verify_password
+from app.services.device_presence import record_heartbeat, tenant_presence
 from app.services.pairing_service import PAIRING_CODE_TTL, new_device_token, new_pairing_code, pairing_code_hash, token_hash
 from app.services.platform_domain import kiosk_url_for_host
 from app.schemas.auth import KioskConfigResponse
@@ -75,6 +79,18 @@ async def list_devices(
 
     result = await db.execute(stmt)
     return [DeviceResponse.model_validate(d) for d in result.scalars().all()]
+
+
+@router.get("/devices/presence", response_model=DevicePresenceListResponse)
+async def list_presence(
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> DevicePresenceListResponse:
+    """Live-Status: welche Tablets sich gerade melden (und damit Stempelungen liefern können), wann sich
+    die übrigen zuletzt gemeldet haben und ob am Tablet noch Stempelungen auf die Übertragung warten.
+    Die Webapp fragt das alle paar Sekunden ab, solange die Seite „Tablets“ offen ist – nur so lange
+    melden sich die Tablets alle 15 Sekunden statt alle 15 Minuten."""
+    return await tenant_presence(db, actor.tenant_id)
 
 
 @router.post("/devices", response_model=DeviceResponse, status_code=201)
@@ -131,6 +147,8 @@ async def update_device(
         device.bound_at = None
         device.pairing_code_hash = None
         device.pairing_code_expires_at = None
+        device.queued_punches = None
+        device.failed_punches = None
     if payload.theme is not None:
         device.theme = None if payload.theme == "DEFAULT" else payload.theme
     if payload.screen_hours_mode is not None:
@@ -426,6 +444,21 @@ async def get_kiosk_config(
     if actor.device is None:
         raise AppError(403, "DEVICE_REQUIRED", "Nur für Kiosk-Geräte.")
     return await device_kiosk_config(db, actor.device)
+
+
+@router.post("/device/heartbeat", response_model=DeviceHeartbeatResponse)
+async def device_heartbeat(
+    payload: DeviceHeartbeatRequest,
+    actor: Actor = Depends(get_current_actor),
+    db: AsyncSession = Depends(get_db),
+) -> DeviceHeartbeatResponse:
+    """Die angemeldete Kiosk-App meldet sich regelmäßig: „ich laufe und erreiche den Server“, dazu der
+    Stand ihrer Offline-Warteschlange. Grundlage des Live-Status unter „Tablets“ und der Offline-Warnung.
+    Die Antwort nennt den Abstand bis zur nächsten Meldung."""
+    if actor.device is None:
+        raise AppError(403, "DEVICE_REQUIRED", "Nur für Kiosk-Geräte.")
+    interval = await record_heartbeat(db, actor.device, payload.queued_punches, payload.failed_punches)
+    return DeviceHeartbeatResponse(interval_seconds=interval)
 
 
 @router.post("/devices/{device_id}/pairing-code", response_model=PairingCodeResponse)
