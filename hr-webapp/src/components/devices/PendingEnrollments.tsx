@@ -69,7 +69,10 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
                 )}
               </p>
               <p className="text-xs text-slate-500">
-                Standort {locationName.get(item.location_id) ?? '–'} · gemeldet {formatDateTime(item.created_at)}
+                {item.location_id == null
+                  ? 'Firmenschlüssel – Standort beim Freigeben wählen'
+                  : `Standort ${locationName.get(item.location_id) ?? '–'}`}{' '}
+                · gemeldet {formatDateTime(item.created_at)}
                 {!item.active && item.last_seen_at ? ` · zuletzt gemeldet ${formatDateTime(item.last_seen_at)}` : ''}
               </p>
               {(item.client || item.client_ip) && (
@@ -128,7 +131,8 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
             <ApproveForm
               key={approving.id}
               enrollment={approving}
-              devices={devices.filter((device) => device.location_id === approving.location_id)}
+              locations={locations}
+              devices={devices}
               onDone={() => setApproving(undefined)}
             />
           )}
@@ -140,17 +144,24 @@ export function PendingEnrollments({ locations, devices }: { locations: Location
 
 function ApproveForm({
   enrollment,
+  locations,
   devices,
   onDone,
 }: {
   enrollment: DeviceEnrollment
+  locations: Location[]
   devices: Device[]
   onDone: () => void
 }) {
   const approve = useApproveEnrollmentMutation()
+  // Firmenschlüssel: Standort frei wählbar, jedes Tablet ersetzbar. Standort-Schlüssel: nur dessen Tablets.
+  const companyRequest = enrollment.location_id == null
+  const locationName = new Map(locations.map((location) => [location.id, location.name]))
+  const replaceable = companyRequest ? devices : devices.filter((device) => device.location_id === enrollment.location_id)
   const [mode, setMode] = useState<'new' | 'replace'>('new')
   const [name, setName] = useState(enrollment.reported_name ?? '')
-  const [deviceId, setDeviceId] = useState(devices[0] ? String(devices[0].id) : '')
+  const [locationId, setLocationId] = useState(enrollment.location_id != null ? String(enrollment.location_id) : '')
+  const [deviceId, setDeviceId] = useState(replaceable[0] ? String(replaceable[0].id) : '')
   const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -159,7 +170,10 @@ function ApproveForm({
     try {
       await approve.mutateAsync({
         enrollmentId: enrollment.id,
-        payload: mode === 'replace' ? { device_id: Number(deviceId) } : { name: name.trim() || null },
+        payload:
+          mode === 'replace'
+            ? { device_id: Number(deviceId) }
+            : { name: name.trim() || null, location_id: locationId ? Number(locationId) : null },
       })
       onDone()
     } catch (err) {
@@ -185,23 +199,41 @@ function ApproveForm({
             type="radio"
             name="approve_mode"
             checked={mode === 'replace'}
-            disabled={devices.length === 0}
+            disabled={replaceable.length === 0}
             onChange={() => setMode('replace')}
           />
           Vorhandenes Tablet ersetzen (das bisherige Gerät wird abgemeldet)
         </label>
       </fieldset>
       {mode === 'new' ? (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="enrollment_name">Name des Tablets</Label>
-          <Input
-            id="enrollment_name"
-            placeholder="z. B. Tablet Eingang"
-            maxLength={255}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </div>
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="enrollment_location">Standort</Label>
+            <select
+              id="enrollment_location"
+              className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+              value={locationId}
+              onChange={(event) => setLocationId(event.target.value)}
+            >
+              {companyRequest && <option value="">Standort wählen …</option>}
+              {locations.map((location) => (
+                <option key={location.id} value={String(location.id)}>
+                  {location.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="enrollment_name">Name des Tablets</Label>
+            <Input
+              id="enrollment_name"
+              placeholder="z. B. Tablet Eingang"
+              maxLength={255}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+        </>
       ) : (
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="enrollment_device">Tablet</Label>
@@ -211,9 +243,9 @@ function ApproveForm({
             value={deviceId}
             onChange={(event) => setDeviceId(event.target.value)}
           >
-            {devices.map((device) => (
+            {replaceable.map((device) => (
               <option key={device.id} value={String(device.id)}>
-                {device.name}
+                {companyRequest ? `${device.name} (${locationName.get(device.location_id) ?? '–'})` : device.name}
               </option>
             ))}
           </select>
@@ -224,7 +256,10 @@ function ApproveForm({
         <Button type="button" variant="outline" onClick={onDone}>
           Abbrechen
         </Button>
-        <Button type="submit" disabled={approve.isPending || (mode === 'replace' && !deviceId)}>
+        <Button
+          type="submit"
+          disabled={approve.isPending || (mode === 'replace' ? !deviceId : !locationId)}
+        >
           Freigeben
         </Button>
       </DialogFooter>

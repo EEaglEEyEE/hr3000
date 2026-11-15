@@ -821,6 +821,18 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     (`purge_stale_enrollments`); `POST /devices/enrollments/remove-inactive` entfernt alle nicht
     aktiven sofort. Ist die Grenze je Standort erreicht, weicht die älteste nicht aktive Anfrage;
     warten wirklich 20 Geräte, bleibt es bei 429. Alles mit Audit `DEVICE_ENROLLMENT`.
+    **Firmenschlüssel** (Migration 0165): `device_enrollment_keys.location_id` NULL, höchstens einer
+    je Mandant (im Code: Erzeugen ersetzt den vorhandenen; der Unique-Index auf `location_id` lässt
+    mehrere NULL zu). Damit gelten Regel (1) und (2) mandantenweit statt je Standort, neue Anfragen
+    haben `device_enrollments.location_id` NULL und zählen gegen die Grenze getrennt von den
+    Standorten. `POST /devices/enrollment-keys` verlangt `location_id` ausdrücklich (null =
+    Firmenschlüssel), damit kein Firmenschlüssel aus Versehen entsteht; Sperren über
+    `DELETE /devices/enrollment-keys/company` (Route vor `{location_id}`). Freigabe
+    (`EnrollmentApproveRequest`, `extra=forbid`): neues Tablet mit `location_id` (Pflicht ohne
+    Schlüssel-Standort, sonst Standard: Standort des Schlüssels, darf abweichen), Ersetzen jedes
+    Tablets des Mandanten; bei Standort-Schlüsseln bleibt Ersetzen auf den Standort beschränkt
+    (`LOCATION_MISMATCH`). Die Antwort beim Erzeugen enthält zusätzlich `kiosk_url` (Wert für die
+    App-Konfiguration). Anlass: Endpoint Central setzt die App-Konfiguration nur je App.
     `mdm_name` ist je Mandant eindeutig (`MDM_NAME_TAKEN`). Nicht ersetzte MDM-Platzhalter
     (`{{…}}`, `%…%`, `$…`) zählen als kein Name; die Kiosk-App erkennt `%…%` schon roh, weil
     `decodeURIComponent` „%de…“ sonst als Prozent-Kodierung liest. Audit `DEVICE_ENROLLMENT`.

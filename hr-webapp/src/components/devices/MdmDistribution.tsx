@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Check, Copy, KeyRound } from 'lucide-react'
+import { Building2, Check, Copy, KeyRound } from 'lucide-react'
 import {
   useCreateEnrollmentKeyMutation,
+  useDeleteCompanyEnrollmentKeyMutation,
   useDeleteEnrollmentKeyMutation,
   useEnrollmentKeysQuery,
   type CreatedEnrollmentKey,
@@ -29,18 +30,57 @@ function KeyStatus({ entry }: { entry: EnrollmentKey | undefined }) {
   )
 }
 
-/** Reiter „Verteilung per MDM“: Registrierungsschlüssel je Standort erzeugen, erneuern, sperren. */
+/** Reiter „Verteilung per MDM“: Firmenschlüssel und Registrierungsschlüssel je Standort erzeugen, erneuern,
+ * sperren. */
 export function MdmDistribution({ locations }: { locations: Location[] }) {
   const keysQuery = useEnrollmentKeysQuery()
   const createKey = useCreateEnrollmentKeyMutation()
   const deleteKey = useDeleteEnrollmentKeyMutation()
+  const deleteCompanyKey = useDeleteCompanyEnrollmentKeyMutation()
   const [validity, setValidity] = useState('30')
-  const [created, setCreated] = useState<{ result: CreatedEnrollmentKey; locationName: string } | null>(null)
+  const [created, setCreated] = useState<{ result: CreatedEnrollmentKey; title: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const keyByLocation = new Map((keysQuery.data ?? []).map((entry) => [entry.location_id, entry]))
+  const keyByLocation = new Map(
+    (keysQuery.data ?? []).filter((entry) => entry.location_id != null).map((entry) => [entry.location_id, entry]),
+  )
+  const companyKey = (keysQuery.data ?? []).find((entry) => entry.location_id == null)
 
-  async function handleCreate(location: Location) {
+  async function createFor(locationId: number | null, title: string) {
     setError(null)
+    try {
+      const result = await createKey.mutateAsync({
+        location_id: locationId,
+        valid_days: validity === 'none' ? null : Number(validity),
+      })
+      setCreated({ result, title })
+    } catch {
+      setError('Schlüssel konnte nicht erzeugt werden.')
+    }
+  }
+
+  function handleCreateCompany() {
+    if (
+      companyKey &&
+      !window.confirm(
+        'Firmenschlüssel erneuern? Der bisherige gilt sofort nicht mehr – im MDM muss er dann getauscht werden. Eingerichtete Tablets bleiben angemeldet.',
+      )
+    ) {
+      return
+    }
+    void createFor(null, 'Firmenschlüssel (alle Standorte)')
+  }
+
+  function handleRevokeCompany() {
+    if (
+      window.confirm(
+        'Firmenschlüssel sperren? Neue Geräte können sich damit nicht mehr einrichten. Eingerichtete Tablets bleiben angemeldet.',
+      )
+    ) {
+      deleteCompanyKey.mutate()
+    }
+  }
+
+  function handleCreate(location: Location) {
     if (
       keyByLocation.has(location.id) &&
       !window.confirm(
@@ -49,15 +89,7 @@ export function MdmDistribution({ locations }: { locations: Location[] }) {
     ) {
       return
     }
-    try {
-      const result = await createKey.mutateAsync({
-        location_id: location.id,
-        valid_days: validity === 'none' ? null : Number(validity),
-      })
-      setCreated({ result, locationName: location.name })
-    } catch {
-      setError('Schlüssel konnte nicht erzeugt werden.')
-    }
+    void createFor(location.id, `Registrierungsschlüssel für „${location.name}“`)
   }
 
   function handleRevoke(location: Location) {
@@ -99,6 +131,40 @@ export function MdmDistribution({ locations }: { locations: Location[] }) {
         </select>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      <section aria-label="Firmenschlüssel" className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 max-w-2xl">
+            <h3 className="flex items-center gap-2 font-medium text-slate-900">
+              <Building2 className="h-4 w-4 text-slate-500" />
+              Firmenschlüssel (alle Standorte)
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Ein Schlüssel für alle Tablets – gedacht für die Android-App „HR3000 Kiosk“ und für MDMs, die eine
+              App-Konfiguration nur je App setzen (z. B. Endpoint Central). Neue Geräte warten auf Freigabe, den Standort
+              wählst du dabei. Ein schon eingerichtetes Tablet oder ein vorbereiteter Eintrag mit gleichem Gerätenamen
+              wird an jedem Standort wiedererkannt.
+            </p>
+            <p className="mt-2 text-sm">
+              <KeyStatus entry={companyKey} />
+              {companyKey?.last_used_at && (
+                <span className="text-slate-500"> · zuletzt benutzt {formatDate(companyKey.last_used_at)}</span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={createKey.isPending} onClick={handleCreateCompany}>
+              <KeyRound className="h-4 w-4" />
+              {companyKey ? 'Erneuern' : 'Schlüssel erzeugen'}
+            </Button>
+            {companyKey && (
+              <Button variant="ghost" size="sm" disabled={deleteCompanyKey.isPending} onClick={handleRevokeCompany}>
+                Sperren
+              </Button>
+            )}
+          </div>
+        </div>
+      </section>
+      <h3 className="font-medium text-slate-900">Schlüssel je Standort</h3>
       <Table>
         <TableHeader>
           <TableRow>
@@ -122,7 +188,7 @@ export function MdmDistribution({ locations }: { locations: Location[] }) {
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" disabled={createKey.isPending} onClick={() => void handleCreate(location)}>
+                    <Button variant="outline" size="sm" disabled={createKey.isPending} onClick={() => handleCreate(location)}>
                       <KeyRound className="h-4 w-4" />
                       {entry ? 'Erneuern' : 'Schlüssel erzeugen'}
                     </Button>
@@ -143,65 +209,75 @@ export function MdmDistribution({ locations }: { locations: Location[] }) {
   )
 }
 
+function CopyField({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="flex flex-col gap-1">
+      <Label>{label}</Label>
+      <div className="flex items-start gap-2">
+        <code className="min-w-0 flex-1 break-all rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+          {value}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label={`${label} kopieren`}
+          onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true))}
+        >
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copied ? 'Kopiert' : 'Kopieren'}
+        </Button>
+      </div>
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
+    </div>
+  )
+}
+
 function EnrollmentKeyDialog({
   created,
   onClose,
 }: {
-  created: { result: CreatedEnrollmentKey; locationName: string } | null
+  created: { result: CreatedEnrollmentKey; title: string } | null
   onClose: () => void
 }) {
-  const [copied, setCopied] = useState(false)
-  const value = created ? (created.result.enroll_url ?? created.result.key) : ''
-
+  const result = created?.result
   return (
-    <Dialog
-      open={created !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          setCopied(false)
-          onClose()
-        }
-      }}
-    >
-      <DialogContent className="max-w-2xl">
+    <Dialog open={created !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Registrierungsschlüssel für „{created?.locationName}“</DialogTitle>
+          <DialogTitle>{created?.title}</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-3 text-sm text-slate-600">
-          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-            Wird nur jetzt angezeigt. Wie ein Passwort behandeln: nur im MDM hinterlegen, nicht per Mail verschicken.
-          </p>
-          <div className="flex flex-col gap-1.5">
-            <Label>{created?.result.enroll_url ? 'Start-URL für das MDM' : 'Schlüssel'}</Label>
-            <code className="break-all rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
-              {value}
-            </code>
-            <div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true))}
-              >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                {copied ? 'Kopiert' : 'Kopieren'}
-              </Button>
-            </div>
+        {result && (
+          <div className="flex flex-col gap-4 text-sm text-slate-600">
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              Wird nur jetzt angezeigt. Wie ein Passwort behandeln: nur im MDM hinterlegen, nicht per Mail verschicken.
+            </p>
+            <section aria-label="Android-App" className="flex flex-col gap-3">
+              <h4 className="font-medium text-slate-900">Android-App „HR3000 Kiosk“ – App-Konfiguration im MDM</h4>
+              {result.kiosk_url && <CopyField label="Kiosk-Adresse (kiosk_url)" value={result.kiosk_url} />}
+              <CopyField label="Registrierungsschlüssel (enrollment_key)" value={result.key} />
+              <CopyField
+                label="Gerätename (device_name, optional)"
+                value="%devicename%"
+                hint="Platzhalter von Endpoint Central für den Gerätenamen; in anderen MDMs deren Platzhalter."
+              />
+            </section>
+            {result.enroll_url && (
+              <section aria-label="Web-App" className="flex flex-col gap-2 border-t border-slate-200 pt-3">
+                <h4 className="font-medium text-slate-900">Web-App oder Browser – Start-URL</h4>
+                <CopyField
+                  label="Start-URL"
+                  value={result.enroll_url}
+                  hint="Gerätenamen anhängen, damit vorbereitete Tablets ohne Freigabe zugeordnet werden: &name=<Gerätename> – per Platzhalter des MDM oder unter Windows per Skript mit dem Computernamen."
+                />
+              </section>
+            )}
+            <p>Anleitung: Handbuch für Admins, Abschnitt „Tablets per MDM verteilen“.</p>
           </div>
-          <p>
-            Gerätenamen anhängen, damit vorbereitete Tablets ohne Freigabe zugeordnet werden:{' '}
-            <code className="text-xs">&amp;name=&lt;Gerätename&gt;</code> – per Platzhalter des MDM oder unter Windows per
-            Skript mit dem Computernamen. Anleitung: Handbuch für Admins, Abschnitt „Tablets per MDM verteilen“.
-          </p>
-        </div>
+        )}
         <DialogFooter>
-          <Button
-            type="button"
-            onClick={() => {
-              setCopied(false)
-              onClose()
-            }}
-          >
+          <Button type="button" onClick={onClose}>
             Fertig
           </Button>
         </DialogFooter>

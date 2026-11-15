@@ -110,11 +110,12 @@ export function useEnrollmentKeysQuery() {
   })
 }
 
-/** Neuer Registrierungsschlüssel für einen Standort (ersetzt einen vorhandenen). valid_days null = unbefristet. */
+/** Neuer Registrierungsschlüssel für einen Standort oder – location_id null – für die ganze Firma (ersetzt einen
+ * vorhandenen). valid_days null = unbefristet. */
 export function useCreateEnrollmentKeyMutation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: { location_id: number; valid_days: number | null }) =>
+    mutationFn: async (payload: { location_id: number | null; valid_days: number | null }) =>
       unwrap(await apiClient.POST('/devices/enrollment-keys', { body: payload })),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['enrollment-keys'] })
@@ -129,6 +130,20 @@ export function useDeleteEnrollmentKeyMutation() {
       const result = await apiClient.DELETE('/devices/enrollment-keys/{location_id}', {
         params: { path: { location_id: locationId } },
       })
+      if (result.error !== undefined) throw new Error('Sperren fehlgeschlagen.')
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['enrollment-keys'] })
+    },
+  })
+}
+
+/** Firmenschlüssel sperren (Tablets bleiben angemeldet). */
+export function useDeleteCompanyEnrollmentKeyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const result = await apiClient.DELETE('/devices/enrollment-keys/company')
       if (result.error !== undefined) throw new Error('Sperren fehlgeschlagen.')
     },
     onSuccess: () => {
@@ -154,7 +169,7 @@ export function useApproveEnrollmentMutation() {
       payload,
     }: {
       enrollmentId: number
-      payload: { device_id?: number | null; name?: string | null }
+      payload: { device_id?: number | null; name?: string | null; location_id?: number | null }
     }) =>
       unwrap(
         await apiClient.POST('/devices/enrollments/{enrollment_id}/approve', {

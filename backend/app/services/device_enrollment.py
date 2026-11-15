@@ -195,31 +195,25 @@ async def enroll_device(
     key_row = await _find_key(db, tenant_id, key)
     now = _now()
     key_row.last_used_at = now
-    location = await db.get(Location, key_row.location_id)
+    # Firmenschlüssel (location_id NULL): Wiedererkennung und Namenszuordnung gelten in der ganzen
+    # Firma, eine neue Anfrage wartet ohne Standort – der wird bei der Freigabe gewählt.
+    company_key = key_row.location_id is None
+    location = None if company_key else await db.get(Location, key_row.location_id)
+    in_scope = (Device.tenant_id == tenant_id) if company_key else (
+        (Device.tenant_id == tenant_id) & (Device.location_id == key_row.location_id)
+    )
     installation = token_hash(installation_id)
     label = f"„{name}“" if name else "ohne Namen"
 
-    # 1. Diese Installation ist am Standort schon gebunden (Token am Gerät verloren)
+    # 1. Diese Installation ist (am Standort bzw. in der Firma) schon gebunden (Token am Gerät verloren)
     device = (
-        await db.execute(
-            select(Device).where(
-                Device.tenant_id == tenant_id,
-                Device.location_id == key_row.location_id,
-                Device.installation_hash == installation,
-            )
-        )
-    ).scalar_one_or_none()
+        await db.execute(select(Device).where(in_scope, Device.installation_hash == installation).order_by(Device.id))
+    ).scalars().first()
     prepared = False
     namesake: Device | None = None
     if device is None and name:
         namesake = (
-            await db.execute(
-                select(Device).where(
-                    Device.tenant_id == tenant_id,
-                    Device.location_id == key_row.location_id,
-                    device_name_matches(Device.mdm_name, name),
-                )
-            )
+            await db.execute(select(Device).where(in_scope, device_name_matches(Device.mdm_name, name)))
         ).scalar_one_or_none()
         # 2. Vorbereiteter, noch nie benutzter Eintrag mit diesem Gerätenamen
         if namesake is not None and namesake.installation_hash is None and namesake.last_seen is None:
@@ -263,10 +257,13 @@ async def enroll_device(
     origin = {"user_agent": (user_agent or "").strip()[:300] or None, "client_ip": (client_ip or "")[:45] or None}
     if enrollment is None:
         await purge_stale_enrollments(db, tenant_id)
+        same_place = (
+            DeviceEnrollment.location_id.is_(None) if company_key else DeviceEnrollment.location_id == key_row.location_id
+        )
         waiting = (
             await db.execute(
                 select(DeviceEnrollment)
-                .where(DeviceEnrollment.tenant_id == tenant_id, DeviceEnrollment.location_id == key_row.location_id)
+                .where(DeviceEnrollment.tenant_id == tenant_id, same_place)
                 .order_by(DeviceEnrollment.last_seen_at.asc(), DeviceEnrollment.id.asc())
             )
         ).scalars().all()
@@ -297,14 +294,16 @@ async def enroll_device(
             **origin,
         )
         db.add(enrollment)
+        where = "mit dem Firmenschlüssel" if company_key else f"am Standort „{location.name if location else '?'}“"
         log_action(
             db, tenant_id=tenant_id, actor_account_id=None, action=AuditAction.DEVICE_ENROLLMENT,
-            entity_type="location", entity_id=key_row.location_id,
-            detail=f"Gerät {label} (Prüfcode {enrollment.verify_code}) möchte sich am Standort "
-            f"„{location.name if location else '?'}“ einrichten – wartet auf Freigabe",
+            entity_type="tenant" if company_key else "location",
+            entity_id=tenant_id if company_key else key_row.location_id,
+            detail=f"Gerät {label} (Prüfcode {enrollment.verify_code}) möchte sich {where} einrichten – "
+            "wartet auf Freigabe",
         )
         await notify_enrollment_requested(
-            db, tenant_id, location.name if location else "?", name, enrollment.verify_code,
+            db, tenant_id, None if company_key else (location.name if location else "?"), name, enrollment.verify_code,
             namesake.name if namesake is not None else None,
         )
     else:

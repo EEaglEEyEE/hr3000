@@ -203,14 +203,24 @@ async def create_enrollment_key(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> EnrollmentKeyCreatedResponse:
-    """Neuer Schlüssel für einen Standort – ersetzt einen vorhandenen sofort (der alte gilt nicht mehr).
-    Der Schlüssel wird nur in dieser Antwort gezeigt; gespeichert ist nur sein Hash."""
-    location = await db.get(Location, payload.location_id)
-    if location is None or location.tenant_id != actor.tenant_id:
-        raise AppError(404, "LOCATION_NOT_FOUND", "Standort nicht gefunden.")
+    """Neuer Schlüssel für einen Standort oder – mit ``location_id`` null – für die ganze Firma (Standort
+    wird bei der Freigabe gewählt). Ersetzt einen vorhandenen sofort (der alte gilt nicht mehr). Der
+    Schlüssel wird nur in dieser Antwort gezeigt; gespeichert ist nur sein Hash."""
+    location = None
+    if payload.location_id is not None:
+        location = await db.get(Location, payload.location_id)
+        if location is None or location.tenant_id != actor.tenant_id:
+            raise AppError(404, "LOCATION_NOT_FOUND", "Standort nicht gefunden.")
     existing = (
-        await db.execute(select(DeviceEnrollmentKey).where(DeviceEnrollmentKey.location_id == location.id))
-    ).scalar_one_or_none()
+        await db.execute(
+            select(DeviceEnrollmentKey).where(
+                DeviceEnrollmentKey.tenant_id == actor.tenant_id,
+                DeviceEnrollmentKey.location_id == location.id
+                if location is not None
+                else DeviceEnrollmentKey.location_id.is_(None),
+            )
+        )
+    ).scalars().first()
     if existing is not None:
         await db.delete(existing)
         await db.flush()
@@ -218,17 +228,19 @@ async def create_enrollment_key(
     now = datetime.now(UTC).replace(tzinfo=None)
     row = DeviceEnrollmentKey(
         tenant_id=actor.tenant_id,
-        location_id=location.id,
+        location_id=location.id if location is not None else None,
         key_hash=token_hash(key),
         created_at=now,
         created_by_account_id=actor.account_id,
         expires_at=now + timedelta(days=payload.valid_days) if payload.valid_days else None,
     )
     db.add(row)
+    scope = f"Standort „{location.name}“" if location is not None else "die ganze Firma (Firmenschlüssel)"
     log_action(
         db, tenant_id=actor.tenant_id, actor_account_id=actor.account_id, action=AuditAction.DEVICE_ENROLLMENT,
-        entity_type="location", entity_id=location.id,
-        detail=f"Registrierungsschlüssel für Standort „{location.name}“ {'erneuert' if existing else 'erzeugt'} "
+        entity_type="location" if location is not None else "tenant",
+        entity_id=location.id if location is not None else actor.tenant_id,
+        detail=f"Registrierungsschlüssel für {scope} {'erneuert' if existing else 'erzeugt'} "
         f"({f'{payload.valid_days} Tage gültig' if payload.valid_days else 'unbefristet'})",
     )
     await db.commit()
@@ -242,7 +254,34 @@ async def create_enrollment_key(
         last_used_at=None,
         key=key,
         enroll_url=f"{kiosk_url}#enroll={key}" if kiosk_url else None,
+        kiosk_url=kiosk_url.rstrip("/") if kiosk_url else None,
     )
+
+
+# Vor der Route mit {location_id}: sonst würde „company“ dort als (ungültige) Zahl gelesen
+@router.delete("/devices/enrollment-keys/company", status_code=204)
+async def delete_company_enrollment_key(
+    actor: Actor = Depends(get_current_full_hr_principal),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Firmenschlüssel sperren. Eingerichtete Tablets bleiben angemeldet; offene Anfragen bleiben stehen
+    und können weiter freigegeben oder abgelehnt werden."""
+    rows = (
+        await db.execute(
+            select(DeviceEnrollmentKey).where(
+                DeviceEnrollmentKey.tenant_id == actor.tenant_id, DeviceEnrollmentKey.location_id.is_(None)
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        raise AppError(404, "ENROLLMENT_KEY_NOT_FOUND", "Es gibt keinen Firmenschlüssel.")
+    for row in rows:
+        await db.delete(row)
+    log_action(
+        db, tenant_id=actor.tenant_id, actor_account_id=actor.account_id, action=AuditAction.DEVICE_ENROLLMENT,
+        entity_type="tenant", entity_id=actor.tenant_id, detail="Firmenschlüssel für die Tablet-Registrierung gesperrt",
+    )
+    await db.commit()
 
 
 @router.delete("/devices/enrollment-keys/{location_id}", status_code=204)
@@ -343,22 +382,31 @@ async def approve_enrollment(
     actor: Actor = Depends(get_current_full_hr_principal),
     db: AsyncSession = Depends(get_db),
 ) -> DeviceResponse:
-    """Freigeben: als neues Tablet anlegen oder einen vorhandenen Eintrag desselben Standorts übernehmen
-    (Tablet-Tausch – das bisherige Gerät ist danach abgemeldet). Das Gerät meldet sich innerhalb einer
-    Minute von selbst an."""
+    """Freigeben: als neues Tablet anlegen oder einen vorhandenen Eintrag übernehmen (Tablet-Tausch – das
+    bisherige Gerät ist danach abgemeldet). Bei einem Standort-Schlüssel nur Einträge dieses Standorts;
+    beim Firmenschlüssel jeder Eintrag, für ein neues Tablet ist dann ``location_id`` Pflicht. Das Gerät
+    meldet sich innerhalb einer Minute von selbst an."""
     enrollment = await _get_enrollment(db, actor, enrollment_id)
     reported = enrollment.reported_name
     if payload.device_id is not None:
         device = await db.get(Device, payload.device_id)
         if device is None or device.tenant_id != actor.tenant_id:
             raise AppError(404, "DEVICE_NOT_FOUND", "Gerät nicht gefunden.")
-        if device.location_id != enrollment.location_id:
+        if enrollment.location_id is not None and device.location_id != enrollment.location_id:
             raise AppError(400, "LOCATION_MISMATCH", "Das Tablet gehört zu einem anderen Standort als der Schlüssel.")
+        if payload.location_id is not None and payload.location_id != device.location_id:
+            raise AppError(400, "LOCATION_MISMATCH", "Das gewählte Tablet gehört zu einem anderen Standort.")
         replaced = device.installation_hash is not None
     else:
+        location_id = payload.location_id or enrollment.location_id
+        if location_id is None:
+            raise AppError(400, "LOCATION_REQUIRED", "Bitte einen Standort für das Tablet wählen.")
+        location = await db.get(Location, location_id)
+        if location is None or location.tenant_id != actor.tenant_id:
+            raise AppError(404, "LOCATION_NOT_FOUND", "Standort nicht gefunden.")
         device = Device(
             tenant_id=actor.tenant_id,
-            location_id=enrollment.location_id,
+            location_id=location.id,
             name=payload.name or reported or f"Tablet {enrollment.verify_code}",
             token_hash=enrollment.token_hash,
         )
@@ -402,7 +450,8 @@ async def reject_enrollment(
     enrollment = await _get_enrollment(db, actor, enrollment_id)
     log_action(
         db, tenant_id=actor.tenant_id, actor_account_id=actor.account_id, action=AuditAction.DEVICE_ENROLLMENT,
-        entity_type="location", entity_id=enrollment.location_id,
+        entity_type="location" if enrollment.location_id is not None else "tenant",
+        entity_id=enrollment.location_id if enrollment.location_id is not None else actor.tenant_id,
         detail=f"Registrierung von Gerät „{enrollment.reported_name or 'ohne Namen'}“ (Prüfcode "
         f"{enrollment.verify_code}) abgelehnt",
     )

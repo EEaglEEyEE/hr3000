@@ -615,11 +615,33 @@ export interface paths {
         put?: never;
         /**
          * Create Enrollment Key
-         * @description Neuer Schlüssel für einen Standort – ersetzt einen vorhandenen sofort (der alte gilt nicht mehr).
-         *     Der Schlüssel wird nur in dieser Antwort gezeigt; gespeichert ist nur sein Hash.
+         * @description Neuer Schlüssel für einen Standort oder – mit ``location_id`` null – für die ganze Firma (Standort
+         *     wird bei der Freigabe gewählt). Ersetzt einen vorhandenen sofort (der alte gilt nicht mehr). Der
+         *     Schlüssel wird nur in dieser Antwort gezeigt; gespeichert ist nur sein Hash.
          */
         post: operations["create_enrollment_key_devices_enrollment_keys_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/devices/enrollment-keys/company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Company Enrollment Key
+         * @description Firmenschlüssel sperren. Eingerichtete Tablets bleiben angemeldet; offene Anfragen bleiben stehen
+         *     und können weiter freigegeben oder abgelehnt werden.
+         */
+        delete: operations["delete_company_enrollment_key_devices_enrollment_keys_company_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -698,9 +720,10 @@ export interface paths {
         put?: never;
         /**
          * Approve Enrollment
-         * @description Freigeben: als neues Tablet anlegen oder einen vorhandenen Eintrag desselben Standorts übernehmen
-         *     (Tablet-Tausch – das bisherige Gerät ist danach abgemeldet). Das Gerät meldet sich innerhalb einer
-         *     Minute von selbst an.
+         * @description Freigeben: als neues Tablet anlegen oder einen vorhandenen Eintrag übernehmen (Tablet-Tausch – das
+         *     bisherige Gerät ist danach abgemeldet). Bei einem Standort-Schlüssel nur Einträge dieses Standorts;
+         *     beim Firmenschlüssel jeder Eintrag, für ein neues Tablet ist dann ``location_id`` Pflicht. Das Gerät
+         *     meldet sich innerhalb einer Minute von selbst an.
          */
         post: operations["approve_enrollment_devices_enrollments__enrollment_id__approve_post"];
         delete?: never;
@@ -7467,7 +7490,7 @@ export interface components {
             /** Id */
             id: number;
             /** Location Id */
-            location_id: number;
+            location_id: number | null;
             /** Reported Name */
             reported_name: string | null;
             /** Verify Code */
@@ -8243,6 +8266,8 @@ export interface components {
             device_id?: number | null;
             /** Name */
             name?: string | null;
+            /** Location Id */
+            location_id?: number | null;
         };
         /** EnrollmentCleanupResponse */
         EnrollmentCleanupResponse: {
@@ -8252,7 +8277,7 @@ export interface components {
         /** EnrollmentKeyCreateRequest */
         EnrollmentKeyCreateRequest: {
             /** Location Id */
-            location_id: number;
+            location_id: number | null;
             /**
              * Valid Days
              * @default 30
@@ -8262,7 +8287,7 @@ export interface components {
         /** EnrollmentKeyCreatedResponse */
         EnrollmentKeyCreatedResponse: {
             /** Location Id */
-            location_id: number;
+            location_id: number | null;
             /**
              * Created At
              * Format: date-time
@@ -8276,11 +8301,13 @@ export interface components {
             key: string;
             /** Enroll Url */
             enroll_url?: string | null;
+            /** Kiosk Url */
+            kiosk_url?: string | null;
         };
         /** EnrollmentKeyResponse */
         EnrollmentKeyResponse: {
             /** Location Id */
-            location_id: number;
+            location_id: number | null;
             /**
              * Created At
              * Format: date-time
@@ -14498,6 +14525,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    delete_company_enrollment_key_devices_enrollment_keys_company_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

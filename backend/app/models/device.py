@@ -51,15 +51,18 @@ class Device(Base):
 
 
 class DeviceEnrollmentKey(Base):
-    """Registrierungsschlüssel eines Standorts: Das MDM verteilt ihn in der Start-URL der Kiosk-App
-    (``#enroll=…``), Tablets richten sich damit selbst ein. Gespeichert nur als SHA-256, angezeigt
-    einmal beim Erzeugen. Ein Schlüssel je Standort; Erneuern ersetzt, Löschen sperrt."""
+    """Registrierungsschlüssel: Das MDM verteilt ihn in der Start-URL der Kiosk-App (``#enroll=…``)
+    bzw. in der App-Konfiguration der Android-App, Tablets richten sich damit selbst ein. Gespeichert
+    nur als SHA-256, angezeigt einmal beim Erzeugen. Ein Schlüssel je Standort und höchstens ein
+    Firmenschlüssel (``location_id`` NULL, Standort wird bei der Freigabe gewählt – für MDMs, die eine
+    App-Konfiguration nur je App und nicht je Gerät kennen). Erneuern ersetzt, Löschen sperrt."""
 
     __tablename__ = "device_enrollment_keys"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), unique=True)
+    # None = Firmenschlüssel (höchstens einer je Mandant, im Code sichergestellt)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), unique=True, nullable=True)
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     created_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
@@ -78,7 +81,8 @@ class DeviceEnrollment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))
+    # None = per Firmenschlüssel gemeldet, der Standort wird bei der Freigabe gewählt
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     # Vom Gerät gemeldeter Name (MDM-Platzhalter oder Skript) – ungeprüft, nur Anzeige und Zuordnung
     reported_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Prüfcode, den das Gerät auf dem Bildschirm zeigt (Abgleich vor der Freigabe)

@@ -148,9 +148,10 @@ describe('Tablets per MDM', () => {
     expect(screen.queryByRole('region', { name: 'Neue Geräte' })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Verteilung per MDM' }))
-    expect(await screen.findByText('kein Schlüssel')).toBeInTheDocument()
+    const row = (await screen.findByRole('cell', { name: 'Frankfurt' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('kein Schlüssel')).toBeInTheDocument()
     await userEvent.selectOptions(screen.getByLabelText('Gültigkeit neuer Schlüssel'), 'none')
-    await userEvent.click(screen.getByRole('button', { name: 'Schlüssel erzeugen' }))
+    await userEvent.click(within(row).getByRole('button', { name: 'Schlüssel erzeugen' }))
     await waitFor(() =>
       expect(calls.find((c) => c.method === 'POST' && c.path === '/devices/enrollment-keys')?.init.body).toEqual({
         location_id: 1,
@@ -158,6 +159,7 @@ describe('Tablets per MDM', () => {
       }),
     )
     const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Registrierungsschlüssel für „Frankfurt“')).toBeInTheDocument()
     expect(within(dialog).getByText(`https://kiosk.firma.hr3000.de/#enroll=${KEY}`)).toBeInTheDocument()
     expect(within(dialog).getByText(/Wird nur jetzt angezeigt/)).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Fertig' }))
@@ -179,5 +181,141 @@ describe('Tablets per MDM', () => {
         mdm_name: 'NB-FRA-02',
       }),
     )
+  })
+})
+
+const companyEnrollment = { ...enrollment, id: 12, location_id: null, reported_name: 'Kiosk-HEF', verify_code: 'HEF-123' }
+const twoLocations = [
+  { id: 1, name: 'Frankfurt', timezone: 'Europe/Berlin' },
+  { id: 2, name: 'Viernheim', timezone: 'Europe/Berlin' },
+]
+const companyKeyCreated = {
+  location_id: null, created_at: '2026-11-15T09:00:00', expires_at: '2026-12-15T09:00:00', last_used_at: null,
+  key: KEY, enroll_url: `https://kiosk.firma.hr3000.de/#enroll=${KEY}`, kiosk_url: 'https://kiosk.firma.hr3000.de',
+}
+
+describe('Firmenschlüssel', () => {
+  it('erzeugt den Firmenschlüssel und zeigt die Werte für die App-Konfiguration einzeln', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = api({ 'GET /devices/enrollments': [], 'POST /devices/enrollment-keys': companyKeyCreated })
+    renderWithProviders(<DevicesPage />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Verteilung per MDM' }))
+    const company = await screen.findByRole('region', { name: 'Firmenschlüssel' })
+    expect(within(company).getByText('kein Schlüssel')).toBeInTheDocument()
+    expect(within(company).queryByRole('button', { name: 'Sperren' })).not.toBeInTheDocument()
+    await userEvent.click(within(company).getByRole('button', { name: 'Schlüssel erzeugen' }))
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === 'POST' && c.path === '/devices/enrollment-keys')?.init.body).toEqual({
+        location_id: null,
+        valid_days: 30,
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Firmenschlüssel (alle Standorte)')).toBeInTheDocument()
+    const app = within(dialog).getByRole('region', { name: 'Android-App' })
+    expect(within(app).getByText('https://kiosk.firma.hr3000.de')).toBeInTheDocument()
+    expect(within(app).getByText(KEY)).toBeInTheDocument()
+    expect(within(app).getByText('%devicename%')).toBeInTheDocument()
+    expect(within(dialog).getByRole('region', { name: 'Web-App' })).toHaveTextContent(`#enroll=${KEY}`)
+  })
+
+  it('kopiert einzelne Werte', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    api({ 'GET /devices/enrollments': [], 'POST /devices/enrollment-keys': companyKeyCreated })
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderWithProviders(<DevicesPage />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Verteilung per MDM' }))
+    const company = await screen.findByRole('region', { name: 'Firmenschlüssel' })
+    await userEvent.click(within(company).getByRole('button', { name: 'Schlüssel erzeugen' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Registrierungsschlüssel (enrollment_key) kopieren' }))
+    expect(writeText).toHaveBeenCalledWith(KEY)
+    expect(await within(dialog).findByText('Kopiert')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Kiosk-Adresse (kiosk_url) kopieren' }))
+    expect(writeText).toHaveBeenLastCalledWith('https://kiosk.firma.hr3000.de')
+  })
+
+  it('erneuert nur nach Rückfrage und sperrt den Firmenschlüssel', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = api({
+      'GET /devices/enrollments': [],
+      'GET /devices/enrollment-keys': [
+        { location_id: null, created_at: '2026-11-15T09:00:00', expires_at: null, last_used_at: '2026-11-15T10:00:00' },
+      ],
+      'DELETE /devices/enrollment-keys/company': undefined,
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+    renderWithProviders(<DevicesPage />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Verteilung per MDM' }))
+    const company = await screen.findByRole('region', { name: 'Firmenschlüssel' })
+    expect(await within(company).findByText('unbefristet')).toBeInTheDocument()
+    expect(within(company).getByText(/zuletzt benutzt/)).toBeInTheDocument()
+    // Die Standorttabelle zählt den Firmenschlüssel nicht mit
+    const row = screen.getByRole('cell', { name: 'Frankfurt' }).closest('tr') as HTMLElement
+    expect(within(row).getByText('kein Schlüssel')).toBeInTheDocument()
+
+    await userEvent.click(within(company).getByRole('button', { name: 'Erneuern' }))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Firmenschlüssel erneuern?'))
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/devices/enrollment-keys')).toBe(false)
+
+    await userEvent.click(within(company).getByRole('button', { name: 'Sperren' }))
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'DELETE' && c.path === '/devices/enrollment-keys/company')).toBe(true),
+    )
+  })
+
+  it('zeigt Anfragen über den Firmenschlüssel ohne Standort und verlangt beim Freigeben einen', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const calls = api({ 'GET /locations': twoLocations, 'GET /devices/enrollments': [companyEnrollment] })
+    renderWithProviders(<DevicesPage />)
+    const pending = await screen.findByRole('region', { name: 'Neue Geräte' })
+    expect(within(pending).getByText(/Firmenschlüssel – Standort beim Freigeben wählen/)).toBeInTheDocument()
+
+    await userEvent.click(within(pending).getByRole('button', { name: 'Freigeben' }))
+    const dialog = await screen.findByRole('dialog')
+    const location = within(dialog).getByLabelText('Standort')
+    expect(location).toHaveValue('')
+    const submit = within(dialog).getByRole('button', { name: 'Freigeben' })
+    expect(submit).toBeDisabled()
+    await userEvent.selectOptions(location, '2')
+    expect(submit).toBeEnabled()
+    await userEvent.click(submit)
+    await waitFor(() =>
+      expect(calls.find((c) => c.path.endsWith('/approve'))?.init.body).toEqual({ name: 'Kiosk-HEF', location_id: 2 }),
+    )
+  })
+
+  it('kann über den Firmenschlüssel ein Tablet an jedem Standort ersetzen', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const viernheim = { ...device, id: 6, location_id: 2, name: 'Kiosk-Viernheim', mdm_name: null }
+    const calls = api({
+      'GET /locations': twoLocations,
+      'GET /devices': [device, viernheim],
+      'GET /devices/enrollments': [companyEnrollment],
+    })
+    renderWithProviders(<DevicesPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Freigeben' }))
+    await userEvent.click(await screen.findByLabelText(/Vorhandenes Tablet ersetzen/))
+    const select = screen.getByLabelText('Tablet')
+    expect(within(select).getByRole('option', { name: 'Eingang (Frankfurt)' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: 'Kiosk-Viernheim (Viernheim)' })).toBeInTheDocument()
+    await userEvent.selectOptions(select, '6')
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Freigeben' }))
+    await waitFor(() => expect(calls.find((c) => c.path.endsWith('/approve'))?.init.body).toEqual({ device_id: 6 }))
+  })
+
+  it('Anfrage mit Standort-Schlüssel: Standort ist vorbelegt, ersetzt werden nur dessen Tablets', async () => {
+    loginAs({ kind: 'hr', role: 'HR' })
+    const viernheim = { ...device, id: 6, location_id: 2, name: 'Kiosk-Viernheim', mdm_name: null }
+    api({ 'GET /locations': twoLocations, 'GET /devices': [device, viernheim] })
+    renderWithProviders(<DevicesPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Freigeben' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByLabelText('Standort')).toHaveValue('1')
+    expect(within(dialog).queryByRole('option', { name: 'Standort wählen …' })).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByLabelText(/Vorhandenes Tablet ersetzen/))
+    const options = within(within(dialog).getByLabelText('Tablet')).getAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual(['Eingang'])
   })
 })

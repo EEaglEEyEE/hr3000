@@ -276,16 +276,20 @@ async def notify_device_enrolled(db: AsyncSession, device, reported_name: str | 
 async def notify_enrollment_requested(
     db: AsyncSession,
     tenant_id: int,
-    location_name: str,
+    location_name: str | None,
     reported_name: str | None,
     verify_code: str,
     conflict_device_name: str | None,
 ) -> None:
-    """Admin/HR: ein Gerät mit gültigem Registrierungsschlüssel wartet auf Freigabe."""
+    """Admin/HR: ein Gerät mit gültigem Registrierungsschlüssel wartet auf Freigabe. location_name None =
+    Firmenschlüssel (Standort wird bei der Freigabe gewählt)."""
+    where = f"am Standort „{location_name}“" if location_name else "mit dem Firmenschlüssel"
     message = (
-        f"Ein Gerät „{reported_name or 'ohne Namen'}“ möchte sich am Standort „{location_name}“ als Tablet "
+        f"Ein Gerät „{reported_name or 'ohne Namen'}“ möchte sich {where} als Tablet "
         f"einrichten (Prüfcode {verify_code}). Freigeben oder ablehnen in der HR-Webapp unter „Tablets“."
     )
+    if not location_name:
+        message += " Der Standort wird beim Freigeben gewählt."
     if conflict_device_name:
         message += (
             f" Achtung: Das Tablet „{conflict_device_name}“ mit diesem Gerätenamen ist bereits in Benutzung – "

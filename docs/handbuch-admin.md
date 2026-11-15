@@ -1049,7 +1049,7 @@ MDM verteilt dafür nur eine Start-URL mit dem Registrierungsschlüssel des Stan
 einzelnen Geräte entstehen erst am Gerät und stehen nie im MDM.
 
 1. **Schlüssel erzeugen:** „Tablets“ → Reiter „Verteilung per MDM“ → beim Standort „Schlüssel
-   erzeugen“. Vorher die Gültigkeit wählen (7 Tage bis 1 Jahr oder unbefristet, Standard 30 Tage).
+   erzeugen“, oder oben einen **Firmenschlüssel** für alle Standorte (siehe unten). Vorher die Gültigkeit wählen (7 Tage bis 1 Jahr oder unbefristet, Standard 30 Tage).
    Die Start-URL, z. B. `https://kiosk.firma.hr3000.de/#enroll=<schlüssel>`, wird nur einmal angezeigt.
    Wie ein Passwort behandeln: nur im MDM hinterlegen, nicht per Mail verschicken.
 2. **Gerätenamen anhängen (empfohlen):** `&name=<Gerätename>`. Damit ordnet HR3000 das Gerät einem
@@ -1108,18 +1108,26 @@ gegenüber der Web-App aus Managed Google Play:
 
 Einrichten im MDM (Beispiel Endpoint Central, andere MDMs sinngemäß):
 
-1. Die App (APK, bekommt ihr von uns) im MDM als private App für Managed Google Play hinzufügen.
-2. App-Konfiguration der App setzen:
-   - **Kiosk-Adresse** (`kiosk_url`), z. B. `https://firma.kiosk.hr3000.de`. Steht in der HR-Webapp
-     unter „Tablets“ → „Verteilung per MDM“ (Teil der Start-URL vor `/#`).
-   - **Registrierungsschlüssel** (`enrollment_key`): der Teil der Start-URL nach `#enroll=`. Leer
-     lassen, wenn die Tablets per QR-Code gekoppelt werden.
+1. Die App (APK, bekommt ihr von uns) im MDM hochladen (Endpoint Central: „Device Management“ →
+   „App Repository“ → App hinzufügen) und den Tablets zuweisen.
+2. In der HR-Webapp unter „Tablets“ → „Verteilung per MDM“ den **Firmenschlüssel** erzeugen. Das
+   Fenster zeigt die drei Werte für die App-Konfiguration einzeln mit Kopierknopf.
+3. App-Konfiguration der App setzen (Endpoint Central: „App Repository“ → „HR3000 Kiosk“ → Reiter
+   „Configurations“ → „Save“):
+   - **Kiosk-Adresse** (`kiosk_url`), z. B. `https://kiosk.firma.hr3000.de`.
+   - **Registrierungsschlüssel** (`enrollment_key`). Leer lassen, wenn die Tablets per QR-Code
+     gekoppelt werden.
    - **Gerätename** (`device_name`, optional): Platzhalter des MDM für den Gerätenamen, in Endpoint
-     Central z. B. `%devicename%`.
-   Je Standort ein eigenes Profil bzw. eine eigene Konfiguration, weil der Schlüssel je Standort gilt.
-3. Im Kiosk-Profil die App „HR3000 Kiosk“ als einzige App erlauben (statt der Web-App bzw. Chrome).
-4. Erster Start: Das Tablet zeigt einen Prüfcode und wartet auf Freigabe (wie bisher), oder es
-   bindet sich ohne Freigabe an einen vorbereiteten Eintrag mit gleichem Gerätenamen.
+     Central `%devicename%`.
+   Endpoint Central setzt diese Konfiguration je App, also für alle Tablets gleich. Deshalb der
+   Firmenschlüssel: Ein Schlüssel je Standort ließe sich dort nicht verteilen.
+4. Im Kiosk-Profil die App „HR3000 Kiosk“ als einzige App erlauben (statt der Web-App bzw. Chrome).
+5. Erster Start: Das Tablet zeigt einen Prüfcode und wartet auf Freigabe – beim Freigeben den
+   Standort wählen. Oder es bindet sich ohne Freigabe an einen vorbereiteten Eintrag mit gleichem
+   Gerätenamen (an jedem Standort).
+
+Neue Werte aus dem MDM kommen beim nächsten Abgleich aufs Tablet (meist nach wenigen Minuten,
+schneller nach einem Neustart des Tablets). Läuft die App gerade, übernimmt sie sie sofort.
 
 Wechsel von der Web-App zur App: Die App ist für HR3000 ein neues Gerät (eigener Speicher). Das Tablet
 erscheint einmal in der Freigabe; dort „Vorhandenes Tablet ersetzen“ wählen. Alternativ in der
@@ -1127,6 +1135,22 @@ HR-Webapp beim Tablet „QR-Code“ öffnen und in der App scannen.
 
 Ohne MDM fragt die App beim ersten Start nach der Kiosk-Adresse; danach koppeln per QR-Code oder
 Kopplungscode wie im Browser. Neue Werte aus dem MDM übernimmt die App sofort.
+
+#### Firmenschlüssel (alle Standorte)
+
+Ein Schlüssel für die ganze Firma, oben im Reiter „Verteilung per MDM“. Gedacht für MDMs, die eine
+Einstellung nur für alle Geräte gleich setzen können (z. B. die App-Konfiguration in Endpoint
+Central).
+
+- Neue Geräte warten in der Freigabe mit dem Hinweis „Firmenschlüssel – Standort beim Freigeben
+  wählen“. Beim Freigeben als neues Tablet ist der Standort Pflicht; „Vorhandenes Tablet ersetzen“
+  bietet die Tablets aller Standorte an.
+- Ein schon eingerichtetes Tablet (gleiche Installation, z. B. nach Datenverlust) und ein
+  vorbereiteter Eintrag mit gleichem Gerätenamen werden an jedem Standort wiedererkannt.
+- Standort-Schlüssel und Firmenschlüssel können nebeneinander bestehen. Erneuern und Sperren wie bei
+  den Standort-Schlüsseln; offene Anfragen bleiben beim Sperren stehen.
+- Auch eine Anfrage über einen Standort-Schlüssel lässt sich beim Freigeben einem anderen Standort
+  zuordnen.
 
 Regeln:
 

@@ -480,6 +480,7 @@ ROUTE_RULES: dict[str, Rule] = {
     "DELETE /devices/{device_id}": area(A.MASTER_DATA),
     "GET /devices/enrollment-keys": area(A.MASTER_DATA),
     "POST /devices/enrollment-keys": area(A.MASTER_DATA),
+    "DELETE /devices/enrollment-keys/company": area(A.MASTER_DATA),
     "DELETE /devices/enrollment-keys/{location_id}": area(A.MASTER_DATA),
     "GET /devices/enrollments": area(A.MASTER_DATA),
     "POST /devices/enrollments/{enrollment_id}/approve": area(A.MASTER_DATA),

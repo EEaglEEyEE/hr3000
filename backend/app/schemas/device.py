@@ -146,7 +146,10 @@ class DeviceEnrollResponse(BaseModel):
 
 
 class EnrollmentKeyCreateRequest(BaseModel):
-    location_id: int
+    model_config = ConfigDict(extra="forbid")
+
+    # Pflichtfeld; null = Firmenschlüssel für alle Standorte (Standort wird bei der Freigabe gewählt)
+    location_id: int | None = Field(ge=1)
     # None = unbefristet
     valid_days: int | None = Field(default=30, ge=1, le=365)
 
@@ -154,7 +157,8 @@ class EnrollmentKeyCreateRequest(BaseModel):
 class EnrollmentKeyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    location_id: int
+    # None = Firmenschlüssel
+    location_id: int | None
     created_at: datetime
     expires_at: datetime | None
     last_used_at: datetime | None
@@ -165,11 +169,14 @@ class EnrollmentKeyCreatedResponse(EnrollmentKeyResponse):
     key: str
     # Start-URL für das MDM (ohne Gerätenamen); None, wenn sich die Kiosk-Adresse nicht ableiten lässt
     enroll_url: str | None = None
+    # Kiosk-Adresse ohne Pfad – für die App-Konfiguration der Android-App (kiosk_url)
+    kiosk_url: str | None = None
 
 
 class DeviceEnrollmentResponse(BaseModel):
     id: int
-    location_id: int
+    # None = per Firmenschlüssel gemeldet, Standort bei der Freigabe wählen
+    location_id: int | None
     reported_name: str | None
     verify_code: str
     created_at: datetime
@@ -238,7 +245,12 @@ class DevicePresenceListResponse(BaseModel):
 
 
 class EnrollmentApproveRequest(BaseModel):
-    # Vorhandenen Tablet-Eintrag (gleicher Standort) übernehmen; None = neuen Eintrag anlegen
-    device_id: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    # Vorhandenen Tablet-Eintrag übernehmen (sein Standort gilt); None = neuen Eintrag anlegen
+    device_id: int | None = Field(default=None, ge=1)
     # Name eines neuen Eintrags (Standard: gemeldeter Gerätename)
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    # Standort eines neuen Eintrags. Pflicht bei Anfragen über den Firmenschlüssel, sonst Standard:
+    # Standort des Schlüssels
+    location_id: int | None = Field(default=None, ge=1)

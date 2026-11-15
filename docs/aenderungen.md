@@ -5,6 +5,13 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 15.11.2026
 
+- **Tablets, Firmenschlüssel:** Unter „Tablets“ → „Verteilung per MDM“ gibt es einen
+  Registrierungsschlüssel für alle Standorte. Geräte, die sich damit melden, wählen beim Freigeben
+  ihren Standort; schon eingerichtete Tablets und vorbereitete Einträge mit gleichem Gerätenamen
+  werden an jedem Standort erkannt. Gedacht für die Android-App, deren App-Konfiguration z. B.
+  Endpoint Central nur für alle Geräte gleich setzt. Das Schlüsselfenster zeigt jetzt Kiosk-Adresse,
+  Schlüssel und Gerätename einzeln zum Kopieren.
+- **Android-App 1.1.0:** Einrichtungsseite im Stil des Kiosks, HR3000-Logo als App-Symbol.
 - **Android-App „HR3000 Kiosk“:** Für Android-Tablets gibt es eine eigene App. Sie zeigt den
   gewohnten Kiosk, bekommt Kiosk-Adresse, Registrierungsschlüssel und Gerätenamen aber als
   App-Konfiguration aus dem MDM. Kein Schlüssel mehr in einer Start-URL (keine Freigabe-Anfragen
