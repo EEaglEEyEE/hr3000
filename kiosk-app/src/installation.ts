@@ -1,10 +1,21 @@
+import { nativeInstallationId } from './nativeBridge'
+
 const INSTALLATION_KEY = 'kiosk.installation_id'
 
-/** Zufällige, dauerhafte ID dieser Tablet-Installation. Der Server bindet den Tablet-Zugang an genau
- * eine Installation – ein anderes Gerät mit demselben Token wird abgewiesen (DEVICE_IN_USE). */
+/** Dauerhafte ID dieser Tablet-Installation. Der Server bindet den Tablet-Zugang an genau eine
+ * Installation – ein anderes Gerät mit demselben Token wird abgewiesen (DEVICE_IN_USE).
+ *
+ * In der Android-App kommt sie beim ersten Start vom Gerät (fest, auch nach „Daten löschen“): Geht der
+ * Speicher verloren, meldet sich das Tablet per Registrierungsschlüssel als dieselbe Installation an und
+ * braucht keine neue Freigabe. Eine schon gespeicherte ID bleibt – sonst wäre die Bindung weg. */
 export function installationId(): string {
   const existing = localStorage.getItem(INSTALLATION_KEY)
   if (existing) return existing
+  const native = nativeInstallationId()
+  if (native) {
+    localStorage.setItem(INSTALLATION_KEY, native)
+    return native
+  }
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
   const id = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

@@ -1088,6 +1088,46 @@ einzelnen Geräte entstehen erst am Gerät und stehen nie im MDM.
      bzw. aus dem Netz und sind ungeprüft; sie helfen beim Einordnen, entscheidend bleibt der
      Prüfcode auf dem Bildschirm.
 
+#### Android-Tablets: App „HR3000 Kiosk“ (empfohlen)
+
+Für Android gibt es eine eigene App. Sie zeigt denselben Kiosk wie der Browser, bekommt Kiosk-Adresse,
+Schlüssel und Gerätenamen aber als **App-Konfiguration** aus dem MDM statt in einer Start-URL. Vorteile
+gegenüber der Web-App aus Managed Google Play:
+
+- Der Schlüssel steht in keiner Start-URL mehr. Die automatischen Prüfgeräte von Google, die jede neue
+  Web-App-Version starten, erzeugen keine Freigabe-Anfragen mehr.
+- Die App hat eine feste Geräte-Kennung. Verliert das Tablet seine Daten (App-Daten gelöscht, App neu
+  installiert), meldet es sich mit dem Schlüssel von selbst wieder als dasselbe Tablet an – ohne neue
+  Freigabe. Erst ein auf Werkseinstellungen zurückgesetztes Gerät gilt als neu.
+- Die App bleibt beim Kiosk: Links auf andere Seiten öffnen sich nicht, die Zurück-Taste tut nichts,
+  die Kamera ist nur für den QR-Scan des Kiosks freigegeben.
+- In der Freigabeliste steht bei Anfragen aus der App „HR3000-App 1.0.0 auf Android“. Anfragen mit
+  einem anderen Browser (etwa „Chrome 90“ von einer Google-IP) stammen nicht von euren Tablets.
+- Neue Kiosk-Funktionen kommen wie bisher ohne App-Update aufs Tablet, die App lädt den Kiosk vom
+  Server.
+
+Einrichten im MDM (Beispiel Endpoint Central, andere MDMs sinngemäß):
+
+1. Die App (APK, bekommt ihr von uns) im MDM als private App für Managed Google Play hinzufügen.
+2. App-Konfiguration der App setzen:
+   - **Kiosk-Adresse** (`kiosk_url`), z. B. `https://firma.kiosk.hr3000.de`. Steht in der HR-Webapp
+     unter „Tablets“ → „Verteilung per MDM“ (Teil der Start-URL vor `/#`).
+   - **Registrierungsschlüssel** (`enrollment_key`): der Teil der Start-URL nach `#enroll=`. Leer
+     lassen, wenn die Tablets per QR-Code gekoppelt werden.
+   - **Gerätename** (`device_name`, optional): Platzhalter des MDM für den Gerätenamen, in Endpoint
+     Central z. B. `%devicename%`.
+   Je Standort ein eigenes Profil bzw. eine eigene Konfiguration, weil der Schlüssel je Standort gilt.
+3. Im Kiosk-Profil die App „HR3000 Kiosk“ als einzige App erlauben (statt der Web-App bzw. Chrome).
+4. Erster Start: Das Tablet zeigt einen Prüfcode und wartet auf Freigabe (wie bisher), oder es
+   bindet sich ohne Freigabe an einen vorbereiteten Eintrag mit gleichem Gerätenamen.
+
+Wechsel von der Web-App zur App: Die App ist für HR3000 ein neues Gerät (eigener Speicher). Das Tablet
+erscheint einmal in der Freigabe; dort „Vorhandenes Tablet ersetzen“ wählen. Alternativ in der
+HR-Webapp beim Tablet „QR-Code“ öffnen und in der App scannen.
+
+Ohne MDM fragt die App beim ersten Start nach der Kiosk-Adresse; danach koppeln per QR-Code oder
+Kopplungscode wie im Browser. Neue Werte aus dem MDM übernimmt die App sofort.
+
 Regeln:
 
 - Der Schlüssel übernimmt nie einen Eintrag, der schon benutzt wurde, auch nicht nach „Kopplung

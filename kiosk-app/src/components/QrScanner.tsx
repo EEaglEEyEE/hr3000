@@ -43,8 +43,13 @@ export function QrScanner({
 
     async function start() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
-        if (!videoRef.current) return
+        const granted = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
+        // Schon wieder geschlossen, während die Kamera startete: Kamera sofort freigeben
+        if (done || !videoRef.current) {
+          granted.getTracks().forEach((track) => track.stop())
+          return
+        }
+        stream = granted
         videoRef.current.srcObject = stream
         await videoRef.current.play()
         timer = window.setInterval(async () => {
@@ -60,7 +65,8 @@ export function QrScanner({
           }
         }, 300)
       } catch {
-        setError('Kamera nicht verfügbar oder Zugriff nicht erlaubt.')
+        // Abbruch durch Schließen (z. B. play() unterbrochen) ist kein Kamerafehler
+        if (!done) setError('Kamera nicht verfügbar oder Zugriff nicht erlaubt.')
       }
     }
 

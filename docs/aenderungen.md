@@ -3,6 +3,17 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 15.11.2026
+
+- **Android-App „HR3000 Kiosk“:** Für Android-Tablets gibt es eine eigene App. Sie zeigt den
+  gewohnten Kiosk, bekommt Kiosk-Adresse, Registrierungsschlüssel und Gerätenamen aber als
+  App-Konfiguration aus dem MDM. Kein Schlüssel mehr in einer Start-URL (keine Freigabe-Anfragen
+  mehr von Googles Prüfgeräten), und ein Tablet, das seine Daten verliert, meldet sich von selbst
+  wieder an. Einrichtung: Admin-Handbuch, Abschnitt „Tablets per MDM verteilen“.
+- **Freigabeliste:** Anfragen aus der App stehen dort als „HR3000-App 1.0.0 auf Android“.
+- **Kiosk, QR-Scan:** Wurde der Scanner geschlossen, während die Kamera noch startete, blieb die
+  Kamera an und es erschien fälschlich „Kamera nicht verfügbar“. Behoben.
+
 ## 14.11.2026
 
 - **Tablets, Live-Status:** Die Seite „Tablets“ zeigt je Tablet „Online“, „Wird abgefragt …“ oder

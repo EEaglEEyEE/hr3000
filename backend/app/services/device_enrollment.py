@@ -53,6 +53,8 @@ def enrollment_active(enrollment: DeviceEnrollment, now: datetime | None = None)
 
 
 _BROWSERS = (
+    # Android-App „HR3000 Kiosk“ (kiosk-android/): hängt „HR3000Kiosk/<version>“ an die Kennung an
+    (r"HR3000Kiosk/(\d+(?:\.\d+){0,2})", "HR3000-App"),
     (r"HeadlessChrome/(\d+)", "Chrome ohne Bildschirm"),
     (r"Edg(?:e|A|iOS)?/(\d+)", "Edge"),
     (r"OPR/(\d+)", "Opera"),

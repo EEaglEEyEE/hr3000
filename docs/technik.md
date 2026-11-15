@@ -10,6 +10,7 @@ Für die Weiterentwicklung. Stand: 06.11.2026. Konventionen und Arbeitsweise ste
 | Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic, MySQL 8.4 | `backend/` |
 | HR-Webapp | React, TypeScript, Vite, TanStack Query, typisierter Client aus OpenAPI | `hr-webapp/` |
 | Tablet-App | React-PWA (vite-plugin-pwa), Offline-Warteschlange, Web-NFC | `kiosk-app/` |
+| Android-App | Kotlin, WebView-Hülle um die Tablet-App, App-Konfiguration aus dem MDM | `kiosk-android/` |
 | Website | statisches HTML/CSS/JS, kein Build | `website/` |
 | Reverse Proxy | Caddy 2 (TLS automatisch) | `Caddyfile` |
 | Betrieb | Docker Compose, Skripte | `docker-compose.yml`, `scripts/` |
@@ -826,6 +827,43 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     Falle: Token und `installation_id` liegen im localStorage. Der Edge-Kiosk-Modus (`--kiosk`,
     zugewiesener Zugriff) läuft immer InPrivate, nach jedem Neustart ist das Gerät also neu und
     wartet wieder auf Freigabe. Unter Windows Chrome `--kiosk` oder Edge `--app=` nehmen.
+  - **Android-App „HR3000 Kiosk“** (`kiosk-android/`, Paket `de.hr3000.kiosk`, minSdk 26, targetSdk
+    36): eine `WebView`, die den Kiosk vom Server lädt – keine zweite Oberfläche, Kiosk-Änderungen
+    brauchen kein App-Update. Bewusst ohne Capacitor/Flutter und ohne Laufzeit-Bibliotheken (nur
+    Android-SDK); der frühere Flutter-Ansatz `stamper_3000/` lief der Tablet-App davon.
+    - Konfiguration (`KioskConfig.kt`): `RestrictionsManager` mit den Schlüsseln aus
+      `res/xml/app_restrictions.xml` (`kiosk_url`, `enrollment_key`, `device_name`); ohne MDM eine
+      einmalige Eingabe der Adresse (SharedPreferences). Geprüft wird in der App: nur https (http
+      nur im Debug-Build für localhost/10.0.2.2), gültiger Hostname, keine Zugangsdaten in der
+      Adresse, Schlüssel `[A-Za-z0-9_-]{20,100}`, Gerätename ohne Steuerzeichen, höchstens 100
+      Zeichen, nicht ersetzte Platzhalter → kein Name. Die Start-Adresse ist dieselbe wie bei der
+      Web-App (`<origin>/#enroll=…&name=…`), das Backend prüft wie bisher (Pydantic). Änderungen aus
+      dem MDM (`ACTION_APPLICATION_RESTRICTIONS_CHANGED`) bauen die Ansicht neu auf.
+    - Schnittstelle `window.HR3000Native` (`NativeBridge.kt`, `kiosk-app/src/nativeBridge.ts`):
+      `installationId()`, `setKeepAwake(bool)`, `appVersion()`, `platform()`. Antwortet nur, solange
+      die Hauptseite vom konfigurierten Kiosk stammt (`trustedOrigin`, gesetzt in `onPageStarted`).
+    - Installations-Kennung (`InstallationId`): `and1-` + Base64url(SHA-256(`ANDROID_ID` + Kiosk-
+      Adresse)). `ANDROID_ID` ist je Gerät, Nutzer und Signierschlüssel fest, auch nach „Daten
+      löschen“ und Neuinstallation; erst ein Werksreset ändert sie. Die Kiosk-App übernimmt sie nur,
+      wenn noch keine ID gespeichert ist (`installation.ts`), sonst ginge eine bestehende Bindung
+      verloren. Folge: Nach Datenverlust greift beim Registrieren Regel (1) „Installation schon
+      gebunden“ – neues Token ohne Freigabe.
+    - Bildschirm: `setKeepAwake` setzt `FLAG_KEEP_SCREEN_ON` (die WebView kennt die Screen Wake Lock
+      API nicht verlässlich); `wakeLock.ts` nutzt in der App nur diesen Weg, außerhalb der
+      Bildschirmzeiten wird freigegeben.
+    - Sicherheit: Navigation nur innerhalb des Kiosk-Ursprungs, Kamera (`VIDEO_CAPTURE`) nur für
+      ihn, alles andere verweigert; keine Dateizugriffe, kein Mixed Content, keine Popups,
+      Zertifikatsfehler werden nie übergangen (Hinweis, neuer Versuch alle 30 s wie bei Netzausfall),
+      kein Backup der App-Daten (`allowBackup=false`, `data_extraction_rules.xml`). Zurück-Taste
+      ohne Wirkung, Systemleisten ausgeblendet; das Sperren in die App übernimmt das MDM
+      (Kiosk-Profil). User-Agent + `HR3000Kiosk/<version>` → Freigabeliste „HR3000-App … auf
+      Android“ (`describe_client`).
+    - Falle: Android rechnet reguläre Ausdrücke mit ICU. Eine nicht maskierte `}` ging in den
+      JVM-Unit-Tests durch und ließ die App beim Start abstürzen. Deshalb laufen die Kernregeln
+      zusätzlich als Gerätetest (`app/src/androidTest`, `OnDeviceLogicTest`); dort keine
+      Methodennamen mit Leerzeichen (unter API 30 nicht erlaubt).
+    - Falle: `mediaPlaybackRequiresUserGesture` muss aus sein, sonst lehnt die WebView das `play()`
+      des Kamerabilds ab (das Antippen ist nach `getUserMedia` „verbraucht“).
   - Chip-UIDs gehen nicht mehr ans Tablet: `/locations/{id}/employees` liefert Geräten nur
     `card_hash` = SHA-256(`hr3000-card:<tenant_id>:` + normalisierte UID). Die Kiosk-App hasht die
     gelesene UID genauso (`card_salt` aus der Login-Antwort).
@@ -880,6 +918,11 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
 
 - **HR-Webapp und Tablet-App:** Vitest mit Testing Library (`npm test`). Die API wird über
   `mockApi()` ersetzt, Logins über `loginAs()`.
+- **Android-App:** `bash scripts/build-kiosk-android.sh test` (JUnit-Tests der Logik, Abdeckung mit
+  JaCoCo, Lint) und `… device` (Gerätetests auf Emulator/Gerät per `adb`). Die `MainActivity` ist
+  Oberflächen-Code ohne Unit-Tests; nach Änderungen im Emulator prüfen (Debug-Build, Adresse
+  `http://localhost:<port>` mit `adb reverse`, WebView per Chrome DevTools über
+  `adb forward … localabstract:webview_devtools_remote_<pid>`).
 - Alle Tests laufen im Docker-Build; ein roter Test stoppt den Rollout.
 - Neue Funktionen bekommen immer Tests für Sonderfälle.
 - **Falle Radix-`Select` in Formularen:** Wird sein Wert per `useEffect` vorbelegt, bevor die
@@ -898,6 +941,20 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   leitet `/api` an `localhost:8000` weiter.
 - **Website:** statisch, z. B. `python3 -m http.server -d website 5182`.
 - Nach Backend-Schemaänderungen: `cd hr-webapp && npm run generate:api`.
+- **Android-App:** JDK 17+ und Android-SDK (Plattform 36, `ANDROID_HOME`). Versionen fest:
+  Android-Gradle-Plugin 9.5.0, Gradle 9.8.2 (Wrapper mit `distributionSha256Sum`), Testbibliotheken
+  JUnit 4.13.2, AndroidX Test Runner 1.7.0, AndroidX JUnit 1.3.0 (nur für Tests). Hinter einer
+  TLS-prüfenden Firewall kennt Java das Firmenzertifikat nicht: einen PKCS12-Truststore aus
+  dem Firmen-CA-Bündel unter `~/.build-caches/java-truststore/corp-truststore.p12` anlegen, das
+  Skript nutzt ihn automatisch (`HR3000_JAVA_TRUSTSTORE`).
+- **Android-App veröffentlichen:** `bash scripts/build-kiosk-android.sh release` baut signierte APK
+  und AAB nach `kiosk-android/dist/` (nicht im Repo). Vorher `versionCode`/`versionName` in
+  `kiosk-android/app/build.gradle.kts` erhöhen. Der Upload-Schlüssel liegt unter
+  `~/.config/hr3000-kiosk/upload-keystore.p12`, das Passwort im macOS-Schlüsselbund (Dienst
+  `hr3000-kiosk-upload-keystore`); einmalig angelegt mit `… keystore`. Beides zusätzlich im
+  Passwort-Manager sichern: Ohne den Schlüssel lässt sich die App nicht mehr aktualisieren, und
+  `ANDROID_ID` (also die Installations-Kennung) hängt am Signierschlüssel. Verteilt wird als private
+  App über Managed Google Play im MDM.
 - Tipp: Virtualenv und `node_modules` nicht in Cloud-synchronisierten Ordnern anlegen; manche
   Sync-Clients zerstören Symlinks, dann laufen Tests scheinbar grün, obwohl nichts ausgeführt
   wurde.

@@ -56,6 +56,10 @@ async def _audit(db: AsyncSession) -> list[str]:
     "user_agent, expected",
     [
         (TABLET_UA, "Chrome 157 auf Android"),
+        (TABLET_UA.replace(" Safari", " Mobile Safari") + " HR3000Kiosk/1.0.0", "HR3000-App 1.0.0 auf Android"),
+        (TABLET_UA + " HR3000Kiosk/12.3", "HR3000-App 12.3 auf Android"),
+        (TABLET_UA + " HR3000Kiosk/2.0.1.7", "HR3000-App 2.0.1 auf Android"),
+        (TABLET_UA + " HR3000Kiosk/", "Chrome 157 auf Android"),
         ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/126.0.0.0 Safari/537.36", "Chrome ohne Bildschirm 126 auf Linux"),
         ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0", "Edge 157 auf Windows"),
         ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0", "Firefox 140 auf Windows"),
