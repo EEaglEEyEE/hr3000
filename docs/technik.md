@@ -874,6 +874,19 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
       JVM-Unit-Tests durch und ließ die App beim Start abstürzen. Deshalb laufen die Kernregeln
       zusätzlich als Gerätetest (`app/src/androidTest`, `OnDeviceLogicTest`); dort keine
       Methodennamen mit Leerzeichen (unter API 30 nicht erlaubt).
+    - WLAN einstellen (`WifiAccess.kt`, ab 1.2.0): Knopf auf Einrichtungsseite und Lade-/Fehleranzeige
+      (`KioskState` `SETUP`, `LOADING_SLOW`, `LOAD_FAILED`), im laufenden Kiosk fünf Tipper in die
+      Ecke oben links (`TapSequence`, Ecke gibt die Tipper an die WebView weiter). Öffnet erst
+      `Settings.Panel.ACTION_WIFI` (API 29+), sonst `Settings.ACTION_WIFI_SETTINGS`. Im
+      Lock-Task-Modus blockiert Android fremde Activities ohne Fehler an die App
+      („Lock Task Mode violation“ nur im Log). Deshalb zählt ein Versuch erst als geglückt, wenn die
+      App pausiert (`WifiLaunchSequence`), sonst nach 2,5 s der nächste Weg bzw. der Hinweis. Kommt
+      die App nach unter 1 s zurück, gilt der Versuch ebenfalls als gescheitert (`WifiReturn.BOUNCED`;
+      die Einstellungen beenden sich bei angehefteter App selbst). Nach der Rückkehr und bei neuem
+      Standardnetz (`registerDefaultNetworkCallback`, Berechtigung `ACCESS_NETWORK_STATE`) lädt die
+      App sofort neu, statt auf den 30-s-Versuch zu warten. Im Emulator geprüft mit `am task lock
+      <task>` (Bildschirm anheften). Ob das Kiosk-Profil eines MDM die WLAN-Einstellungen durchlässt,
+      lässt sich nur am echten Gerät prüfen.
     - Falle: `mediaPlaybackRequiresUserGesture` muss aus sein, sonst lehnt die WebView das `play()`
       des Kamerabilds ab (das Antippen ist nach `getUserMedia` „verbraucht“).
   - Chip-UIDs gehen nicht mehr ans Tablet: `/locations/{id}/employees` liefert Geräten nur

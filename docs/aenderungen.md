@@ -3,6 +3,16 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 16.11.2026
+
+- **Android-App 1.2.0, WLAN einstellen:** Kommt der Kiosk nicht durch (kein Netz,
+  Zertifikatsfehler, Server nicht erreichbar) oder lädt er auffällig lange, zeigt die App den Knopf
+  „WLAN einstellen“, ebenso auf der Einrichtungsseite. Er öffnet nur die WLAN-Einstellungen; die
+  Zurück-Taste bleibt gesperrt. Zurück in der App lädt der Kiosk sofort neu, ebenso sobald wieder
+  ein Netz da ist (vorher erst beim nächsten Versuch nach bis zu 30 Sekunden). Für Admins öffnen fünf
+  schnelle Tipper in die linke obere Ecke die WLAN-Einstellungen auch im laufenden Kiosk. Sperrt das
+  Kiosk-Profil des MDM die Einstellungen, sagt die App das statt still nichts zu tun.
+
 ## 15.11.2026
 
 - **Tablets, Firmenschlüssel:** Unter „Tablets“ → „Verteilung per MDM“ gibt es einen

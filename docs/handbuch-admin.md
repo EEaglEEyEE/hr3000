@@ -1136,6 +1136,19 @@ HR-Webapp beim Tablet „QR-Code“ öffnen und in der App scannen.
 Ohne MDM fragt die App beim ersten Start nach der Kiosk-Adresse; danach koppeln per QR-Code oder
 Kopplungscode wie im Browser. Neue Werte aus dem MDM übernimmt die App sofort.
 
+**WLAN am Tablet einstellen (ab App 1.2.0):** Erreicht die App den Kiosk nicht oder lädt er länger
+als 20 Sekunden, steht unter dem Grund der Knopf **„WLAN einstellen“** (auch auf der Einrichtungsseite).
+Er öffnet nur die WLAN-Einstellungen von Android, die Zurück-Taste bleibt gesperrt. Nach dem Schließen
+lädt die App den Kiosk sofort neu. Im laufenden Kiosk gibt es keinen Knopf; dort öffnen **fünf schnelle
+Tipper in die linke obere Ecke** die WLAN-Einstellungen (die Tipper gehen trotzdem an den Kiosk).
+
+- Läuft die App im Kiosk-Modus des MDM, muss das Kiosk-Profil die WLAN-Einstellungen erlauben. Sonst
+  meldet die App „WLAN-Einstellungen sind im Kiosk gesperrt“.
+- Die App versucht zuerst das kleine WLAN-Fenster von Android, dann die WLAN-Seite der Einstellungen.
+  Beide gehören zur App „Einstellungen“. Das WLAN-Fenster hat einen Knopf „Einstellungen“, der zur
+  vollen WLAN-Seite führt. Am Testtablet prüfen, ob man von dort in andere Einstellungen kommt, bevor
+  ihr die Einstellungen im Kiosk-Profil ganz freigebt.
+
 #### Firmenschlüssel (alle Standorte)
 
 Ein Schlüssel für die ganze Firma, oben im Reiter „Verteilung per MDM“. Gedacht für MDMs, die eine
