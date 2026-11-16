@@ -5,6 +5,11 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 16.11.2026
 
+- **Android-App 1.3.0, Online im Standby:** Geht der Bildschirm eines Tablets aus, meldet die App
+  es selbst alle 15 Minuten beim Server als online. Bisher meldete sich nur die Kiosk-Seite, und die
+  hält Android im Standby an – nach einer Stunde kam dann die Offline-Warnung, obwohl das Tablet
+  nur schlief. Braucht die neue App-Version und die aktuelle Kiosk-Seite.
+
 - **Android-App 1.2.0, WLAN einstellen:** Kommt der Kiosk nicht durch (kein Netz,
   Zertifikatsfehler, Server nicht erreichbar) oder lädt er auffällig lange, zeigt die App den Knopf
   „WLAN einstellen“, ebenso auf der Einrichtungsseite. Er öffnet nur die WLAN-Einstellungen; die

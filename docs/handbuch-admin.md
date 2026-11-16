@@ -1037,6 +1037,12 @@ Stempelungen liefern können. Darüber steht die Zusammenfassung, z. B. „2 von
   - für Einträge ohne gekoppeltes Gerät.
   Abschalten: „Einstellungen“ → „Anzeige am Tablet“ → „Benachrichtigen, wenn ein Tablet länger als
   1 Stunde offline ist“.
+- **Standby (Android-App ab 1.3.0):** Geht der Bildschirm aus (Standby), hält Android die
+  Kiosk-Seite an. Die App meldet das Tablet dann selbst alle 15 Minuten als online, solange es Netz
+  hat. So kommt keine Offline-Warnung, nur weil ein Tablet schläft. Am Netzteil ist das zuverlässig;
+  im Akkubetrieb kann Android die Meldung im Tiefschlaf verschieben. In der Seite „Tablets“ steht ein
+  schlafendes Tablet bei geöffneter Seite trotzdem als „Offline“, weil es sich nur alle 15 Minuten
+  meldet. Mit der Web-App im Browser gibt es keine Meldung im Standby.
 - **Ohne Bildschirmzeiten** hält das Tablet den Bildschirm dauerhaft wach und gilt immer als
   erwartet. Wird es nachts ausgeschaltet, kommt eine Warnung – dann Bildschirmzeiten einstellen
   oder die Warnung abschalten.

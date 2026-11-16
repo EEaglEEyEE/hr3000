@@ -35,6 +35,7 @@ import { normalizeCardUid, useKeyboardCardReader } from './cardReader'
 import { useWakeLock } from './wakeLock'
 import { useScreenHours } from './screenHours'
 import { usePresenceHeartbeat } from './presence'
+import { nativeClearPresence } from './nativeBridge'
 import { cardUidFromQr, isQrScanSupported, QrScanner, tokenFromQr } from './components/QrScanner'
 import { sha256Hex } from './installation'
 import { formatDays, formatMinutesAsHours } from './format'
@@ -340,6 +341,7 @@ export default function App() {
       throw err
     }
     clearStoredDeviceToken()
+    nativeClearPresence() // Android-App: im Standby nicht mehr als dieses Tablet melden
     setSession(null)
     setEmployees([])
     setScreen({ kind: 'setup' })

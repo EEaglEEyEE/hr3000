@@ -905,6 +905,16 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
     Takt. Die Kiosk-App (`kiosk-app/src/presence.ts`) meldet sich sofort bei neuer Sitzung oder
     neuem Abstand, begrenzt den Abstand auf 5 s bis 1 Std., versucht es nach einem Fehler nach
     60 s erneut und meldet sich bei 401 höchstens einmal pro Minute neu an.
+    Standby (Android-App ab 1.3.0): Nach jeder erfolgreichen Meldung übergibt `presence.ts` der App
+    Geräte-Token, Installations-ID, Access-Token und Warteschlange
+    (`HR3000Native.reportPresence`, nur für die Kiosk-Herkunft). Die App speichert das in
+    `SharedPreferences` „presence“ (Access-Token nur im Speicher) und plant einen periodischen Job
+    (`PresenceJobService`, `JobScheduler`, 15 min, nur mit Netz). Der Job meldet nur, wenn die Seite
+    seit 10 min still ist (`BackgroundPresence.due`), mit dem Access-Token an
+    `POST /api/device/heartbeat`. Bei 401 oder ohne Token meldet er sich wie die Seite mit dem
+    Geräte-Token an (`/api/auth/device/login`) und meldet dann. Höchstens eine Anmeldung je Lauf,
+    User-Agent `HR3000Kiosk/<version> (Android; background)`. „Tablet zurücksetzen“ ruft
+    `clearPresence`. Das Backend ist unverändert. Doze verschiebt Jobs nur im Akkubetrieb.
     Zustand je Tablet: `ONLINE` (letzte Meldung ≤ `ONLINE_WINDOW` 45 s), `CHECKING` (nicht online,
     Seite aber kürzer als `CHECK_WINDOW` 75 s offen), sonst `OFFLINE`; `screen_off` = außerhalb der
     Bildschirmzeiten (Gerät vor Mandant, Zeitzone des Standorts).

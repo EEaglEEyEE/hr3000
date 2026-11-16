@@ -2,7 +2,7 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installationId } from './installation'
-import { nativeBridge, nativeInstallationId, nativeKeepAwake, type HR3000Native } from './nativeBridge'
+import { nativeBridge, nativeClearPresence, nativeInstallationId, nativeKeepAwake, nativeReportPresence, type HR3000Native } from './nativeBridge'
 import { useWakeLock } from './wakeLock'
 
 const NATIVE_ID = 'and1-Qk3x9vB2mN8pL4tR7wY1zA5cE6fH0jK2sD9gU3iO7qV'
@@ -137,5 +137,38 @@ describe('Bildschirm anlassen in der App', () => {
     expect(request).toHaveBeenCalledWith('screen')
     view.unmount()
     expect(release).toHaveBeenCalled()
+  })
+})
+
+describe('Online-Meldung im Standby über die App', () => {
+  const presence = { deviceToken: 'geraete-token-0123456789', installationId: NATIVE_ID, accessToken: 'jwt.a.b', queued: 2, failed: 1 }
+
+  it('ohne App oder mit älterer App ohne diese Funktion: nichts', () => {
+    expect(nativeReportPresence(presence)).toBe(false)
+    expect(nativeClearPresence()).toBe(false)
+    installBridge()
+    expect(nativeReportPresence(presence)).toBe(false)
+    expect(nativeClearPresence()).toBe(false)
+  })
+
+  it('übergibt Anmeldedaten und Warteschlange an die App', () => {
+    const bridge = installBridge({ reportPresence: vi.fn(), clearPresence: vi.fn() })
+    expect(nativeReportPresence(presence)).toBe(true)
+    expect(bridge.reportPresence).toHaveBeenCalledWith('geraete-token-0123456789', NATIVE_ID, 'jwt.a.b', 2, 1)
+    expect(nativeClearPresence()).toBe(true)
+    expect(bridge.clearPresence).toHaveBeenCalledTimes(1)
+  })
+
+  it('übersteht eine werfende App-Schnittstelle', () => {
+    installBridge({
+      reportPresence: () => {
+        throw new Error('weg')
+      },
+      clearPresence: () => {
+        throw new Error('weg')
+      },
+    })
+    expect(nativeReportPresence(presence)).toBe(false)
+    expect(nativeClearPresence()).toBe(false)
   })
 })

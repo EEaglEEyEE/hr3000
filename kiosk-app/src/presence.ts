@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { ApiError, sendHeartbeat, type DeviceLoginResponse, type HeartbeatPayload } from './api'
-import { loginWithStoredToken } from './deviceAuth'
+import { getStoredDeviceToken, loginWithStoredToken } from './deviceAuth'
+import { installationId } from './installation'
+import { nativeReportPresence } from './nativeBridge'
 import { getQueuedPunches, type QueuedPunch } from './offlineQueue'
 
 /** Abstand im Ruhezustand, falls der Server (noch) keinen nennt */
@@ -21,6 +23,20 @@ export function heartbeatDelayMs(seconds: number | null | undefined): number {
 /** Stand der Offline-Warteschlange für die Meldung. */
 export function queueState(queue: QueuedPunch[] = getQueuedPunches()): HeartbeatPayload {
   return { queued_punches: queue.length, failed_punches: queue.filter((punch) => punch.error).length }
+}
+
+/** Android-App: Anmeldedaten und Stand übergeben, damit sie das Tablet im Standby (Seite eingefroren)
+ * selbst als online meldet. Im Browser und mit älteren Apps ohne Wirkung. */
+function handOverToApp(accessToken: string, state: HeartbeatPayload): void {
+  const deviceToken = getStoredDeviceToken()
+  if (!deviceToken) return
+  nativeReportPresence({
+    deviceToken,
+    installationId: installationId(),
+    accessToken,
+    queued: state.queued_punches,
+    failed: state.failed_punches,
+  })
 }
 
 /** Meldet sich beim Server, solange das Tablet angemeldet ist: sofort (nach der Anmeldung und bei jedem
@@ -48,8 +64,10 @@ export function usePresenceHeartbeat(
     async function beat() {
       let delay = HEARTBEAT_RETRY_MS
       try {
-        const response = await sendHeartbeat(token, queueState())
+        const state = queueState()
+        const response = await sendHeartbeat(token, state)
         delay = heartbeatDelayMs(response.interval_seconds)
+        handOverToApp(token, state)
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           try {

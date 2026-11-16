@@ -217,3 +217,69 @@ describe('usePresenceHeartbeat', () => {
     expect(heartbeat).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('Übergabe an die Android-App (Meldung im Standby)', () => {
+  const report = vi.fn()
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    heartbeat.mockReset()
+    login.mockReset()
+    report.mockReset()
+    localStorage.clear()
+    window.HR3000Native = {
+      installationId: () => 'and1-Qk3x9vB2mN8pL4tR7wY1zA5cE6fH0jK2sD9gU3iO7qV',
+      setKeepAwake: () => undefined,
+      appVersion: () => '1.3.0',
+      platform: () => 'android',
+      reportPresence: report,
+    }
+  })
+
+  afterEach(() => {
+    delete window.HR3000Native
+    vi.useRealTimers()
+  })
+
+  it('übergibt nach jeder erfolgreichen Meldung Token, Installation und Warteschlange', async () => {
+    storeDeviceToken('geraete-token-0123456789')
+    heartbeat.mockResolvedValue({ interval_seconds: 900 })
+    enqueuePunch(punch('a', 'abgelehnt'))
+    enqueuePunch(punch('b'))
+    render(<Probe token="access" seconds={900} onSession={vi.fn()} />)
+    await settle()
+    expect(report).toHaveBeenCalledTimes(1)
+    expect(report).toHaveBeenCalledWith('geraete-token-0123456789', 'and1-Qk3x9vB2mN8pL4tR7wY1zA5cE6fH0jK2sD9gU3iO7qV', 'access', 2, 1)
+    await advance(900_000)
+    expect(report).toHaveBeenCalledTimes(2)
+  })
+
+  it('nichts bei gescheiterter Meldung', async () => {
+    storeDeviceToken('geraete-token-0123456789')
+    heartbeat.mockRejectedValue(new NetworkError())
+    render(<Probe token="access" seconds={900} onSession={vi.fn()} />)
+    await settle()
+    expect(heartbeat).toHaveBeenCalledTimes(1)
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  it('nichts ohne gespeichertes Geräte-Token', async () => {
+    heartbeat.mockResolvedValue({ interval_seconds: 900 })
+    render(<Probe token="access" seconds={900} onSession={vi.fn()} />)
+    await settle()
+    expect(heartbeat).toHaveBeenCalledTimes(1)
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  it('eine werfende App stört die Meldung nicht', async () => {
+    storeDeviceToken('geraete-token-0123456789')
+    report.mockImplementation(() => {
+      throw new Error('weg')
+    })
+    heartbeat.mockResolvedValue({ interval_seconds: 60 })
+    render(<Probe token="access" seconds={60} onSession={vi.fn()} />)
+    await settle()
+    await advance(60_000)
+    expect(heartbeat).toHaveBeenCalledTimes(2)
+  })
+})
