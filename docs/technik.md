@@ -902,17 +902,29 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
       Methodennamen mit Leerzeichen (unter API 30 nicht erlaubt).
     - WLAN einstellen (`WifiAccess.kt`, ab 1.2.0): Knopf auf Einrichtungsseite und Lade-/Fehleranzeige
       (`KioskState` `SETUP`, `LOADING_SLOW`, `LOAD_FAILED`), im laufenden Kiosk fünf Tipper in die
-      Ecke oben links (`TapSequence`, Ecke gibt die Tipper an die WebView weiter). Öffnet erst
-      `Settings.Panel.ACTION_WIFI` (API 29+), sonst `Settings.ACTION_WIFI_SETTINGS`. Im
+      Ecke oben links (`TapSequence`, Ecke gibt die Tipper an die WebView weiter). Öffnet seit 1.3.1
+      nur `Settings.Panel.ACTION_WIFI` (API 29+; darunter weder Knopf noch Geste, ebenso wenn das
+      Gerät die Action nicht auflöst – Manifest `<queries>`). Die ganze WLAN-Seite
+      (`ACTION_WIFI_SETTINGS`) startete ohne `NEW_TASK` in der eigenen Task und war damit im
+      Lock-Task erlaubt – im MDM-Kiosk ohne Navigationsleiste eine Sackgasse bis zum Neustart
+      (Testtablet 16.11.2026). Das Panel startet Android als eigene Task von `com.android.settings`
+      (`SettingsPanelActivity`, durchsichtig): Ohne freigegebene Einstellungen blockiert der Lock-Task
+      es, mit Freigabe liegt es über der App und schließt mit „Fertig“. Schutz (`WifiGuard`): Wird die
+      App bei offenem Panel ganz verdeckt (`onStop`, Bildschirm an), holt sie sich zurück und merkt sich
+      das vorher (`wifi_escape_pending`). Android 14 blockiert diesen Start aus dem Hintergrund im
+      Emulator („Background activity launch blocked“, BAL_BLOCK). Startet die App mit offenem Merker,
+      hing jemand fest → `wifi_disabled` dauerhaft, Knopf und Geste weg (zurücksetzen nur über
+      App-Daten löschen/neu installieren). Verdeckt nach unter 2 s = Gerät zeigt statt des Panels eine
+      ganze Seite → sofort abschalten. Im
       Lock-Task-Modus blockiert Android fremde Activities ohne Fehler an die App
       („Lock Task Mode violation“ nur im Log). Deshalb zählt ein Versuch erst als geglückt, wenn die
-      App pausiert (`WifiLaunchSequence`), sonst nach 2,5 s der nächste Weg bzw. der Hinweis. Kommt
+      App pausiert (`WifiLaunchSequence`), sonst nach 2,5 s der Hinweis. Kommt
       die App nach unter 1 s zurück, gilt der Versuch ebenfalls als gescheitert (`WifiReturn.BOUNCED`;
       die Einstellungen beenden sich bei angehefteter App selbst). Nach der Rückkehr und bei neuem
       Standardnetz (`registerDefaultNetworkCallback`, Berechtigung `ACCESS_NETWORK_STATE`) lädt die
       App sofort neu, statt auf den 30-s-Versuch zu warten. Im Emulator geprüft mit `am task lock
-      <task>` (Bildschirm anheften). Ob das Kiosk-Profil eines MDM die WLAN-Einstellungen durchlässt,
-      lässt sich nur am echten Gerät prüfen.
+      <task>` (Bildschirm anheften: Panel blockiert, Hinweis, App bleibt vorne). Ob das Kiosk-Profil
+      eines MDM die Einstellungen durchlässt, lässt sich nur am echten Gerät prüfen.
     - Falle: `mediaPlaybackRequiresUserGesture` muss aus sein, sonst lehnt die WebView das `play()`
       des Kamerabilds ab (das Antippen ist nach `getUserMedia` „verbraucht“).
   - Chip-UIDs gehen nicht mehr ans Tablet: `/locations/{id}/employees` liefert Geräten nur

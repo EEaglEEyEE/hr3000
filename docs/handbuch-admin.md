@@ -1171,16 +1171,22 @@ Kopplungscode wie im Browser. Neue Werte aus dem MDM übernimmt die App sofort.
 
 **WLAN am Tablet einstellen (ab App 1.2.0):** Erreicht die App den Kiosk nicht oder lädt er länger
 als 20 Sekunden, steht unter dem Grund der Knopf **„WLAN einstellen“** (auch auf der Einrichtungsseite).
-Er öffnet nur die WLAN-Einstellungen von Android, die Zurück-Taste bleibt gesperrt. Nach dem Schließen
-lädt die App den Kiosk sofort neu. Im laufenden Kiosk gibt es keinen Knopf; dort öffnen **fünf schnelle
-Tipper in die linke obere Ecke** die WLAN-Einstellungen (die Tipper gehen trotzdem an den Kiosk).
+Er öffnet nur das kleine WLAN-Fenster von Android über dem Kiosk, die Zurück-Taste bleibt gesperrt.
+Mit „Fertig“ schließt es sich, und die App lädt den Kiosk sofort neu. Im laufenden Kiosk gibt es keinen
+Knopf; dort öffnen **fünf schnelle Tipper in die linke obere Ecke** das WLAN-Fenster (die Tipper gehen
+trotzdem an den Kiosk).
 
-- Läuft die App im Kiosk-Modus des MDM, muss das Kiosk-Profil die WLAN-Einstellungen erlauben. Sonst
-  meldet die App „WLAN-Einstellungen sind im Kiosk gesperrt“.
-- Die App versucht zuerst das kleine WLAN-Fenster von Android, dann die WLAN-Seite der Einstellungen.
-  Beide gehören zur App „Einstellungen“. Das WLAN-Fenster hat einen Knopf „Einstellungen“, der zur
-  vollen WLAN-Seite führt. Am Testtablet prüfen, ob man von dort in andere Einstellungen kommt, bevor
-  ihr die Einstellungen im Kiosk-Profil ganz freigebt.
+- **Bitte App 1.3.1 oder neuer verwenden.** 1.2.0 und 1.3.0 öffneten im Kiosk die ganze WLAN-Seite;
+  dort fehlt die Navigationsleiste, und man kam nur durch einen Neustart zurück (Ein/Aus- und
+  Leiser-Taste etwa 10 Sekunden halten).
+- Das WLAN-Fenster gehört zur App „Einstellungen“. Sperrt das Kiosk-Profil des MDM diese App, meldet
+  die App „WLAN-Einstellungen sind im Kiosk gesperrt“, und der Kiosk bleibt stehen. Für feste
+  Firmen-WLANs ist ein WLAN-Profil im MDM ohnehin der bessere Weg.
+- Im WLAN-Fenster **nicht auf „Einstellungen“ tippen**: Das führt zur ganzen Einstellungsseite. Die App
+  versucht sich dann zurückzuholen, Android erlaubt das aber meist nicht. Musste das Tablet deshalb neu
+  gestartet werden, schaltet die App Knopf und Geste auf diesem Tablet dauerhaft ab (Hinweis beim
+  Start). Wieder einschalten: App-Daten löschen oder die App neu installieren.
+- Android unter Version 10 hat kein WLAN-Fenster; dort gibt es weder Knopf noch Geste.
 
 #### Firmenschlüssel (alle Standorte)
 

@@ -20,6 +20,15 @@ Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
 ## 16.11.2026
 
+- **Android-App 1.3.1, WLAN ohne Sackgasse:** Mit 1.2.0/1.3.0 öffnete „WLAN einstellen“ (bzw. die
+  Ecken-Geste) im Kiosk des MDM die ganze WLAN-Seite der Einstellungen. Dort fehlte die
+  Navigationsleiste, aus der Seite kam man nur durch einen Neustart des Tablets zurück. Jetzt öffnet
+  die App nur noch das kleine WLAN-Fenster, das über dem Kiosk liegt und sich mit „Fertig“ schließt.
+  Sperrt der Kiosk die App „Einstellungen“, erscheint ein Hinweis, und der Kiosk bleibt stehen. Hing
+  trotzdem einmal jemand fest (z. B. über „Einstellungen“ im WLAN-Fenster) und musste das Tablet
+  neu gestartet werden, schaltet die App Knopf und Geste auf diesem Tablet dauerhaft ab. 1.2.0 und
+  1.3.0 nicht mehr verteilen.
+
 - **Android-App 1.3.0, Online im Standby:** Geht der Bildschirm eines Tablets aus, meldet die App
   es selbst alle 15 Minuten beim Server als online. Bisher meldete sich nur die Kiosk-Seite, und die
   hält Android im Standby an – nach einer Stunde kam dann die Offline-Warnung, obwohl das Tablet
