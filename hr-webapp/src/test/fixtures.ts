@@ -9,6 +9,7 @@ export function dashboardMe(overrides: Partial<DashboardMe> = {}): DashboardMe {
   return {
     employee_id: 5,
     first_name: 'Erika',
+    time_tracking: true,
     balance_minutes: 90,
     balance_date: '2026-10-20',
     vacation_year: 2026,
@@ -184,6 +185,7 @@ export function employee(overrides: Partial<Schemas['EmployeeResponse']> = {}): 
     hr_role: null,
     hr_payroll_access: false,
     auto_break_enabled: true,
+    time_tracking: true,
     has_pin: false,
     nfc_uid: null,
     hire_date: null,

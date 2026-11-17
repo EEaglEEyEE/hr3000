@@ -61,21 +61,31 @@ function baseClassName(day: TimesheetDay): string {
   return 'bg-slate-50 text-slate-400'
 }
 
-export function dayCellTooltip(day: TimesheetDay | undefined, types?: Map<number, AbsenceTypeDef>): string | undefined {
+/** Darstellung je Mitarbeiter: ohne Zeiterfassung ist ein Arbeitstag ohne Abwesenheit kein „fehlt“, sondern neutral. */
+export interface DayCellOptions {
+  /** „Zeiterfassung“ des Mitarbeiters (Standard: an) */
+  timeTracking?: boolean
+}
+
+export function dayCellTooltip(
+  day: TimesheetDay | undefined,
+  types?: Map<number, AbsenceTypeDef>,
+  options: DayCellOptions = {},
+): string | undefined {
   if (!day) return undefined
-  const typeName = absenceTypeOf(day, types)?.name ?? baseTooltip(day)
+  const typeName = absenceTypeOf(day, types)?.name ?? baseTooltip(day, options)
   // Halbe Abwesenheitstage: "½ Urlaub" bzw. "½ Urlaub · Ist +4:00"
   const base = day.absence_label
     ? day.status === 'ABSENCE'
       ? day.absence_label
-      : `${day.absence_label} · ${baseTooltip(day)}`
+      : `${day.absence_label} · ${baseTooltip(day, options)}`
     : typeName
   if (day.flags.length === 0) return base
   const reasons = day.flags.map((f) => DAY_FLAG_LABELS[f] ?? f).join(', ')
   return `${base} – ${day.reviewed ? 'geklärt' : 'zu klären'}: ${reasons}`
 }
 
-function baseTooltip(day: TimesheetDay): string {
+function baseTooltip(day: TimesheetDay, { timeTracking = true }: DayCellOptions = {}): string {
   if (day.status === 'ABSENCE') {
     return day.absence_type ? ABSENCE_TYPE_LABELS[day.absence_type] : 'Abwesend'
   }
@@ -85,6 +95,8 @@ function baseTooltip(day: TimesheetDay): string {
   if (day.status === 'ERROR') return 'Fehlerhafte Stempelfolge – bitte korrigieren'
   if (day.status === 'HOLIDAY') return 'Feiertag'
   if (day.status === 'PLANNED_OFF') return 'Frei laut Schichtplan'
+  // Ohne Zeiterfassung liefert das Backend jeden Arbeitstag ohne Abwesenheit als OPEN_MISSING_PUNCH (ohne Soll)
+  if (!timeTracking && day.actual_minutes === null) return 'Ohne Zeiterfassung'
   if (day.status === 'OPEN_MISSING_PUNCH' && day.actual_minutes === null) return 'Keine Stempelung'
   return `Ist ${formatMinutesAsHours(day.actual_minutes)}`
 }
@@ -99,4 +111,11 @@ export const DAY_CELL_LEGEND: Array<{ colorClass: string; label: string }> = [
   { colorClass: 'bg-red-100', label: 'Fehlerhaft' },
   { colorClass: 'bg-slate-50', label: 'Keine Stempelung' },
   { colorClass: 'bg-white ring-2 ring-amber-500 ring-inset', label: 'Sonderfall – zu klären' },
+]
+
+/** Legende ohne Zeiterfassung: nur, was es dann gibt (Feiertage, freie Tage laut Plan, Abwesenheiten). */
+export const DAY_CELL_LEGEND_WITHOUT_TIME_TRACKING: Array<{ colorClass: string; label: string }> = [
+  { colorClass: 'bg-teal-100', label: 'Feiertag' },
+  { colorClass: 'bg-indigo-100', label: 'Frei laut Plan' },
+  { colorClass: 'bg-slate-50', label: 'Ohne Zeiterfassung' },
 ]

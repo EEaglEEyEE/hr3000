@@ -162,9 +162,16 @@ async def render_payroll_csv(
                 _csv_text(employee.first_name),
                 date_from.isoformat(),
                 date_to.isoformat(),
-                _minutes_to_hours_str(summary.target_minutes),
-                _minutes_to_hours_str(summary.actual_minutes),
-                _minutes_to_hours_str(summary.actual_minutes - summary.target_minutes),
+                # Ohne Zeiterfassung: Soll/Ist/Saldo leer, Abwesenheiten wie gewohnt
+                *(
+                    [
+                        _minutes_to_hours_str(summary.target_minutes),
+                        _minutes_to_hours_str(summary.actual_minutes),
+                        _minutes_to_hours_str(summary.actual_minutes - summary.target_minutes),
+                    ]
+                    if summary.time_tracking
+                    else ["", "", ""]
+                ),
                 format_days(summary.vacation_days),
                 format_days(summary.sick_days),
                 format_days(summary.special_leave_days),

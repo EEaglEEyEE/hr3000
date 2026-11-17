@@ -5702,11 +5702,11 @@ export interface components {
         /** AccountingHours */
         AccountingHours: {
             /** Target Minutes */
-            target_minutes: number;
+            target_minutes: number | null;
             /** Actual Minutes */
-            actual_minutes: number;
+            actual_minutes: number | null;
             /** Balance Minutes */
-            balance_minutes: number;
+            balance_minutes: number | null;
             /** Payout Minutes */
             payout_minutes: number;
             /** Open Days */
@@ -5890,6 +5890,11 @@ export interface components {
              * @default []
              */
             supervisor_ids: number[];
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
         };
         /** ApiPunch */
         ApiPunch: {
@@ -7175,8 +7180,13 @@ export interface components {
             employee_id: number;
             /** First Name */
             first_name: string;
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
             /** Balance Minutes */
-            balance_minutes: number;
+            balance_minutes: number | null;
             /** Balance Date */
             balance_date: string | null;
             /** Vacation Year */
@@ -7202,12 +7212,12 @@ export interface components {
              * Week Target Minutes
              * @default 0
              */
-            week_target_minutes: number;
+            week_target_minutes: number | null;
             /**
              * Week Actual Minutes
              * @default 0
              */
-            week_actual_minutes: number;
+            week_actual_minutes: number | null;
             /**
              * Pending Absences
              * @default 0
@@ -7954,6 +7964,11 @@ export interface components {
             password?: string | null;
             /** Auto Break Enabled */
             auto_break_enabled?: boolean | null;
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
             /** Pin */
             pin?: string | null;
             /** Nfc Uid */
@@ -8152,6 +8167,11 @@ export interface components {
             hr_custom_role?: components["schemas"]["CustomRoleRef"] | null;
             /** Auto Break Enabled */
             auto_break_enabled: boolean;
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
             /** Has Pin */
             has_pin: boolean;
             /** Nfc Uid */
@@ -8210,6 +8230,8 @@ export interface components {
             password?: string | null;
             /** Auto Break Enabled */
             auto_break_enabled?: boolean | null;
+            /** Time Tracking */
+            time_tracking?: boolean | null;
             /** Pin */
             pin?: string | null;
             /** Nfc Uid */
@@ -9324,6 +9346,11 @@ export interface components {
              * @default 0
              */
             settled_month_minutes: number;
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
         };
         /** OvertimeRow */
         OvertimeRow: {
@@ -9707,6 +9734,11 @@ export interface components {
             dispute_reason?: string | null;
             /** Open Day Count */
             open_day_count: number;
+            /**
+             * Time Tracking
+             * @default true
+             */
+            time_tracking: boolean;
         };
         /**
          * PeriodStatus

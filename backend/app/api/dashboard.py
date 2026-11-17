@@ -49,16 +49,21 @@ def _name(employee: Employee) -> str:
 async def _me(db: AsyncSession, employee: Employee) -> DashboardMe:
     tz = await employee_timezone(db, employee)
     today = today_in(tz)
-    info = await balance_as_of(db, employee)
+    tracking = employee.time_tracking
     leave = await leave_balance(db, employee.id, today.year)
     calc = await calculate_day(db, employee, today, tz)
-    week_target = week_actual = 0
-    day = week_start(today)
-    while day <= today:
-        week_calc = calc if day == today else await calculate_day(db, employee, day, tz)
-        week_target += week_calc.target_minutes or 0
-        week_actual += week_calc.actual_minutes or 0
-        day += timedelta(days=1)
+    # Ohne Zeiterfassung: kein Konto, keine Wochenzeiten, keine Monatsgrenze (Werte None).
+    info = await balance_as_of(db, employee) if tracking else None
+    week_target: int | None = None
+    week_actual: int | None = None
+    if tracking:
+        week_target = week_actual = 0
+        day = week_start(today)
+        while day <= today:
+            week_calc = calc if day == today else await calculate_day(db, employee, day, tz)
+            week_target += week_calc.target_minutes or 0
+            week_actual += week_calc.actual_minutes or 0
+            day += timedelta(days=1)
     pending_absences = (
         await db.execute(
             select(func.count(Absence.id)).where(
@@ -74,28 +79,30 @@ async def _me(db: AsyncSession, employee: Employee) -> DashboardMe:
             )
         )
     ).scalar_one()
-    cap = await monthly_cap_status(db, employee)
+    cap = await monthly_cap_status(db, employee) if tracking else None
     settings_row = await get_or_create_settings(db, employee.tenant_id)
-    location_check = settings_row.portal_punching_enabled and await check_active(db, settings_row, employee.tenant_id)
+    portal_punching = settings_row.portal_punching_enabled and tracking
+    location_check = portal_punching and await check_active(db, settings_row, employee.tenant_id)
     return DashboardMe(
-        portal_punching=settings_row.portal_punching_enabled,
+        time_tracking=tracking,
+        portal_punching=portal_punching,
         location_check=location_check,
         location_check_required=location_check and settings_row.punch_location_mode == MODE_BLOCK,
         break_buttons=settings_row.kiosk_break_buttons,
         errand_buttons=settings_row.kiosk_errand_buttons,
-        on_demand=cap.on_demand,
-        month_actual_minutes=cap.actual_minutes if cap.on_demand else None,
-        monthly_cap_minutes=cap.cap_minutes,
+        on_demand=cap.on_demand if cap else False,
+        month_actual_minutes=cap.actual_minutes if cap and cap.on_demand else None,
+        monthly_cap_minutes=cap.cap_minutes if cap else None,
         employee_id=employee.id,
         first_name=employee.first_name,
-        balance_minutes=info.total_minutes,
-        balance_date=info.last_row.balance_date if info.last_row else None,
+        balance_minutes=info.total_minutes if info else None,
+        balance_date=info.last_row.balance_date if info and info.last_row else None,
         vacation_year=today.year,
         vacation_remaining_days=leave.remaining_days,
         vacation_expiring_days=leave.expiring_days,
         vacation_expiry_date=leave.expiry_date if leave.expiring_days else None,
         today_status=calc.status if calc.has_punches or calc.status == SummaryStatus.ABSENCE else None,
-        today_times=punch_blocks(await punches_for_day(db, employee, today, tz), tz),
+        today_times=punch_blocks(await punches_for_day(db, employee, today, tz), tz) if tracking else "",
         today_actual_minutes=calc.actual_minutes,
         week_target_minutes=week_target,
         week_actual_minutes=week_actual,

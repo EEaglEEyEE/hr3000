@@ -215,6 +215,9 @@ async def compute_surcharges(
     rules = await active_rules(db, employee.tenant_id) if rules is None else rules
     if not rules:
         return []
+    if not employee.time_tracking:
+        # Ohne Zeiterfassung zählt keine Stempelung als gearbeitete Zeit (auch alte nicht).
+        return [SurchargeTotal(rule=r, minutes=0) for r in rules]
     tz = await employee_timezone(db, employee)
     seconds: dict[int, float] = {r.id: 0.0 for r in rules}
     overtime_rules = [r for r in rules if r.kind == SurchargeKind.OVERTIME]

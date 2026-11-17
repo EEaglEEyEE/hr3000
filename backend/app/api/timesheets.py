@@ -79,6 +79,8 @@ async def list_open_days(
                 DailySummary.flags.is_not(None),
             ),
             Employee.tenant_id == actor.tenant_id,
+            # ohne Zeiterfassung ist nie etwas zu klären (der Tages-Cache ist dann ohnehin leer)
+            Employee.time_tracking.is_(True),
             DailySummary.work_date <= today,
         )
     )
@@ -157,6 +159,7 @@ async def list_monthly_caps(
         .where(
             Employee.tenant_id == actor.tenant_id,
             Employee.active.is_(True),
+            Employee.time_tracking.is_(True),
             EmployeeDefaultShift.on_demand.is_(True),
             EmployeeDefaultShift.monthly_cap_minutes.is_not(None),
         )
@@ -192,7 +195,10 @@ async def list_balance_limits(
     max_hours, min_hours = settings_row.overtime_limit_max_hours, settings_row.overtime_limit_min_hours
     if max_hours is None and min_hours is None:
         return []
-    stmt = select(Employee).where(Employee.tenant_id == actor.tenant_id, Employee.active.is_(True))
+    # Ohne Zeiterfassung gibt es kein Konto (auch keine Korrekturbuchungen, die zählen).
+    stmt = select(Employee).where(
+        Employee.tenant_id == actor.tenant_id, Employee.active.is_(True), Employee.time_tracking.is_(True)
+    )
     if actor.is_supervisor_level:
         stmt = stmt.where(Employee.id.in_(await visible_employee_ids(db, actor) or set()))
     rows = []
@@ -398,7 +404,8 @@ async def get_overtime_balance(
     employee = await db.get(Employee, employee_id)
     if employee is None or employee.tenant_id != actor.tenant_id:
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
-    if actor.device is not None and employee.location_id != actor.device.location_id:
+    if actor.device is not None and (employee.location_id != actor.device.location_id or not employee.time_tracking):
+        # ohne Zeiterfassung steht der Mitarbeiter nicht am Tablet
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
     if actor.device is not None and not (await get_or_create_settings(db, actor.tenant_id)).kiosk_show_balance:
         raise AppError(403, "KIOSK_BALANCE_HIDDEN", "Der Saldo wird am Tablet nicht angezeigt.")
@@ -406,6 +413,12 @@ async def get_overtime_balance(
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
     if actor.is_hr_level:
         await ensure_employee_visible(db, actor, employee)
+    if not employee.time_tracking:
+        # Kein Konto ohne Zeiterfassung (auch Korrekturbuchungen zählen dann nicht).
+        return OvertimeBalanceResponse(
+            employee_id=employee_id, balance_date=None, daily_target_minutes=None, daily_actual_minutes=None,
+            daily_delta_minutes=None, running_balance_minutes=0, time_tracking=False,
+        )
 
     info = await balance_as_of(db, employee)
     row = info.last_row

@@ -401,6 +401,7 @@ async def load_employee_rows(ctx: _Context) -> list[Row]:
             hire_date=employee.hire_date,
             termination_date=employee.termination_date,
             birth_date=employee.birth_date,
+            time_tracking=employee.time_tracking,
         )
         if "status" in needed:
             row["status"] = employee.employment_status
@@ -644,6 +645,10 @@ async def load_time_month_rows(ctx: _Context, first: date, last: date) -> list[R
             if "balance_hours" in needed:
                 adjusted = sum(minutes for day, minutes in adjustments.get(employee.id, []) if day <= end)
                 row["balance_hours"] = round((running + adjusted) / 60, 2)
+            if not employee.time_tracking:
+                # Ohne Zeiterfassung kein Soll/Ist/Saldo/Konto (leer statt 0); Urlaub bleibt.
+                for column in ("target_hours", "actual_hours", "delta_hours", "settled_hours", "balance_hours"):
+                    row[column] = None
             if "vacation_remaining" in needed:
                 # Urlaubskonto je Mitarbeiter und Jahr einmal (bewusste Ausnahme von „keine Abfrage
                 # je Zeile“: die Kontoregeln mit Übertrag und Verfall gibt es nur je Person).

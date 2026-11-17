@@ -202,7 +202,8 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   „Vertrieb“ zeigt auch „Vertrieb › Innendienst“), „Auch inaktive anzeigen“, Hinweis auf die
   Tarifgrenze. Die Spalte „Abteilung“ zeigt die Abteilung je Mitarbeiter (der volle Pfad beim
   Darüberfahren).
-  „Bearbeiten“ öffnet den Mitarbeiter direkt im Reiter „Einstellungen“.
+  „Bearbeiten“ öffnet den Mitarbeiter direkt im Reiter „Einstellungen“. Mitarbeiter ohne
+  Zeiterfassung tragen in der Spalte „Status“ zusätzlich „ohne Zeiterfassung“.
 - **„Organigramm“:** der Abteilungsbaum: je Abteilung eine Karte mit Name, „Leitung: …“ bzw.
   „Leitungen: …“ (oder „ohne Leitung“), „Stellvertretung: …“ mit den Rechten in Klammern und den
   Mitarbeitern (ab fünf Personen zugeklappt, „… Mitarbeiter“ klappt auf), darunter
@@ -241,8 +242,31 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     „Stunden je Wochentag“, „Nach Aufwand (Aushilfe, ohne Soll)“ oder „Kein Arbeitszeitmodell (ohne
     Soll, z. B. reines HR-Konto)“. Gilt ab Eintritt; Wochen- oder Monatsstunden, Pausen und
     Kernzeit im Reiter „Arbeitszeit“.
-  - „Weitere Angaben (Austritt, Geburtstag, Aktiv, Pausen)“: „Aktiv“, Austritts- und
-    Geburtsdatum, „Pausen automatisch stempeln (nach Pausenregeln)“. Beim Anlegen eingeklappt.
+  - „Weitere Angaben (Austritt, Geburtstag, Aktiv, Zeiterfassung, Pausen)“: „Aktiv“, Austritts- und
+    Geburtsdatum, „Zeiterfassung“ (Standard an, siehe unten), „Pausen automatisch stempeln (nach
+    Pausenregeln)“. Beim Anlegen eingeklappt.
+  - **„Zeiterfassung“ aus** – für Personen, die HR3000 für Abwesenheiten, Urlaub, Dokumente und ihre
+    Daten nutzen, aber keine Arbeitszeit erfassen:
+    - Kein Stempeln: weder am Tablet (der Mitarbeiter steht dort nicht in der Liste, PIN und Chip
+      werden nicht gebraucht) noch im Web-Login, kein Stundenzettel, keine Korrekturanträge, auch
+      HR kann keine Stempelung nachtragen. Im Formular verschwinden deshalb „Stempel-PIN (Tablet)“,
+      „Chip (Tablet)“ und „Pausen automatisch stempeln“; der Abschnitt heißt dann „Login (E-Mail,
+      Passwort)“.
+    - Kein Soll, kein Ist und kein Gleitzeitkonto, keine Zuschläge. Der Mitarbeiter erscheint nicht
+      unter „Zu klären“, nicht bei den Konto-Grenzen und Monatsgrenzen, nicht in der
+      Überstunden-Auswertung und nicht unter „Anwesenheit“. Abwesenheiten, Feiertage und das
+      Urlaubskonto laufen normal weiter, das Arbeitszeitmodell bestimmt weiter die Arbeitstage für
+      den Urlaub.
+    - Detailseite: Neben dem Namen steht „ohne Zeiterfassung“, die Reiter „Zeiterfassung“ und
+      „Überstundenkonto“ fehlen. Der „Kalender“ zeigt Abwesenheiten und Feiertage, Arbeitstage
+      neutral und keine Wochenspalte mit Soll/Ist.
+    - „Monatsabschluss“ und Lohn-Export: Der Monatsnachweis führt nur die Abwesenheiten auf, Soll,
+      Ist und Saldo bleiben leer („–“), offene Tage gibt es keine. Ebenso im Lohn-Export (CSV) und in
+      der „Lohnbuchhaltung“ („Soll – · Ist – · Saldo –“, darunter „Ohne Zeiterfassung“).
+    - Umschalten wirkt **rückwirkend für alle nicht abgeschlossenen Monate**; abgeschlossene Monate
+      behalten ihren Stand. Beim Bearbeiten erscheint dazu ein Hinweis. Vorhandene Stempelungen
+      bleiben gespeichert, zählen aber nicht, solange die Zeiterfassung aus ist. Wird sie wieder
+      eingeschaltet, zählen sie wieder und das Gleitzeitkonto wird neu berechnet.
   - „Login und Stempeln am Tablet (E-Mail, Passwort, PIN, Chip)“: „Login (Mein Bereich)“ mit
     Login-E-Mail und Passwort, „Stempel-PIN (Tablet)“ mit „PIN zurücksetzen“, „Chip
     (Tablet)“ mit „Chip-UID (optional)“ und „QR-Code fürs Tablet“: Der QR-Code gilt am Tablet wie
@@ -252,7 +276,7 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
   - Die Kernarbeitszeit steht im Arbeitszeitmodell (Reiter „Arbeitszeit“), damit sie mit
     jeder Fassung „gilt ab“ hat.
 - **Detailseite:** Knöpfe „Monatsbericht“, „DSGVO-Datenexport“, „Anonymisieren“ (nur bei
-  Ausgeschiedenen). Reiter:
+  Ausgeschiedenen). Reiter (ohne Zeiterfassung fehlen „Zeiterfassung“ und „Überstundenkonto“):
   - „Zeiterfassung“: „Stempelung nachtragen“, „Korrigieren“, „Endgültig löschen“. Die Spalte
     „Quelle“ zeigt, woher eine Stempelung kommt: „Tablet“, „Web-Login“, „Selbst eingetragen“
     (Stundenzettel), „HR manuell“ (nachgetragen oder Korrekturantrag) oder „Automatisch (Pause)“.
@@ -462,6 +486,9 @@ Bezeichnungen in „…“ entsprechen genau der Oberfläche.
     Mitarbeiter mit Hinweis.
   - Außerdem „Ohne Bestätigung abschließen“, „Zurückziehen“, „Wieder öffnen“ (nur Admins) und „Alle
     Berichte drucken“.
+  - Mitarbeiter ohne Zeiterfassung (siehe Abschnitt 5) tragen „ohne Zeiterfassung“ neben dem Namen,
+    „Saldo Monat“ zeigt „–“. Sie werden genauso vorgelegt und bestätigt; der Monatsnachweis führt
+    dann nur die Abwesenheiten auf.
   - Abgeschlossene Monate lassen sich nicht mehr ändern. Auch „Überstundenkonten führen ab“,
     „Schichtplanung aktivieren“ und „Maximale Schichtlänge“ lassen sich nur ändern, solange davon
     kein vorgelegter oder abgeschlossener Monat betroffen ist.

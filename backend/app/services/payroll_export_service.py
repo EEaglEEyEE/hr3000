@@ -66,6 +66,9 @@ class PayrollSummary:
     # Auszahlungen × Faktor (z. B. 10 Std. mit 1,5 = 15 Std.) und ob ein Faktor ≠ 1 vorkam
     weighted_payout_minutes: int = 0
     payout_has_factor: bool = False
+    # „Zeiterfassung“ des Mitarbeiters: aus = Soll/Ist/Saldo gibt es nicht (Export lässt die Zellen leer;
+    # target/actual stehen dann auf 0, Abwesenheiten und Gutschriften je Zeitart bleiben).
+    time_tracking: bool = True
 
 
 @dataclass
@@ -109,6 +112,7 @@ class PayrollPeriod:
             payout_minutes=sum(minutes for day, minutes in self.payouts if start <= day <= end),
             weighted_payout_minutes=round(sum(m * f for day, m, f in self.payout_factors if start <= day <= end)),
             payout_has_factor=any(f != 1 for day, m, f in self.payout_factors if start <= day <= end),
+            time_tracking=self.employee.time_tracking,
         )
 
 
@@ -128,6 +132,8 @@ async def payroll_period(db: AsyncSession, employee: Employee, date_from: date, 
         if calculation.has_punches:
             worked = (await pair_punches_detail(db, employee, current, tz))[0] or 0
         holiday = calculation.status == SummaryStatus.HOLIDAY
+        # Ohne Zeiterfassung ist das Ist immer leer – Gutschriften je Zeitart (Urlaub, Feiertag …) zählen trotzdem.
+        credited = calculation.actual_minutes is not None or not employee.time_tracking
         days.append(
             PayrollDay(
                 day=current,
@@ -135,10 +141,11 @@ async def payroll_period(db: AsyncSession, employee: Employee, date_from: date, 
                 flexible_share=calculation.flexible_share,
                 actual=calculation.actual_minutes or 0,
                 worked=worked,
-                credits=dict(calculation.credit_parts) if calculation.actual_minutes is not None else {},
+                credits=dict(calculation.credit_parts) if credited else {},
                 absence_days=absence_day_counts(calculation),
                 holiday=holiday,
-                open=needs_review(
+                open=employee.time_tracking
+                and needs_review(
                     calculation.status, calculation.flags, current, today,
                     missing_reported=missing_punch_reported(calculation, report_no_punch_days),
                     exempt=calculation.review_exempt,

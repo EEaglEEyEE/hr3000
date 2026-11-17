@@ -137,7 +137,10 @@ async def list_location_employees(
         # Die Liste enthält NFC-UIDs und Anwesenheitsstatus – nichts für Kollegen im Self-Service.
         raise AppError(403, "FORBIDDEN", "Keine Berechtigung.")
 
-    stmt = select(Employee).where(Employee.location_id == location_id, Employee.active.is_(True))
+    # Ohne Zeiterfassung (Employee.time_tracking aus) erscheint der Mitarbeiter nicht am Tablet.
+    stmt = select(Employee).where(
+        Employee.location_id == location_id, Employee.active.is_(True), Employee.time_tracking.is_(True)
+    )
     # Teamleader sehen nur ihre Teams und keine Chip-Nummern (die braucht nur das Tablet bzw. HR).
     limited = actor.device is None and actor.is_supervisor_level
     if limited:
@@ -225,6 +228,7 @@ async def create_employee(
         login_email=payload.login_email,
         password_hash=hash_password(payload.password) if payload.password else None,
         auto_break_enabled=defaults.default_auto_break if payload.auto_break_enabled is None else payload.auto_break_enabled,
+        time_tracking=payload.time_tracking,
         pin_hash=hash_password(payload.pin) if payload.pin else None,
         nfc_uid=payload.nfc_uid or None,
         hire_date=payload.hire_date,
@@ -353,6 +357,7 @@ async def bulk_import_employees(
                 hire_date=parsed.hire_date,
                 birth_date=parsed.birth_date,
                 auto_break_enabled=defaults.default_auto_break,
+                time_tracking=parsed.time_tracking,
                 show_birthday_in_calendar=defaults.default_show_birthday,
             )
         db.add(new_employee)
@@ -678,6 +683,11 @@ async def update_employee(
         employee.password_hash = hash_password(payload.password)
     if payload.auto_break_enabled is not None:
         employee.auto_break_enabled = payload.auto_break_enabled
+    if payload.time_tracking is not None and payload.time_tracking != employee.time_tracking:
+        # Kein „gilt ab“: wirkt rückwirkend auf alle nicht abgeschlossenen Monate (abgeschlossene behalten
+        # ihren gespeicherten Stand). Konto und Tages-Cache komplett neu – ohne Zeiterfassung leer.
+        employee.time_tracking = payload.time_tracking
+        await invalidate_balance(db, employee.id, None)
     if payload.pin is not None:
         employee.pin_hash = hash_password(payload.pin) if payload.pin else None
     if payload.nfc_uid is not None:

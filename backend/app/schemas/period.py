@@ -64,6 +64,9 @@ class PeriodOverviewRow(BaseModel):
     delta_minutes: int | None
     dispute_reason: str | None = None
     open_day_count: int
+    # „Zeiterfassung“ des Mitarbeiters (aktueller Stand): aus = keine Zeiten im Nachweis; vorgelegte Monate
+    # speichern dann 0 für Soll/Ist/Saldo/Konto (Spalten NOT NULL)
+    time_tracking: bool = True
 
 
 class PeriodBulkResultRow(BaseModel):

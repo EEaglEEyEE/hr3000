@@ -136,6 +136,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   const [birthDate, setBirthDate] = useState('')
   const [showBirthdayInCalendar, setShowBirthdayInCalendar] = useState(true)
   const [autoBreakEnabled, setAutoBreakEnabled] = useState(true)
+  // „Zeiterfassung“: aus = kein Stempeln, kein Soll und kein Gleitzeitkonto (Standard: an)
+  const [timeTracking, setTimeTracking] = useState(true)
   const [hrRole, setHrRole] = useState<string>(NO_HR_ROLE)
   const [payrollAccess, setPayrollAccess] = useState(false)
   const [customRoleId, setCustomRoleId] = useState<string>(FULL_HR_ACCESS)
@@ -173,6 +175,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
     setBirthDate(employee?.birth_date ?? '')
     setShowBirthdayInCalendar(employee?.show_birthday_in_calendar ?? features?.default_show_birthday ?? true)
     setAutoBreakEnabled(employee?.auto_break_enabled ?? features?.default_auto_break ?? true)
+    setTimeTracking(employee?.time_tracking ?? true)
     setHrRole(employee?.hr_role ?? NO_HR_ROLE)
     setPayrollAccess(employee?.hr_payroll_access ?? false)
     setCustomRoleId(employee?.hr_custom_role ? String(employee.hr_custom_role.id) : FULL_HR_ACCESS)
@@ -184,6 +187,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
   }, [resetKey, employee?.id])  // bewusst nicht an das employee-Objekt gebunden: ein Refetch (z.B. nach Rollenwechsel) darf ungespeicherte Eingaben nicht verwerfen
 
   const locationChanged = isEditMode && locationId !== '' && Number(locationId) !== employee.location_id
+  // Umschalten wirkt rückwirkend auf alle nicht abgeschlossenen Monate – beim Bearbeiten darauf hinweisen.
+  const timeTrackingChanged = isEditMode && timeTracking !== (employee.time_tracking ?? true)
   const defaultModel = modelSummary(features?.default_day_minutes)
   const profiles = useWorkTimeProfilesQuery({ enabled: !isEditMode }).data ?? []
 
@@ -237,6 +242,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
       active,
       login_email: loginEmail || undefined,
       auto_break_enabled: autoBreakEnabled,
+      time_tracking: timeTracking,
       // Leerer String entfernt die Karte beim Bearbeiten (None hieße "unverändert").
       nfc_uid: nfcUid.trim(),
       hire_date: hireDate || undefined,
@@ -537,7 +543,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
           </div>
           <details className="rounded-md border border-slate-200 p-3" open={isEditMode}>
             <summary className="cursor-pointer text-sm font-medium text-slate-700">
-              Weitere Angaben (Austritt, Geburtstag, Aktiv, Pausen)
+              Weitere Angaben (Austritt, Geburtstag, Aktiv, Zeiterfassung, Pausen)
             </summary>
             <div className="mt-3 flex flex-col gap-4">
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -578,15 +584,38 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
               Geburtstag im Kalender anzeigen
             </label>
           )}
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={autoBreakEnabled}
-              onChange={(event) => setAutoBreakEnabled(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            Pausen automatisch stempeln (nach Pausenregeln)
-          </label>
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={timeTracking}
+                onChange={(event) => setTimeTracking(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Zeiterfassung
+            </label>
+            <p className="text-xs text-slate-500">
+              Aus: kein Stempeln, kein Soll und kein Gleitzeitkonto – Abwesenheiten, Urlaub und Dokumente bleiben.
+            </p>
+            {timeTrackingChanged && (
+              <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800">
+                {timeTracking
+                  ? 'Gilt rückwirkend für alle nicht abgeschlossenen Monate: vorhandene Stempelungen zählen wieder, das Gleitzeitkonto wird neu berechnet.'
+                  : 'Gilt rückwirkend für alle nicht abgeschlossenen Monate: vorhandene Stempelungen zählen nicht mehr, es gibt kein Gleitzeitkonto. Abgeschlossene Monate bleiben unverändert.'}
+              </p>
+            )}
+          </div>
+          {timeTracking && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={autoBreakEnabled}
+                onChange={(event) => setAutoBreakEnabled(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Pausen automatisch stempeln (nach Pausenregeln)
+            </label>
+          )}
             </div>
           </details>
           </div>
@@ -594,7 +623,7 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
           <div className="flex flex-col gap-4">
           <details className="flex flex-col rounded-md border border-slate-200 p-3" open={isEditMode}>
             <summary className="cursor-pointer text-sm font-medium text-slate-700">
-              Login und Stempeln am Tablet (E-Mail, Passwort, PIN, Chip)
+              {timeTracking ? 'Login und Stempeln am Tablet (E-Mail, Passwort, PIN, Chip)' : 'Login (E-Mail, Passwort)'}
             </summary>
             <div className="mt-3 flex flex-col gap-4">
           <div className="rounded-md border border-slate-200 p-3">
@@ -666,6 +695,13 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
             </div>
           </div>
 
+          {!timeTracking && (
+            <p className="text-xs text-slate-500">
+              Ohne Zeiterfassung erscheint der Mitarbeiter nicht am Tablet – Stempel-PIN und Chip werden nicht gebraucht.
+            </p>
+          )}
+          {timeTracking && (
+          <>
           <div className="rounded-md border border-slate-200 p-3">
             <p className="mb-3 text-sm font-medium text-slate-700">Stempel-PIN (Tablet)</p>
             <div className="flex flex-col gap-1.5">
@@ -746,6 +782,8 @@ export function EmployeeForm({ employee, locations, onDone }: EmployeeFormProps)
               )}
             </div>
           </div>
+          </>
+          )}
             </div>
           </details>
 

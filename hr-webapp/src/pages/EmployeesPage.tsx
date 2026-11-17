@@ -177,6 +177,11 @@ export function EmployeesPage() {
                   <Badge variant={employee.active ? 'success' : 'default'}>
                     {employee.active ? 'Aktiv' : 'Inaktiv'}
                   </Badge>
+                  {employee.time_tracking === false && (
+                    <Badge className="ml-1" title="Kein Stempeln, kein Soll und kein Gleitzeitkonto">
+                      ohne Zeiterfassung
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell>
                   {employee.hr_role ? (

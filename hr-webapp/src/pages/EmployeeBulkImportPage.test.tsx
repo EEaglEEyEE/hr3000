@@ -16,7 +16,7 @@ function setup() {
 }
 
 describe('Mitarbeiter-Import', () => {
-  it.each(['tagesstunden_woche2', 'tagesstunden_woche3', 'tagesstunden_woche4', 'turnus_beginn', 'abgegoltene_ueberstunden'])(
+  it.each(['tagesstunden_woche2', 'tagesstunden_woche3', 'tagesstunden_woche4', 'turnus_beginn', 'abgegoltene_ueberstunden', 'zeiterfassung'])(
     'nennt die Spalte %s',
     async (column) => {
       setup()
@@ -28,6 +28,11 @@ describe('Mitarbeiter-Import', () => {
     setup()
     expect(await screen.findByText(/Mehrwöchiges Modell \(Turnus über 2 bis 4 Wochen\)/)).toBeInTheDocument()
     expect(screen.getByText(/nur zusammen mit einem Arbeitszeitmodell in derselben Zeile/)).toBeInTheDocument()
+  })
+
+  it('erklärt die Spalte „zeiterfassung“', async () => {
+    setup()
+    expect(await screen.findByText(/„zeiterfassung“: ja\/nein, Standardwert ja/)).toBeInTheDocument()
   })
 
   it('nennt weiter die Pflichtspalten', async () => {

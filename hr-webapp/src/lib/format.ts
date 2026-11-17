@@ -103,7 +103,8 @@ export function formatDays(days: number): string {
   return days.toLocaleString('de-DE', { maximumFractionDigits: 1 })
 }
 
-/** Dauer ohne Vorzeichen, z.B. 90 -> "1:30". */
-export function formatHoursMinutes(minutes: number): string {
+/** Dauer ohne Vorzeichen, z.B. 90 -> "1:30"; null (z.B. ohne Zeiterfassung) -> "–". */
+export function formatHoursMinutes(minutes: number | null | undefined): string {
+  if (minutes === null || minutes === undefined) return '–'
   return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
 }

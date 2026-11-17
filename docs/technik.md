@@ -61,6 +61,32 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   - Reihenfolge der Stempelungen (`_punch_window` → `punch_order_key`): Zeitpunkt, bei gleichem
     Zeitpunkt ein Ende (GO, BREAK_END, ERRAND_END) vor einem Beginn, sonst nach `id`. So bleiben
     lückenlose Spannen gültig, auch wenn die spätere zuerst angelegt wurde.
+- **Mitarbeiter ohne Zeiterfassung** (Migration 0166, `Employee.time_tracking`, Standard an; UI
+  „Zeiterfassung“): für Personen, die die Webapp nutzen, aber nicht stempeln. Schalter ohne „gilt ab“ –
+  wirkt rückwirkend auf alle nicht gesperrten Monate, gesperrte behalten ihren Schnappschuss
+  (`PeriodClosure`). Umschalten (`PATCH /employees/{id}`, `POST /employees`, Import-Spalte
+  `zeiterfassung` ja/nein) ruft `invalidate_balance(…, None)`.
+  - Rechnung: `calculate_day` → `_untracked_day`: Tag wie ohne Stempelung auflösen (`_resolve_day`
+    mit `[]`, alte Stempelungen zählen nicht), dann Soll/Ist `None`, keine Hinweise, kein
+    `flexible`/`flexible_share`, `has_punches` False. Status, `absence_parts`, `credit_parts`,
+    `leave_weight` bleiben (Urlaubszählung über `resolve_effective_shift` unverändert). Arbeitstag ohne
+    Abwesenheit = `OPEN_MISSING_PUNCH` ohne Soll (wie ohne Arbeitszeitmodell, `missing_punch_reported`
+    False). `flexible_week` → None, `balance_start` → None ⇒ `rebuild_balance` leert
+    `overtime_balances`/`daily_summaries`.
+  - Sperren: `timesheet_service.ensure_time_tracking` (403 `TIME_TRACKING_DISABLED`) in `POST /punches`
+    (Tablet vor PIN-Prüfung, HR nach Sichtbarkeit; Idempotenz-Duplikat bleibt 409 `PUNCH_DUPLICATE`),
+    `POST /me/punches`, `POST /me/time-entries` und `time_entry_service.check_entry` (auch Genehmigung),
+    Korrekturantrag anlegen/übernehmen (Ablehnen geht). Tablet: Mitarbeiterliste filtert, `register-card`,
+    `setup-pin`, `overtime-balance` 404 wie inaktiv. HR-`PATCH`/`DELETE` bestehender Stempelungen bleibt.
+  - Ausgaben: „Zu klären“, `balance-limits`, `monthly-caps`, `/reports/overtime` filtern;
+    `DashboardMe.time_tracking`, `portal_punching` = Mandant UND Mitarbeiter, `balance_minutes`/
+    `week_*` None; `OvertimeBalanceResponse.time_tracking` (Werte 0/None); `PayrollSummary.time_tracking`
+    (CSV Soll/Ist/Saldo leer, keine offenen Tage, Gutschriften je Zeitart bleiben für DATEV);
+    `AccountingHours` Soll/Ist/Saldo None (kein neuer Schlüssel, sonst gälten Freigaben als geändert);
+    `MonthReport` Soll/Ist/Saldo/Konto None, keine Stempelzeiten, Vorlage „Ohne Zeiterfassung“;
+    Monatsabschluss speichert 0 (Spalten NOT NULL), `PeriodOverviewRow.time_tracking`; Zuschläge 0;
+    Berichts-Builder: Spalte `time_tracking`, Zeit-Monatszeilen Soll/Ist/Saldo/Konto None;
+    `ApiEmployee.time_tracking`.
 - **Zeiten selbst eintragen (Stundenzettel)** (Migration 0157, `services/time_entry_service.py`,
   `api/time_entries.py`): kein eigenes Datenmodell. Eine Spanne (`TimeSpanIn`, WORK/BREAK, „HH:MM“
   Ortszeit, `end_next_day`) wird zu Stempelungen COME/GO bzw. BREAK_START/BREAK_END mit

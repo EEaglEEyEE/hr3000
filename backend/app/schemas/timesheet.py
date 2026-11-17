@@ -79,6 +79,8 @@ class OvertimeBalanceResponse(BaseModel):
     # bisher abgegolten (laufend gekappter Monatssaldo, nicht im Kontostand enthalten).
     settled_limit_minutes: int | None = None
     settled_month_minutes: int = 0
+    # „Zeiterfassung“ des Mitarbeiters: aus = es gibt kein Konto (alle Werte leer bzw. 0, nicht anzeigen)
+    time_tracking: bool = True
 
 
 class WeeklyBalanceWeek(BaseModel):

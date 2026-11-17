@@ -85,12 +85,17 @@ function Tile({ label, value, hint, tone }: { label: string; value: ReactNode; h
 }
 
 function MyFigures({ me }: { me: NonNullable<DashboardData['me']> }) {
-  const weekDelta = me.week_actual_minutes - me.week_target_minutes
+  // Ohne Zeiterfassung gibt es kein Konto, keine Tages- und Wochenzeiten – nur Urlaub und offene Anträge.
+  const tracking = me.time_tracking !== false
+  const weekActual = me.week_actual_minutes ?? 0
+  const weekTarget = me.week_target_minutes ?? 0
+  const balance = me.balance_minutes ?? 0
+  const weekDelta = weekActual - weekTarget
   return (
     <div className="flex flex-col gap-2">
       <h2 className="text-base font-semibold text-slate-900">Hallo {me.first_name}</h2>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {me.on_demand ? (
+        {!tracking ? null : me.on_demand ? (
           <Tile
             label="Diesen Monat"
             value={`${formatMinutesAsHours(me.month_actual_minutes ?? 0).replace('+', '')} Std.`}
@@ -104,8 +109,8 @@ function MyFigures({ me }: { me: NonNullable<DashboardData['me']> }) {
         ) : (
         <Tile
           label="Überstundenkonto"
-          value={`${formatMinutesAsHours(me.balance_minutes)} Std.`}
-          tone={me.balance_minutes < 0 ? 'bad' : 'good'}
+          value={`${formatMinutesAsHours(balance)} Std.`}
+          tone={balance < 0 ? 'bad' : 'good'}
           hint={me.balance_date ? `Stand ${formatDate(me.balance_date)}` : undefined}
         />
         )}
@@ -119,20 +124,24 @@ function MyFigures({ me }: { me: NonNullable<DashboardData['me']> }) {
               : undefined
           }
         />
-        <Tile
-          label="Heute"
-          value={me.today_status ? DAY_STATUS_LABELS[me.today_status] : 'Nicht gestempelt'}
-          hint={me.today_times || undefined}
-        />
-        <Tile
-          label="Diese Woche"
-          value={`${formatMinutesAsHours(me.week_actual_minutes).replace('+', '')} Std.`}
-          hint={
-            me.on_demand
-              ? 'nach Aufwand, ohne Soll'
-              : `Soll bisher ${formatMinutesAsHours(me.week_target_minutes).replace('+', '')} Std. (${formatMinutesAsHours(weekDelta)})`
-          }
-        />
+        {tracking && (
+          <Tile
+            label="Heute"
+            value={me.today_status ? DAY_STATUS_LABELS[me.today_status] : 'Nicht gestempelt'}
+            hint={me.today_times || undefined}
+          />
+        )}
+        {tracking && (
+          <Tile
+            label="Diese Woche"
+            value={`${formatMinutesAsHours(weekActual).replace('+', '')} Std.`}
+            hint={
+              me.on_demand
+                ? 'nach Aufwand, ohne Soll'
+                : `Soll bisher ${formatMinutesAsHours(weekTarget).replace('+', '')} Std. (${formatMinutesAsHours(weekDelta)})`
+            }
+          />
+        )}
       </div>
       {(me.pending_absences > 0 || me.pending_corrections > 0) && (
         <p className="text-sm text-amber-700">

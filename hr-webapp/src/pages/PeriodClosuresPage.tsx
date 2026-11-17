@@ -146,12 +146,14 @@ export function PeriodClosuresPage() {
                 <Link className="text-sky-700 hover:underline" to={`/employees/${row.employee_id}`}>
                   {row.last_name}, {row.first_name}
                 </Link>
+                {row.time_tracking === false && <span className="ml-2 text-xs text-slate-500">ohne Zeiterfassung</span>}
               </TableCell>
               <TableCell>{row.employee_number}</TableCell>
               <TableCell>
                 {row.open_day_count > 0 ? <Badge variant="danger">{row.open_day_count}</Badge> : <span className="text-slate-400">0</span>}
               </TableCell>
-              <TableCell>{formatMinutesAsHours(row.delta_minutes)}</TableCell>
+              {/* ohne Zeiterfassung speichert der Abschluss 0 – das ist kein Saldo; ein vorher abgeschlossener Monat behält seinen */}
+              <TableCell>{row.time_tracking === false && !row.delta_minutes ? '–' : formatMinutesAsHours(row.delta_minutes)}</TableCell>
               <TableCell>
                 {row.status ? (
                   <div className="flex flex-col gap-1">

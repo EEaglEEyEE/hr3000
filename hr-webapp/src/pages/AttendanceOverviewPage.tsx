@@ -53,7 +53,9 @@ export function AttendanceOverviewPage() {
   const from = toIsoDate(weekDays[0])
   const to = toIsoDate(weekDays[6])
 
-  const employeeIds = (employeesQuery.data ?? []).map((employee) => employee.id)
+  // Mitarbeiter ohne Zeiterfassung stempeln nicht – sie gehören nicht in die Anwesenheitsübersicht.
+  const employees = employeesQuery.data?.filter((employee) => employee.time_tracking !== false)
+  const employeeIds = (employees ?? []).map((employee) => employee.id)
   const timesheetQuery = useEmployeesTimesheetQuery(employeeIds, from, to)
 
   const daysByEmployee = new Map(
@@ -104,7 +106,7 @@ export function AttendanceOverviewPage() {
       {(employeesQuery.isLoading || timesheetQuery.isLoading) && <p className="text-slate-500">Lädt…</p>}
       {employeesQuery.isError && <p className="text-red-600">Mitarbeiter konnten nicht geladen werden.</p>}
 
-      {employeesQuery.data && (
+      {employees && (
         <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-600">
@@ -128,7 +130,7 @@ export function AttendanceOverviewPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {employeesQuery.data.map((employee) => {
+              {employees.map((employee) => {
                 const days = daysByEmployee.get(employee.id)
                 return (
                   <tr key={employee.id} className="hover:bg-slate-50">
@@ -156,7 +158,7 @@ export function AttendanceOverviewPage() {
                   </tr>
                 )
               })}
-              {employeesQuery.data.length === 0 && (
+              {employees.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
                     Keine aktiven Mitarbeiter gefunden.

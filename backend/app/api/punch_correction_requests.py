@@ -34,7 +34,13 @@ from app.services.notification_service import (
 )
 from app.services.period_service import ensure_period_open
 from app.services.scope_service import ensure_employee_visible
-from app.services.timesheet_service import employee_timezone, recalculate_day, refresh_auto_breaks, today_in
+from app.services.timesheet_service import (
+    employee_timezone,
+    ensure_time_tracking,
+    recalculate_day,
+    refresh_auto_breaks,
+    today_in,
+)
 
 router = APIRouter(tags=["punch_correction_requests"])
 
@@ -56,6 +62,7 @@ async def create_correction_request(
     if actor.employee is None:
         raise AppError(403, "FORBIDDEN", "Korrekturanträge stellt der Mitarbeiter selbst.")
     employee = actor.employee
+    ensure_time_tracking(employee)
     tz = await employee_timezone(db, employee)
     if payload.work_date > today_in(tz):
         raise AppError(400, "DATE_IN_FUTURE", "Korrekturen sind nur für vergangene Tage oder heute möglich.")
@@ -134,6 +141,9 @@ async def decide_correction_request(
         raise AppError(400, "NOT_PENDING", "Dieser Antrag wurde bereits entschieden.")
     employee = await db.get(Employee, row.employee_id)
     await ensure_employee_visible(db, actor, employee)
+    if payload.approve:
+        # Ablehnen bleibt möglich (offene Anträge aus der Zeit mit Zeiterfassung abräumen).
+        ensure_time_tracking(employee)
     await ensure_period_open(db, employee.id, row.work_date)
 
     tz = await employee_timezone(db, employee)

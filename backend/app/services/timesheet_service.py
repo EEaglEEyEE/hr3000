@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors import AppError
 from app.models import (
     UNPAID_CATEGORIES,
     Absence,
@@ -106,6 +107,14 @@ DAY_FLAGS = [
 ]
 
 
+def ensure_time_tracking(employee: Employee) -> None:
+    """Neue Zeiten (Stempeln am Tablet/im Web-Login, HR-Nachtrag, Zeiten selbst eintragen, Korrekturanträge)
+    gibt es nur für Mitarbeiter mit Zeiterfassung (Employee.time_tracking). Bestehende Stempelungen darf HR
+    weiter ändern und löschen."""
+    if not employee.time_tracking:
+        raise AppError(403, "TIME_TRACKING_DISABLED", "Für diesen Mitarbeiter ist die Zeiterfassung ausgeschaltet.")
+
+
 def week_start(work_date: date) -> date:
     """Montag der Kalenderwoche, in der work_date liegt – wird nur noch für
     die Wochen-Iteration in app/api/timesheets.py::get_weekly_balance
@@ -155,7 +164,11 @@ async def calculate_day(
     NICHT dasselbe wie ein expliziter freier Tag – er wird wie bisher ohne
     Arbeitszeitmodell behandelt: normales Stempeln, nur kein Soll (target
     bleibt None). Nur ein tatsächlich existierender Plan, der "kein
-    Arbeitstag" sagt, führt zu PLANNED_OFF."""
+    Arbeitstag" sagt, führt zu PLANNED_OFF.
+
+    Mitarbeiter ohne Zeiterfassung (Employee.time_tracking aus): siehe _untracked_day."""
+    if not employee.time_tracking:
+        return await _untracked_day(db, employee, work_date, tz)
     calculation = await _calculate_day_core(db, employee, work_date, tz)
     if calculation.has_punches and (
         (employee.hire_date is not None and work_date < employee.hire_date)
@@ -183,6 +196,26 @@ async def calculate_day(
     return calculation
 
 
+async def _untracked_day(db: AsyncSession, employee: Employee, work_date: date, tz: ZoneInfo) -> DayCalculation:
+    """Tag eines Mitarbeiters ohne Zeiterfassung: weder Soll noch Ist, keine Hinweise, kein Wochensoll.
+    Stempelungen (auch alte aus der Zeit mit Zeiterfassung) zählen nicht – der Tag wird wie ein Tag ohne
+    Stempelung aufgelöst. Abwesenheiten, Feiertage und freie Tage bleiben (Status, Abwesenheitsanteile,
+    Gutschriften je Zeitart für den Lohn-Export). Ein Arbeitstag ohne Abwesenheit steht wie bei
+    Mitarbeitern ohne Arbeitszeitmodell auf OPEN_MISSING_PUNCH ohne Soll – das gilt nirgends als offen
+    (missing_punch_reported). Gilt rückwirkend für alle nicht abgeschlossenen Monate; abgeschlossene
+    Monate behalten ihren gespeicherten Stand (period_closures)."""
+    calculation = await _resolve_day(db, employee, work_date, tz, [])
+    calculation.target_minutes = None
+    calculation.actual_minutes = None
+    calculation.flags = []
+    calculation.flexible = False
+    calculation.flexible_share = 0.0
+    calculation.exceeds_max_daily_minutes = False
+    calculation.review_exempt = False
+    calculation.has_punches = False
+    return calculation
+
+
 @dataclass
 class FlexibleWeek:
     """Wochenabrechnung eines flexiblen Modells (Minuten), wie sie ins Überstundenkonto geht."""
@@ -199,6 +232,8 @@ async def flexible_week(
     Beschäftigungstag und erst, wenn der Tag vorbei ist; es zählen die flexiblen Tage der Woche ab
     Montag (frühestens ab Kontobeginn), Soll = Summe der Wochenanteile, Ist = Summe der Tages-Ist-Zeiten
     (ein Tag ohne auswertbare Stempelung zählt 0 – es wird nichts geschätzt)."""
+    if not employee.time_tracking:
+        return None  # ohne Zeiterfassung gibt es kein Wochensoll
     if employee.termination_date is not None and day > employee.termination_date:
         return None
     if day.weekday() != 6 and day != employee.termination_date:
@@ -1359,7 +1394,12 @@ async def balance_start(db: AsyncSession, employee: Employee) -> date | None:
 
     Mit Stichtag in den Einstellungen ("Überstundenkonten führen ab") beginnt das Konto für alle an
     diesem Tag – auch ohne Stempelung, fehlende Stunden zählen dann ins Minus. Ohne Stichtag
-    beginnt es mit der ersten Stempelung (davor wurde das System noch nicht genutzt)."""
+    beginnt es mit der ersten Stempelung (davor wurde das System noch nicht genutzt).
+
+    Ohne Zeiterfassung (Employee.time_tracking aus) gibt es kein Konto: None – rebuild_balance leert
+    dann Konto und Tages-Cache."""
+    if not employee.time_tracking:
+        return None
     setting = (
         await db.execute(select(AppSettings.balance_start_date).where(AppSettings.tenant_id == employee.tenant_id))
     ).scalar_one_or_none()
@@ -1472,7 +1512,8 @@ async def rebuild_balance(db: AsyncSession, employee: Employee) -> None:
 
     start = await balance_start(db, locked)
     if start is None:
-        # Keine einzige Stempelung (mehr) – auch der Tages-Cache ("Zu klären") ist dann leer.
+        # Keine einzige Stempelung (mehr) oder keine Zeiterfassung – auch der Tages-Cache ("Zu klären")
+        # ist dann leer.
         await db.execute(delete(OvertimeBalance).where(OvertimeBalance.employee_id == locked.id))
         await db.execute(delete(DailySummary).where(DailySummary.employee_id == locked.id))
         locked.balance_through = yesterday

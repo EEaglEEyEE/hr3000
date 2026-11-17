@@ -259,6 +259,7 @@ async def test_overtime_balance_defaults_to_zero_without_history(
         "balance_start": None,
         "settled_limit_minutes": None,
         "settled_month_minutes": 0,
+        "time_tracking": True,
     }
 
 

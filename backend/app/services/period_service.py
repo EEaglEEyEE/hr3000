@@ -217,10 +217,11 @@ class MonthReport:
     year: int
     month: int
     days: list[ReportDay]
-    target_minutes: int = 0
-    actual_minutes: int = 0
-    delta_minutes: int = 0
-    balance_end_minutes: int = 0
+    # None bei Mitarbeitern ohne Zeiterfassung (time_tracking aus): kein Soll/Ist/Saldo/Konto
+    target_minutes: int | None = 0
+    actual_minutes: int | None = 0
+    delta_minutes: int | None = 0
+    balance_end_minutes: int | None = 0
     # Mit dem Gehalt abgegoltene Überstunden des Monats (nicht im Kontostand) und die Grenze dazu
     # (0 = keine Abgeltung vereinbart)
     settled_minutes: int = 0
@@ -237,6 +238,8 @@ class MonthReport:
     tenant_logo: str | None = None
     # (Name, Prozentsatz, Minuten) je aktiver Zuschlagsregel mit Zeiten > 0
     surcharges: list[tuple[str, float, int]] = field(default_factory=list)
+    # „Zeiterfassung“ des Mitarbeiters: aus = nur Abwesenheiten, keine Zeiten (Vorlage blendet sie aus)
+    time_tracking: bool = True
 
 
 async def build_month_report(db: AsyncSession, employee: Employee, year: int, month: int) -> MonthReport:
@@ -244,8 +247,10 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
     tz = await employee_timezone(db, employee)
     tenant = await db.get(Tenant, employee.tenant_id)
 
-    # Nachtschichten zählen zum Tag ihres Kommens (Gehen ggf. am Folgetag).
-    by_day = await punches_by_day(db, employee, first, last, tz)
+    tracking = employee.time_tracking
+    # Nachtschichten zählen zum Tag ihres Kommens (Gehen ggf. am Folgetag). Ohne Zeiterfassung zählen
+    # (alte) Stempelungen nicht und erscheinen daher auch nicht im Bericht.
+    by_day = await punches_by_day(db, employee, first, last, tz) if tracking else {}
     reviews = await day_reviews(db, [employee.id], first, last)
     today = today_in(tz)
 
@@ -253,7 +258,7 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
     type_names = {t.id: t.name for t in await list_absence_types(db, employee.tenant_id)}
     report = MonthReport(
         employee=employee, tenant_name=tenant.name if tenant else "", year=year, month=month, days=[],
-        tenant_logo=await tenant_logo_data_url(db, employee.tenant_id),
+        tenant_logo=await tenant_logo_data_url(db, employee.tenant_id), time_tracking=tracking,
     )
     flexible_target = 0.0
     report_no_punch_days = settings_row.report_days_without_punches
@@ -346,6 +351,10 @@ async def build_month_report(db: AsyncSession, employee: Employee, year: int, mo
         )
         current += timedelta(days=1)
 
+    if not tracking:
+        report.target_minutes = report.actual_minutes = report.delta_minutes = report.balance_end_minutes = None
+        report.break_minutes = 0
+        return report
     # Flexibles Modell: Wochensoll anteilig auf die Kalendertage des Monats.
     report.target_minutes += round(flexible_target)
     report.delta_minutes = report.actual_minutes - report.target_minutes

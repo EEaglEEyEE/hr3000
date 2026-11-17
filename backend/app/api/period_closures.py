@@ -200,10 +200,11 @@ async def _submit(
     now = datetime.now(UTC).replace(tzinfo=None)
     closure = existing or PeriodClosure(tenant_id=employee.tenant_id, employee_id=employee.id, year=year, month=month)
     closure.status = PeriodStatus.SUBMITTED
-    closure.target_minutes = report.target_minutes
-    closure.actual_minutes = report.actual_minutes
-    closure.delta_minutes = report.delta_minutes
-    closure.balance_end_minutes = report.balance_end_minutes
+    # Ohne Zeiterfassung hat der Bericht keine Zeiten (None) – die Spalten sind NOT NULL, gespeichert wird 0.
+    closure.target_minutes = report.target_minutes or 0
+    closure.actual_minutes = report.actual_minutes or 0
+    closure.delta_minutes = report.delta_minutes or 0
+    closure.balance_end_minutes = report.balance_end_minutes or 0
     closure.settled_minutes = report.settled_minutes
     closure.document_id = document.id
     closure.report_sha256 = document.sha256
@@ -482,6 +483,7 @@ async def period_overview(
             delta_minutes=closures[e.id].delta_minutes if e.id in closures else None,
             dispute_reason=closures[e.id].dispute_reason if e.id in closures else None,
             open_day_count=open_counts.get(e.id, 0),
+            time_tracking=e.time_tracking,
         )
         for e in employees
     ]

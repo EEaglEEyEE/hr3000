@@ -10,6 +10,7 @@ import { ApiError } from '../api/client'
 import { AbsencesTab } from '../components/absences/AbsencesTab'
 import { EmployeeForm } from '../components/employees/EmployeeFormDialog'
 import { PunchHistoryTab } from '../components/punches/PunchHistoryTab'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { CalendarTab } from '../components/timesheet/CalendarTab'
@@ -56,6 +57,7 @@ export function EmployeeDetailPage() {
   const anonymizeEmployee = useAnonymizeEmployeeMutation()
   const [exportError, setExportError] = useState<string | null>(null)
   const [anonymizeError, setAnonymizeError] = useState<string | null>(null)
+  const [selectedTab, setSelectedTab] = useState<string | null>(null)
 
   if (employeeQuery.isLoading) return <p className="text-slate-500">Lädt…</p>
   if (employeeQuery.isError || !employeeQuery.data) {
@@ -63,6 +65,14 @@ export function EmployeeDetailPage() {
   }
 
   const employee = employeeQuery.data
+  // Ohne Zeiterfassung: keine Reiter „Zeiterfassung“ und „Überstundenkonto“ (kein Stempeln, kein Konto)
+  const timeTracking = employee.time_tracking !== false
+  const visibleTabs = { ...tabs, punches: tabs.punches && timeTracking, timesheet: tabs.timesheet && timeTracking }
+  const tabKeys = Object.keys(visibleTabs) as (keyof typeof visibleTabs)[]
+  const initialTab =
+    visibleTabs.settings && searchParams.get('reiter') === 'einstellungen' ? 'settings' : tabKeys.find((key) => visibleTabs[key])
+  // Gewählter Reiter, solange es ihn gibt – sonst (z. B. Zeiterfassung gerade ausgeschaltet) der erste sichtbare
+  const currentTab = selectedTab && tabKeys.some((key) => key === selectedTab && visibleTabs[key]) ? selectedTab : initialTab
 
   async function handleDataExport() {
     setExportError(null)
@@ -104,6 +114,11 @@ export function EmployeeDetailPage() {
           <h1 className="text-lg font-semibold text-slate-900">
             {employee.first_name} {employee.last_name}
             <span className="ml-2 text-sm font-normal text-slate-500">{employee.employee_number}</span>
+            {!timeTracking && (
+              <Badge className="ml-2 align-middle" title="Kein Stempeln, kein Soll und kein Gleitzeitkonto">
+                ohne Zeiterfassung
+              </Badge>
+            )}
           </h1>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -138,33 +153,27 @@ export function EmployeeDetailPage() {
       )}
 
       {/* Arbeitszeit = Modell + Schichtplanung, Personalakte = Stammdaten, Vertrag, Dokumente …, Einstellungen = Grunddaten, Login, Rolle */}
-      <Tabs
-        defaultValue={
-          tabs.settings && searchParams.get('reiter') === 'einstellungen'
-            ? 'settings'
-            : (Object.keys(tabs) as (keyof typeof tabs)[]).find((key) => tabs[key])
-        }
-      >
+      <Tabs value={currentTab ?? ''} onValueChange={setSelectedTab}>
         <TabsList>
-          {tabs.punches && <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>}
+          {visibleTabs.punches && <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>}
           {tabs.calendar && <TabsTrigger value="calendar">Kalender</TabsTrigger>}
-          {tabs.timesheet && <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>}
+          {visibleTabs.timesheet && <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>}
           {tabs.absences && <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>}
           {tabs.worktime && <TabsTrigger value="worktime">Arbeitszeit</TabsTrigger>}
           {tabs.file && <TabsTrigger value="file">Personalakte</TabsTrigger>}
           {tabs.settings && <TabsTrigger value="settings">Einstellungen</TabsTrigger>}
         </TabsList>
-        {tabs.punches && (
+        {visibleTabs.punches && (
           <TabsContent value="punches">
             <PunchHistoryTab employeeId={id} readOnly={!isFullHr || !can('TIME', 'EDIT')} />
           </TabsContent>
         )}
         {tabs.calendar && (
           <TabsContent value="calendar">
-            <CalendarTab employeeId={id} />
+            <CalendarTab employeeId={id} timeTracking={timeTracking} />
           </TabsContent>
         )}
-        {tabs.timesheet && (
+        {visibleTabs.timesheet && (
           <TabsContent value="timesheet">
             <TimesheetTab employeeId={id} canAdjust={isFullHr && can('TIME', 'EDIT')} />
           </TabsContent>

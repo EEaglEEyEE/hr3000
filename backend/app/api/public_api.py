@@ -337,6 +337,8 @@ class ApiEmployee(BaseModel):
     supervisor_id: int | None
     # Alle wirksamen Führungskräfte (eine Abteilung kann mehrere Leitungen haben)
     supervisor_ids: list[int] = []
+    # „Zeiterfassung“: false = der Mitarbeiter stempelt nicht (kein Soll/Ist/Gleitzeitkonto)
+    time_tracking: bool = True
 
 
 class EmployeesPage(BaseModel):
@@ -374,6 +376,7 @@ async def api_employees(
                 department=names.get(p.department_id) if p.department_id else None, position=p.position,
                 supervisor_id=next(iter(org.supervisors(p.id)), None),
                 supervisor_ids=org.supervisors(p.id),
+                time_tracking=p.time_tracking,
             )
             for p in people
         ],

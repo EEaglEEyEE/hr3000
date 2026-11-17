@@ -51,6 +51,9 @@ export function SelfServicePage() {
   }
 
   const employee = employeeQuery.data
+  // Ohne Zeiterfassung: keine Reiter „Zeiterfassung“ und „Überstundenkonto“. „Monatsabschluss“ bleibt – der
+  // Monatsnachweis führt dann die Abwesenheiten auf und wird weiter bestätigt.
+  const timeTracking = employee.time_tracking !== false
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -94,11 +97,11 @@ export function SelfServicePage() {
         <Tabs defaultValue="overview">
           <TabsList>
             <TabsTrigger value="overview">Übersicht</TabsTrigger>
-            <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>
+            {timeTracking && <TabsTrigger value="punches">Zeiterfassung</TabsTrigger>}
             <TabsTrigger value="calendar">Kalender</TabsTrigger>
             {teamCalendarEnabled && <TabsTrigger value="teamcalendar">Abteilungskalender</TabsTrigger>}
             {orgChartEnabled && <TabsTrigger value="orgchart">Organigramm</TabsTrigger>}
-            <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>
+            {timeTracking && <TabsTrigger value="timesheet">Überstundenkonto</TabsTrigger>}
             <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
             {shiftPlanningEnabled && <TabsTrigger value="shiftplan">Schichtplanung</TabsTrigger>}
             <TabsTrigger value="periods">Monatsabschluss</TabsTrigger>
@@ -112,17 +115,19 @@ export function SelfServicePage() {
               <Dashboard />
             </div>
           </TabsContent>
-          <TabsContent value="punches">
-            <div className="flex flex-col gap-4">
-              {timeSheetEnabled && <TimeSheetCard />}
-              <CorrectionRequestSelfCard />
-              <PunchHistoryTab employeeId={employeeId} readOnly />
-            </div>
-          </TabsContent>
+          {timeTracking && (
+            <TabsContent value="punches">
+              <div className="flex flex-col gap-4">
+                {timeSheetEnabled && <TimeSheetCard />}
+                <CorrectionRequestSelfCard />
+                <PunchHistoryTab employeeId={employeeId} readOnly />
+              </div>
+            </TabsContent>
+          )}
           <TabsContent value="calendar">
             <div className="flex flex-col gap-4">
               {!teamCalendarEnabled && <CalendarSubscribe />}
-              <CalendarTab employeeId={employeeId} />
+              <CalendarTab employeeId={employeeId} timeTracking={timeTracking} />
             </div>
           </TabsContent>
           {orgChartEnabled && (
@@ -135,9 +140,11 @@ export function SelfServicePage() {
               <TeamCalendarPage own />
             </TabsContent>
           )}
-          <TabsContent value="timesheet">
-            <TimesheetTab employeeId={employeeId} />
-          </TabsContent>
+          {timeTracking && (
+            <TabsContent value="timesheet">
+              <TimesheetTab employeeId={employeeId} />
+            </TabsContent>
+          )}
           <TabsContent value="absences">
             <AbsencesTab employeeId={employeeId} readOnly allowSelfCreate={absenceRequestsEnabled} />
           </TabsContent>
@@ -145,7 +152,7 @@ export function SelfServicePage() {
             <ShiftPlanTab employeeId={employeeId} readOnly />
           </TabsContent>
           <TabsContent value="periods">
-            <PeriodClosuresSelfTab employeeId={employeeId} />
+            <PeriodClosuresSelfTab employeeId={employeeId} timeTracking={timeTracking} />
           </TabsContent>
           <TabsContent value="mydata">
             <div className="flex flex-col gap-6">

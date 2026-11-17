@@ -7,8 +7,9 @@ export type OvertimeBalance = components['schemas']['OvertimeBalanceResponse']
 export type OpenDay = components['schemas']['OpenDayResponse']
 export type WeeklyBalanceWeek = components['schemas']['WeeklyBalanceWeek']
 
-export function useWeeklyBalanceQuery(employeeId: number, from: string, to: string) {
+export function useWeeklyBalanceQuery(employeeId: number, from: string, to: string, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ['employees', employeeId, 'weekly-balance', from, to],
     queryFn: async () =>
       unwrap(

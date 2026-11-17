@@ -159,6 +159,7 @@ _EMPLOYEE_COLUMNS = (
     ColumnSpec("work_time_model", "Arbeitszeitmodell", group="Arbeitszeit"),
     ColumnSpec("weekly_hours", "Wochenstunden", NUMBER, summable=True, group="Arbeitszeit"),
     ColumnSpec("fte", "Vollzeitanteil (FTE)", NUMBER, summable=True, group="Arbeitszeit"),
+    ColumnSpec("time_tracking", "Zeiterfassung", BOOL, group="Arbeitszeit"),
     ColumnSpec("birth_date", "Geburtsdatum", DATE, ACCESS_HR, group="Persönliche Daten"),
     ColumnSpec("contract_type", "Vertragsart", ENUM, ACCESS_HR, options=CONTRACT_LABELS, group="Vertrag"),
     ColumnSpec("probation_end", "Probezeit bis", DATE, ACCESS_HR, group="Vertrag"),

@@ -21,6 +21,8 @@ class EmployeeCreateRequest(BaseModel):
     password: NewPassword | None = None
     # None = Standard des Mandanten (Einstellungen)
     auto_break_enabled: bool | None = None
+    # „Zeiterfassung“: aus = kein Stempeln, kein Soll/Ist/Gleitzeitkonto (nur Webapp, Abwesenheiten …)
+    time_tracking: bool = True
     # Stempel-PIN: 4–8 Ziffern (Tablet-Tastatur), "" = entfernen
     pin: str | None = Field(default=None, pattern=r"^(\d{4,8})?$")
     nfc_uid: str | None = Field(default=None, max_length=64)
@@ -68,6 +70,8 @@ class EmployeeUpdateRequest(BaseModel):
     login_email: EmailStr | None = None
     password: NewPassword | None = None
     auto_break_enabled: bool | None = None
+    # „Zeiterfassung“ ein/aus; gilt rückwirkend für alle nicht abgeschlossenen Monate, None = unverändert
+    time_tracking: bool | None = None
     # Stempel-PIN: 4–8 Ziffern (Tablet-Tastatur), "" = entfernen
     pin: str | None = Field(default=None, pattern=r"^(\d{4,8})?$")
     # None = unverändert, "" = Karte entfernen (wie bei pin).
@@ -127,6 +131,7 @@ class EmployeeResponse(BaseModel):
     hr_payroll_access: bool = False
     hr_custom_role: CustomRoleRef | None = None
     auto_break_enabled: bool
+    time_tracking: bool = True
     has_pin: bool
     nfc_uid: str | None
     hire_date: dt.date | None

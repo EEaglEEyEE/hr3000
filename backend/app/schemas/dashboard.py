@@ -20,7 +20,9 @@ class DashboardEvent(BaseModel):
 class DashboardMe(BaseModel):
     employee_id: int
     first_name: str
-    balance_minutes: int
+    # „Zeiterfassung“ des Mitarbeiters: aus = kein Stempeln, Saldo und Wochenzeiten leer (None)
+    time_tracking: bool = True
+    balance_minutes: int | None
     balance_date: date | None
     vacation_year: int
     vacation_remaining_days: float
@@ -29,13 +31,14 @@ class DashboardMe(BaseModel):
     today_status: SummaryStatus | None
     today_times: str = ""
     today_actual_minutes: int | None = None
-    week_target_minutes: int = 0
-    week_actual_minutes: int = 0
+    week_target_minutes: int | None = 0
+    week_actual_minutes: int | None = 0
     pending_absences: int = 0
     pending_corrections: int = 0
     # Aushilfe "nach Aufwand": Ist-Stunden im laufenden Monat statt Soll/Saldo, ggf. mit Grenze
     on_demand: bool = False
-    # Stempeln über den Web-Login freigeschaltet und welche Aktionen angeboten werden
+    # Stempeln über den Web-Login freigeschaltet (Mandant UND Zeiterfassung des Mitarbeiters) und welche
+    # Aktionen angeboten werden
     portal_punching: bool = False
     break_buttons: bool = True
     errand_buttons: bool = False

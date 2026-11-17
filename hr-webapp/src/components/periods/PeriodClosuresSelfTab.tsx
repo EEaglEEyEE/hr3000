@@ -16,8 +16,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 
-/** "Mein Bereich": Monatsnachweise prüfen, bestätigen oder beanstanden. */
-export function PeriodClosuresSelfTab({ employeeId }: { employeeId: number }) {
+/** "Mein Bereich": Monatsnachweise prüfen, bestätigen oder beanstanden.
+ * timeTracking=false: Ohne Zeiterfassung speichert der Abschluss 0 für Soll/Ist/Saldo – das wird als „–“ gezeigt
+ * (Monate aus der Zeit mit Zeiterfassung behalten ihre Werte). */
+export function PeriodClosuresSelfTab({ employeeId, timeTracking = true }: { employeeId: number; timeTracking?: boolean }) {
   const closuresQuery = useEmployeePeriodClosuresQuery(employeeId)
   const documentsQuery = useDocumentsQuery(employeeId)
   const confirm = useConfirmPeriodMutation()
@@ -60,14 +62,17 @@ export function PeriodClosuresSelfTab({ employeeId }: { employeeId: number }) {
         <TableBody>
           {closures.map((closure) => {
             const document = documents.find((d) => d.id === closure.document_id)
+            const withoutTimes =
+              !timeTracking && !closure.target_minutes && !closure.actual_minutes && !closure.delta_minutes
+            const hours = (minutes: number | null) => (withoutTimes ? '–' : formatMinutesAsHours(minutes).replace('+', ''))
             return (
               <TableRow key={closure.id}>
                 <TableCell>
                   {MONTHS[closure.month - 1]} {closure.year}
                 </TableCell>
-                <TableCell>{formatMinutesAsHours(closure.target_minutes).replace('+', '')}</TableCell>
-                <TableCell>{formatMinutesAsHours(closure.actual_minutes).replace('+', '')}</TableCell>
-                <TableCell>{formatMinutesAsHours(closure.delta_minutes)}</TableCell>
+                <TableCell>{hours(closure.target_minutes)}</TableCell>
+                <TableCell>{hours(closure.actual_minutes)}</TableCell>
+                <TableCell>{withoutTimes ? '–' : formatMinutesAsHours(closure.delta_minutes)}</TableCell>
                 <TableCell>
                   <Badge variant={PERIOD_STATUS_VARIANT[closure.status]}>{PERIOD_STATUS_LABELS[closure.status]}</Badge>
                 </TableCell>

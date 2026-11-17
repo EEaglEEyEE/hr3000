@@ -60,6 +60,11 @@ class Employee(Base):
     # timesheet_service.py maybe_auto_insert_break.
     # Standard: an – die gesetzliche Pause wird beim Ausstempeln automatisch gebucht, wenn keine gestempelt wurde.
     auto_break_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # „Zeiterfassung“: aus = der Mitarbeiter nutzt die Webapp (Abwesenheiten, Dokumente …), stempelt aber
+    # nicht. Dann gibt es weder Soll/Ist noch Gleitzeitkonto (Tagesberechnung neutral, siehe
+    # timesheet_service.calculate_day), er fehlt am Tablet und in „Zu klären“, neue Stempelungen werden mit
+    # TIME_TRACKING_DISABLED abgelehnt. Gilt rückwirkend für alle nicht abgeschlossenen Monate (kein „gilt ab“).
+    time_tracking: Mapped[bool] = mapped_column(Boolean, default=True)
     # DSGVO-Anonymisierung (siehe app/api/employees.py anonymize_employee):
     # gesetzt, sobald Name/Kontaktdaten überschrieben wurden. Punches/Absences
     # bleiben für die Aufbewahrungsfrist erhalten – nur die Stammdaten werden
@@ -81,6 +86,9 @@ class Employee(Base):
         # login_email & Co. in kwargs das Konto danach anlegen können.
         self.account = kwargs.pop("account", None)
         self.cost_centers = kwargs.pop("cost_centers", [])
+        # Spaltenstandard schon vor dem Speichern sichtbar (die Tagesberechnung liest das Feld auch an
+        # noch nicht geflushten Objekten; None hieße sonst „keine Zeiterfassung“).
+        kwargs.setdefault("time_tracking", True)
         super().__init__(**kwargs)
 
     @property

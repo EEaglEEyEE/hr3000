@@ -29,6 +29,11 @@ Stand: 04.11.2026.
   Teilen-Symbol). HR3000 öffnet dann ohne Browserleiste wie eine App.
 - **Übersicht:** Überstundenkonto, Resturlaub, heute und diese Woche. Oben „Meine Aufgaben“, wenn
   dein Onboarding etwas von dir braucht: „Erledigt“ oder „Datei hochladen“.
+- **Ohne Zeiterfassung:** Erfasst deine Firma bei dir keine Arbeitszeit, stempelst du nicht (du
+  stehst dann auch nicht am Tablet). In „Mein Bereich“ fehlen die Reiter „Zeiterfassung“ und
+  „Überstundenkonto“, die Übersicht zeigt nur den Resturlaub, der „Kalender“ nur Abwesenheiten und
+  Feiertage. Abwesenheiten, Dokumente, deine Daten und der „Monatsabschluss“ (mit deinen
+  Abwesenheiten, ohne Stunden) bleiben wie gewohnt.
 - **Stempeln im Browser** (Homeoffice, unterwegs, nur wenn eingeschaltet): Karte „Stempeln
   (Home-Office / unterwegs)“ mit Kommen, Gehen, Pause und Dienstgang. Es gilt die Uhrzeit des
   Servers.

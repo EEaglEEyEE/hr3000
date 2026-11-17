@@ -3,6 +3,21 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 17.11.2026
+
+- **Mitarbeiter ohne Zeiterfassung:** Im Mitarbeiterformular gibt es unter „Weitere Angaben“ den
+  Schalter „Zeiterfassung“ (Standard an). Aus heißt: kein Stempeln – weder am Tablet (der
+  Mitarbeiter steht dort nicht mehr in der Liste) noch im Web-Login, per Stundenzettel oder
+  Korrekturantrag –, kein Soll, kein Ist, kein Gleitzeitkonto und keine Zuschläge. Abwesenheiten,
+  Urlaub, Dokumente und die eigenen Daten bleiben. Solche Mitarbeiter tragen in der Mitarbeiterliste
+  und auf der Detailseite „ohne Zeiterfassung“; die Reiter „Zeiterfassung“ und „Überstundenkonto“
+  fehlen dort und in „Mein Bereich“, der Kalender zeigt Arbeitstage neutral. Sie erscheinen nicht unter
+  „Zu klären“, „Anwesenheit“ und in der Überstunden-Auswertung. Monatsnachweis, Lohn-Export und
+  „Lohnbuchhaltung“ führen die Abwesenheiten, Soll/Ist/Saldo bleiben leer („–“). Der Schalter wirkt
+  rückwirkend für alle nicht abgeschlossenen Monate; vorhandene Stempelungen bleiben gespeichert,
+  zählen aber erst wieder, wenn die Zeiterfassung wieder an ist. Beim Import heißt die Spalte
+  „zeiterfassung“ (ja/nein).
+
 ## 16.11.2026
 
 - **Android-App 1.3.0, Online im Standby:** Geht der Bildschirm eines Tablets aus, meldet die App

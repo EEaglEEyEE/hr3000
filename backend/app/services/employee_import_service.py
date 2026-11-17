@@ -38,17 +38,19 @@ class ParsedEmployeeRow:
     rotation_start: dt.date | None = None
     # Mit dem Gehalt abgegoltene Überstunden je Monat (Spalte abgegoltene_ueberstunden, Stunden)
     settled_overtime_hours: float | None = None
+    # Spalte „zeiterfassung“ (ja/nein, optional): nein = Mitarbeiter stempelt nicht (kein Soll/Ist)
+    time_tracking: bool = True
     # Zeile in der CSV-Datei (für Fehlermeldungen nach dem Parsen, z.B. Tarifgrenze)
     line: int = 0
 
 
-def _parse_bool(raw: str) -> bool:
+def _parse_bool(raw: str, label: str = "Aktiv") -> bool:
     normalized = raw.strip().lower()
     if normalized in _TRUE_VALUES:
         return True
     if normalized in _FALSE_VALUES:
         return False
-    raise ValueError(f"Ungültiger Wert '{raw}' für Aktiv (erwartet: ja/nein).")
+    raise ValueError(f"Ungültiger Wert '{raw}' für {label} (erwartet: ja/nein).")
 
 
 _WEEKDAY_NAMES = {"mo": 0, "di": 1, "mi": 2, "do": 3, "fr": 4, "sa": 5, "so": 6}
@@ -196,6 +198,8 @@ def parse_bulk_import_csv(
 
             active_raw = row.get("aktiv", "")
             active = _parse_bool(active_raw) if active_raw else True
+            tracking_raw = row.get("zeiterfassung", "")
+            time_tracking = _parse_bool(tracking_raw, "Zeiterfassung") if tracking_raw else True
 
             if len(first_name) > 100 or len(last_name) > 100 or len(employee_number) > 50:
                 raise ValueError("Vorname/Nachname (max. 100) oder Personalnummer (max. 50 Zeichen) ist zu lang.")
@@ -313,6 +317,7 @@ def parse_bulk_import_csv(
                 rotation_weeks=rotation_weeks,
                 rotation_start=rotation_start,
                 settled_overtime_hours=settled,
+                time_tracking=time_tracking,
                 birth_date=birth_date,
                 line=line_number,
             )

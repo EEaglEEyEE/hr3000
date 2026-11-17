@@ -25,9 +25,10 @@ class AccountingSurcharge(BaseModel):
 
 
 class AccountingHours(BaseModel):
-    target_minutes: int
-    actual_minutes: int
-    balance_minutes: int
+    # None = Mitarbeiter ohne Zeiterfassung (kein Soll/Ist/Saldo)
+    target_minutes: int | None
+    actual_minutes: int | None
+    balance_minutes: int | None
     payout_minutes: int
     open_days: int
     holiday_days: float = 0

@@ -192,6 +192,7 @@ async def check_entry(
 ) -> list[tuple[str, Interval, dict]]:
     """Prüft einen Eintrag (rules=None: Genehmigung durch HR – dann gilt der Zeitraum nicht mehr, nur
     die harten Regeln). Liefert die Spannen in UTC."""
+    ts.ensure_time_tracking(employee)
     tz = await ts.employee_timezone(db, employee)
     today = ts.today_in(tz)
     if work_date > today:

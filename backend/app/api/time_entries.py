@@ -4,6 +4,7 @@ Nur der Mitarbeiter selbst; HR bucht direkt (Zeiterfassung → „Stempelung nac
 Anträge unter „Zu klären“ → „Korrekturanträge“ (PATCH /punch-correction-requests/{id}/decide).
 """
 import json
+from dataclasses import replace
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
@@ -98,6 +99,9 @@ async def list_own_time_entries(
     if date_to < date_from or (date_to - date_from).days >= _MAX_RANGE_DAYS:
         raise AppError(400, "INVALID_RANGE", "Bitte einen Zeitraum von höchstens 31 Tagen wählen.")
     rules = entries.rules_of(await get_or_create_settings(db, actor.tenant_id))
+    if not employee.time_tracking:
+        # Ohne Zeiterfassung lässt sich nichts eintragen (POST antwortet TIME_TRACKING_DISABLED).
+        rules = replace(rules, enabled=False)
     tz = await ts.employee_timezone(db, employee)
     today = ts.today_in(tz)
     earliest = entries.earliest_date(rules, today)
@@ -189,6 +193,7 @@ async def create_own_time_entry(
     """Spannen eines Tages eintragen: mit Genehmigung als Antrag (zählt erst nach „Übernehmen“), sonst
     sofort wirksam (Quelle „selbst eingetragen“, Audit)."""
     employee = _employee(actor)
+    ts.ensure_time_tracking(employee)
     rules = await _rules(db, actor)
     items = entries.spans_to_items(payload.spans, await _project_extras(db, actor, payload))
     await entries.check_entry(db, employee, payload.work_date, items, rules=rules)

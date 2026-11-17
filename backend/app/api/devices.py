@@ -561,6 +561,8 @@ async def register_own_card(
         employee is None
         or employee.tenant_id != actor.tenant_id
         or not employee.active
+        # ohne Zeiterfassung steht der Mitarbeiter nicht am Tablet (wie inaktiv)
+        or not employee.time_tracking
         or employee.location_id != actor.device.location_id
     ):
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
@@ -626,6 +628,8 @@ async def setup_own_pin(
         employee is None
         or employee.tenant_id != actor.tenant_id
         or not employee.active
+        # ohne Zeiterfassung steht der Mitarbeiter nicht am Tablet (wie inaktiv)
+        or not employee.time_tracking
         or employee.location_id != actor.device.location_id
     ):
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")

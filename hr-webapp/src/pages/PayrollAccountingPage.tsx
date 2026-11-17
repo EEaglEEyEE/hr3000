@@ -240,6 +240,10 @@ function EmployeeCard({ employee, changed }: { employee: AccountingEmployee; cha
             Soll {formatHoursMinutes(hours.target_minutes)} · Ist {formatHoursMinutes(hours.actual_minutes)} · Saldo{' '}
             {formatMinutesAsHours(hours.balance_minutes)}
           </p>
+          {/* Soll/Ist/Saldo leer = Mitarbeiter ohne Zeiterfassung (Abwesenheiten zählen trotzdem) */}
+          {hours.target_minutes === null && hours.actual_minutes === null && (
+            <p className="text-xs text-slate-500">Ohne Zeiterfassung</p>
+          )}
           {hours.payout_minutes > 0 && <p>Ausgezahlte Überstunden {formatHoursMinutes(hours.payout_minutes)}</p>}
           {(hours.settled_minutes ?? 0) > 0 && (
             <p>Mit dem Gehalt abgegolten {formatHoursMinutes(hours.settled_minutes ?? 0)}</p>

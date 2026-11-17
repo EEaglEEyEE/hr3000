@@ -233,6 +233,8 @@ async def overtime_overview(
     """Aktueller Kontostand je aktivem Mitarbeiter, höchste Überstunden zuerst."""
     rows = []
     for employee in await _employees(db, actor.tenant_id):
+        if not employee.time_tracking:
+            continue  # ohne Zeiterfassung kein Konto
         info = await balance_as_of(db, employee)
         rows.append(
             OvertimeRow(

@@ -21,6 +21,7 @@ from app.services.timesheet_service import (
     DayCalculation,
     balance_as_of,
     employee_timezone,
+    ensure_time_tracking,
     local_date,
     maybe_auto_insert_break,
     refresh_auto_breaks,
@@ -80,6 +81,8 @@ async def create_punch(
         raise AppError(404, "EMPLOYEE_NOT_FOUND", "Mitarbeiter nicht gefunden.")
 
     if actor.device is not None:
+        # Vor PIN/Chip: die Offline-Warteschlange des Tablets markiert den Eintrag dann als fehlgeschlagen.
+        ensure_time_tracking(employee)
         settings_row = await get_or_create_settings(db, actor.tenant_id)
         card_uid = normalize_card_uid(payload.nfc_uid)
         card_ok = (
@@ -109,6 +112,7 @@ async def create_punch(
     elif actor.is_full_hr_level:
         # Supervisor dürfen Zeiten nur ansehen; manuelle Buchungen/Korrekturen sind Admin/HR vorbehalten.
         await ensure_employee_visible(db, actor, employee)
+        ensure_time_tracking(employee)
         source = PunchSource.MANUAL_HR
         device_id = None
         created_by_account_id = actor.account_id
@@ -184,6 +188,7 @@ async def create_own_punch(
     settings_row = await get_or_create_settings(db, actor.tenant_id)
     if not settings_row.portal_punching_enabled:
         raise AppError(403, "PORTAL_PUNCHING_DISABLED", "Stempeln über den Web-Login ist nicht freigeschaltet.")
+    ensure_time_tracking(employee)
     _ensure_punch_type_enabled(settings_row, payload.punch_type)
     # Standort (A18): nur das Ergebnis wird gespeichert, die Position nie; im Modus „außerhalb nicht
     # erlauben“ lehnt check_own_punch außerhalb/unbekannt ab.

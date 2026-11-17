@@ -76,11 +76,17 @@ export function useUpdateEmployeeMutation() {
           body: payload,
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (_data, { payload }) => {
       void queryClient.invalidateQueries({ queryKey: ['employees'] })
       // Abteilung oder Führungskraft können sich geändert haben
       void queryClient.invalidateQueries({ queryKey: ['org-chart'] })
       void queryClient.invalidateQueries({ queryKey: ['departments'] })
+      // „Zeiterfassung“ ein/aus wirkt rückwirkend auf alle offenen Monate (Soll/Ist, Konto, „Zu klären“)
+      if (payload.time_tracking !== undefined && payload.time_tracking !== null) {
+        for (const key of ['open-days', 'dashboard', 'period-closures', 'timesheet-overview', 'balance-limits', 'monthly-caps']) {
+          void queryClient.invalidateQueries({ queryKey: [key] })
+        }
+      }
     },
   })
 }

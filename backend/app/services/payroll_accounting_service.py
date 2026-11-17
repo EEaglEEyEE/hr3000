@@ -259,9 +259,11 @@ async def build_month(db: AsyncSession, tenant_id: int, year: int, month: int, i
             "exit": _in(employee.termination_date, first, last),
             "closure": status.value if status is not None else "OPEN",
             "hours": {
-                "target_minutes": summary.target_minutes,
-                "actual_minutes": summary.actual_minutes,
-                "balance_minutes": summary.actual_minutes - summary.target_minutes,
+                # Ohne Zeiterfassung kein Soll/Ist/Saldo (None); kein eigener Schlüssel dafür, sonst
+                # gälten alle bisher freigegebenen Zeilen als geändert (changed_employees).
+                "target_minutes": summary.target_minutes if summary.time_tracking else None,
+                "actual_minutes": summary.actual_minutes if summary.time_tracking else None,
+                "balance_minutes": summary.actual_minutes - summary.target_minutes if summary.time_tracking else None,
                 "payout_minutes": summary.payout_minutes,
                 "open_days": summary.open_or_error_days,
                 "holiday_days": summary.holiday_days,

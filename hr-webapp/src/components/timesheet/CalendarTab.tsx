@@ -27,7 +27,8 @@ function monthRange(year: number, month: number) {
   return { daysInMonth, from, to, leadingOffset }
 }
 
-export function CalendarTab({ employeeId }: { employeeId: number }) {
+/** timeTracking=false (Mitarbeiter ohne Zeiterfassung): Arbeitstage neutral, keine Wochenspalte Soll/Ist/Saldo. */
+export function CalendarTab({ employeeId, timeTracking = true }: { employeeId: number; timeTracking?: boolean }) {
   const absenceTypes = useAbsenceTypeMap()
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
@@ -35,7 +36,7 @@ export function CalendarTab({ employeeId }: { employeeId: number }) {
 
   const { daysInMonth, from, to, leadingOffset } = monthRange(year, month)
   const timesheetQuery = useTimesheetQuery(employeeId, from, to)
-  const weeklyBalanceQuery = useWeeklyBalanceQuery(employeeId, from, to)
+  const weeklyBalanceQuery = useWeeklyBalanceQuery(employeeId, from, to, timeTracking)
   const dayByDate = new Map((timesheetQuery.data ?? []).map((day) => [day.work_date, day]))
   const weekByStart = new Map((weeklyBalanceQuery.data ?? []).map((week) => [week.week_start, week]))
 
@@ -56,6 +57,9 @@ export function CalendarTab({ employeeId }: { employeeId: number }) {
       setMonth(month + 1)
     }
   }
+
+  // Wochenspalte Soll/Ist/Saldo nur mit Zeiterfassung
+  const gridColumns = timeTracking ? 'grid-cols-[repeat(7,1fr)_7rem]' : 'grid-cols-7'
 
   const monthLabel = new Date(year, month, 1).toLocaleDateString('de-DE', {
     month: 'long',
@@ -92,25 +96,25 @@ export function CalendarTab({ employeeId }: { employeeId: number }) {
       {timesheetQuery.isLoading && <p className="text-slate-500">Lädt…</p>}
       {timesheetQuery.isError && <p className="text-red-600">Kalender konnte nicht geladen werden.</p>}
 
-      <div className="grid grid-cols-[repeat(7,1fr)_7rem] gap-1 text-center text-xs font-medium text-slate-500">
+      <div className={cn('grid gap-1 text-center text-xs font-medium text-slate-500', gridColumns)}>
         {WEEKDAY_HEADERS.map((label) => (
           <div key={label}>{label}</div>
         ))}
-        <div>Woche</div>
+        {timeTracking && <div>Woche</div>}
       </div>
 
       <div className="flex flex-col gap-1">
         {rows.map((row) => {
           const week = weekByStart.get(row.weekStart)
           return (
-            <div key={row.weekStart} className="grid grid-cols-[repeat(7,1fr)_7rem] gap-1">
+            <div key={row.weekStart} className={cn('grid gap-1', gridColumns)}>
               {row.cells.map((cell, index) => {
                 if (!cell) return <div key={`empty-${row.weekStart}-${index}`} />
                 const day = dayByDate.get(cell.date)
                 return (
                   <div
                     key={cell.date}
-                    title={dayCellTooltip(day, absenceTypes)}
+                    title={dayCellTooltip(day, absenceTypes, { timeTracking })}
                     style={dayCellStyle(day, absenceTypes)}
                     className={cn(
                       'relative flex h-16 flex-col rounded-md p-1.5 text-sm',
@@ -134,6 +138,7 @@ export function CalendarTab({ employeeId }: { employeeId: number }) {
                   </div>
                 )
               })}
+              {timeTracking && (
               <div
                 className="flex h-16 flex-col justify-center rounded-md bg-slate-50 p-1.5 text-xs text-slate-600"
                 title="Soll/Ist/Saldo dieser Kalenderwoche"
@@ -161,12 +166,13 @@ export function CalendarTab({ employeeId }: { employeeId: number }) {
                   <span className="text-slate-400">–</span>
                 )}
               </div>
+              )}
             </div>
           )
         })}
       </div>
 
-      <DayCellLegend />
+      <DayCellLegend timeTracking={timeTracking} />
     </div>
   )
 }

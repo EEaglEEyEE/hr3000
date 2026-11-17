@@ -26,6 +26,7 @@ const OPTIONAL_COLUMNS = [
   'turnus_beginn',
   'monatsgrenze',
   'abgegoltene_ueberstunden',
+  'zeiterfassung',
 ]
 
 export function EmployeeBulkImportPage() {
@@ -94,6 +95,7 @@ export function EmployeeBulkImportPage() {
             „tagesstunden_woche2“ bis „tagesstunden_woche4“; „turnus_beginn“ (optional) nennt einen Tag der Woche 1, sonst
             beginnt der Turnus in der Woche des Anstelldatums. „abgegoltene_ueberstunden“: Stunden je Monat, die mit dem
             Gehalt abgegolten sind (z. B. „10“), nur zusammen mit einem Arbeitszeitmodell in derselben Zeile.
+            „zeiterfassung“: ja/nein, Standardwert ja; nein = kein Stempeln, kein Soll und kein Gleitzeitkonto.
           </p>
         </div>
 
