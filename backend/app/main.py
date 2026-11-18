@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -67,6 +68,8 @@ from app.api.recruiting import router as recruiting_router
 from app.api.work_time_model import router as work_time_model_router
 from app.api.work_time_profiles import router as work_time_profiles_router
 from app.api.ws import router as ws_router
+from app.api.metrics import PATH as METRICS_PATH, router as metrics_router
+from app import metrics
 from app.config import settings
 from app.db import AsyncSessionLocal
 from app.errors import AppError
@@ -171,6 +174,29 @@ app = FastAPI(title="HR3000 Backend", lifespan=lifespan)
 
 app.add_middleware(TenantResolutionMiddleware)
 
+
+@app.middleware("http")
+async def http_metrics(request: Request, call_next):
+    """HTTP-Kennzahlen für /metrics (app/metrics.py). Label ist die Routenvorlage
+    (z.B. /employees/{employee_id}), nie der echte Pfad – sonst entstünde je Mitarbeiter-ID eine
+    eigene Zeitreihe. Nicht zugeordnete Pfade (404 ohne Route, unbekannte Subdomain) heißen
+    "unmatched". Als letzte Middleware registriert und damit die äußerste: zählt auch Antworten
+    der Mandanten-Middleware. /metrics selbst wird nicht gezählt."""
+    started = time.perf_counter()
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        route = request.scope.get("route")
+        template = getattr(route, "path", None) or "unmatched"
+        if template != METRICS_PATH:
+            metrics.HTTP_REQUESTS.inc(route=template, method=request.method, status=str(status))
+            metrics.HTTP_SECONDS.observe(time.perf_counter() - started, route=template, method=request.method)
+
+
+app.include_router(metrics_router)
 app.include_router(tenants_router)
 app.include_router(server_metrics_router)
 app.include_router(auth_router)

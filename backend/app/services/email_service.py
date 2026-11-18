@@ -9,6 +9,7 @@ from email.mime.text import MIMEText
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import metrics
 from app.config import settings
 from app.services.secret_box import decrypt_secret
 from app.services.settings_service import get_or_create_settings
@@ -158,6 +159,7 @@ async def send_email(
         return True
     except Exception:
         logger.exception("E-Mail-Versand fehlgeschlagen: an=%s betreff=%s", to, subject)
+        metrics.MAIL_FAILURES.inc()
         if raise_errors:
             raise
         return False

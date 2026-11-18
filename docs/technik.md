@@ -605,6 +605,23 @@ Browser/Tablet ──HTTPS──> Caddy ──┬── /api/*  ──> backend:
   Oberfläche: `ServerMetricsPage` mit `components/platform/MetricChart.tsx` (SVG, eine Kennzahl je
   Grafik, Fadenkreuz-Tooltip auch per Pfeiltasten, Tabellenansicht; Linienfarbe `--series-1` in
   `index.css`, hell/dunkel gegen die Kartenfläche geprüft).
+- **Prometheus `/metrics` (intern):** `GET /metrics` im Textformat 0.0.4, eigenes kleines Modul
+  `app/metrics.py` (kein Zusatzpaket, Labelwerte escaped), Momentwerte aus der DB in
+  `services/monitoring.py`, Endpunkt `api/metrics.py` (nicht im OpenAPI-Schema, ohne Mandanten-Kontext
+  über `_NO_TENANT_PATHS`, liest bewusst mandantenübergreifend nur Zählwerte). Abfragen soll **nur der
+  Monitoring-Agent im Docker-Netz** (Compose-Netz `hr3000_default`, Ziel `backend:8000`, Pfad
+  `/metrics`). Schutz: Caddy beantwortet `/metrics` und `/api/metrics` auf allen Hosts mit 404
+  (Snippet `no_metrics`, `@internal` in `backend_api`/`staging_api`); kommt trotzdem eine Anfrage mit
+  `X-Forwarded-*`/`Forwarded`/`X-Real-IP` an, antwortet das Backend 404. Optional `METRICS_TOKEN` in der
+  `.env`: dann nur mit `Authorization: Bearer <Token>` (Vergleich mit `hmac.compare_digest`), leer = ohne
+  Token. Kennzahlen: `hr_up` (0 = DB nicht lesbar, dann nur noch Prozesszähler), `hr_tenants`,
+  `hr_employees_active{tenant}`, `hr_punches_24h{tenant}`, `hr_open_requests{tenant,kind}` (`absence`,
+  `punch_correction`, `time_entry`, `data_change`), `hr_kiosk_last_seen_seconds{tenant,device}` (nur
+  Tablets mit `devices.last_seen`), `hr_mail_failures_total` (Fehler in `email_service.send_email`),
+  `hr_http_requests_total{route,method,status}` und `hr_http_request_duration_seconds{route,method}`
+  (Middleware in `main.py`, Label = Routenvorlage wie `/employees/{employee_id}`, sonst `unmatched`;
+  `/metrics` selbst zählt nicht). `tenant` = Subdomain, `device` = Geräte-ID – nie Namen, E-Mails oder
+  Inhalte. Zähler liegen im Speicher des einen Uvicorn-Prozesses und beginnen nach einem Neustart bei 0.
 - **Rechte:** Rollen werden im Backend geprüft; das Frontend blendet nur aus. Mandantentrennung
   in jeder Abfrage, Vergütung nur mit „Vergütung & Lohn-Export“.
   - Webapp: eine Rechte-Tabelle in `hr-webapp/src/lib/access.ts` (`all`/`hr`/`payroll`/`admin` =

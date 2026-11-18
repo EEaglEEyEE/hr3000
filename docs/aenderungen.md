@@ -3,6 +3,13 @@
 Neueste zuerst. Bei jeder Änderung hier einen Eintrag ergänzen (Datum, was sich für Nutzer oder
 Betrieb ändert). Einzelheiten stehen in der Git-Historie.
 
+## 18.11.2026
+
+- **Betrieb, Prometheus-Kennzahlen:** Das Backend liefert unter `/metrics` Zählwerte für ein internes
+  Monitoring (Mandanten, aktive Mitarbeiter, Stempelungen, offene Anträge, Tablet-Meldungen,
+  Mailfehler, HTTP-Anfragen). Nur im Docker-Netz erreichbar, Caddy gibt den Pfad nicht nach außen;
+  optional mit Token (`METRICS_TOKEN`). Keine Namen oder Inhalte. Für Nutzer ändert sich nichts.
+
 ## 17.11.2026
 
 - **Mitarbeiter ohne Zeiterfassung:** Im Mitarbeiterformular gibt es unter „Weitere Angaben“ den
