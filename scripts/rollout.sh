@@ -62,7 +62,14 @@ step "2/6 Datenbank sichern"
 bash scripts/backup_db.sh || fail "Sicherung fehlgeschlagen."
 
 step "3/6 Bauen und testen (dauert einige Minuten)"
-if ! docker compose build >/tmp/hr3000-build.log 2>&1; then
+# Nacheinander statt parallel bauen: Backend-Tests (pytest) und Webapp-Tests (vitest) gleichzeitig
+# brauchten zu viel Speicher – am 17.11.2026 beendete der Kernel dabei MySQL (Server 3,8 GB).
+build_all() {
+  for service in backend hr-webapp kiosk-app; do
+    docker compose build "$service" || return 1
+  done
+}
+if ! build_all >/tmp/hr3000-build.log 2>&1; then
   grep -aE "FAILED|failed|Error|error TS" /tmp/hr3000-build.log | tail -20
   fail "Build oder Tests rot – vollständiges Log: /tmp/hr3000-build.log. Die alte Version läuft weiter."
 fi

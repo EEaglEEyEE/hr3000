@@ -95,7 +95,13 @@ wait_healthy() {
 build_and_start() {
   say "Bauen und starten (Tests laufen im Build, dauert einige Minuten)"
   # --remove-orphans: Container älterer Stände (früher "backend" usw.) verschwinden aus dem Prod-Netz
-  compose up -d --build --remove-orphans
+  # Nacheinander bauen (nicht parallel): sonst laufen Backend- und Webapp-Tests gleichzeitig und der
+  # Speicher reicht nicht – am 17.11.2026 beendete der Kernel dabei MySQL (auch die von Prod).
+  local service
+  for service in staging-backend staging-hr-webapp staging-kiosk-app; do
+    compose build "$service"
+  done
+  compose up -d --remove-orphans
   wait_healthy
 }
 
