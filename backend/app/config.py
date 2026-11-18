@@ -76,5 +76,10 @@ class Settings(BaseSettings):
     server_metrics_retention_days: int = 30
     server_metrics_disk_path: str = "/"
 
+    # Prometheus-Endpunkt GET /metrics (app/api/metrics.py): nur für den Monitoring-Agenten im
+    # Docker-Netz, Caddy leitet ihn nicht weiter. Gesetzt = Abruf nur mit
+    # "Authorization: Bearer <METRICS_TOKEN>"; leer = ohne Token (dann schützt nur das Docker-Netz).
+    metrics_token: str | None = None
+
 
 settings = Settings()

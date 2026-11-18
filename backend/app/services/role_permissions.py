@@ -214,6 +214,8 @@ ROUTE_RULES: dict[str, Rule] = {
     "GET /v1/punches": PUBLIC,
     "GET /branding": PUBLIC,
     "GET /internal/tls-allowed": PUBLIC,
+    # Prometheus (api/metrics.py): ohne Konto, nur Docker-Netz, optional METRICS_TOKEN
+    "GET /metrics": PUBLIC,
     "GET /public/tenant-lookup": PUBLIC,
     "GET /public/subdomain-available": PUBLIC,
     "POST /public/signup": PUBLIC,

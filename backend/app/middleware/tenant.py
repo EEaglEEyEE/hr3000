@@ -9,10 +9,12 @@ from app.models import Tenant, TenantStatus
 from app.services.platform_domain import tenant_subdomain_for_host
 
 # Ohne Mandanten-Kontext: Healthcheck, Zertifikats-Freigabe für Caddy (api/tls.py) und die
-# Schnittstellen der Website hr3000.de – Firmensuche, Adress-Prüfung, Registrierung (api/public.py).
+# Schnittstellen der Website hr3000.de – Firmensuche, Adress-Prüfung, Registrierung (api/public.py),
+# dazu der Prometheus-Endpunkt (api/metrics.py, liest mandantenübergreifend nur Zählwerte).
 _NO_TENANT_PATHS = frozenset(
     {
         "/health",
+        "/metrics",
         "/internal/tls-allowed",
         "/public/tenant-lookup",
         "/public/subdomain-available",

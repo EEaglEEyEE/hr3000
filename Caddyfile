@@ -18,10 +18,19 @@
 	}
 }
 
-# Backend unter /api – interne Schnittstellen (nur Caddy -> backend:8000) nie von außen.
+# Prometheus-Endpunkt /metrics (backend/app/api/metrics.py) nur im Docker-Netz: auf keinem Host
+# nach außen – weder /metrics noch über /api/metrics. Jeder Site-Block importiert dieses Snippet.
+(no_metrics) {
+	@metrics path /metrics /metrics/*
+	handle @metrics {
+		respond 404
+	}
+}
+
+# Backend unter /api – interne Schnittstellen (nur Caddy -> backend:8000) und /metrics nie von außen.
 (backend_api) {
 	handle_path /api/* {
-		@internal path /internal/*
+		@internal path /internal/* /metrics /metrics/*
 		respond @internal 404
 		reverse_proxy backend:8000
 	}
@@ -29,6 +38,7 @@
 
 (hr_app) {
 	import security_headers
+	import no_metrics
 	header Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
 	encode zstd gzip
 	import backend_api
@@ -39,6 +49,7 @@
 
 (kiosk_app) {
 	import security_headers
+	import no_metrics
 	# Kamera nur für den QR-Scan bei der Geräte-Einrichtung (Tablet-Token).
 	header Permissions-Policy "camera=(self), microphone=(), geolocation=(self)"
 	encode zstd gzip
@@ -62,13 +73,14 @@
 # Hosts unter STAGING_BASE_DOMAIN (z.B. demo.test.hr3000.de); ohne Eintrag in der .env greift nichts.
 (staging_api) {
 	handle_path /api/* {
-		@internal path /internal/*
+		@internal path /internal/* /metrics /metrics/*
 		respond @internal 404
 		reverse_proxy staging-backend:8000
 	}
 }
 (staging_hr_app) {
 	import security_headers
+	import no_metrics
 	header Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
 	header X-Robots-Tag "noindex, nofollow"
 	encode zstd gzip
@@ -79,6 +91,7 @@
 }
 (staging_kiosk_app) {
 	import security_headers
+	import no_metrics
 	header Permissions-Policy "camera=(self), microphone=(), geolocation=(self)"
 	header X-Robots-Tag "noindex, nofollow"
 	encode zstd gzip
@@ -129,6 +142,7 @@ https:// {
 #    DNS: A-Record "@" für die Domain selbst; "www" deckt der Wildcard-Record "*" ab.
 {$TENANT_BASE_DOMAIN:hr3000.localhost} {
 	import security_headers
+	import no_metrics
 	header Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	encode zstd gzip
 	handle /api/public/* {
